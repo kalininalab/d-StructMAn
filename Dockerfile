@@ -14,17 +14,17 @@ LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
 
 # Install and update the required dependencies for StructMAn
 RUN apt-get update \
-        && DEBIAN_FRONTEND=noninteractive apt-get install curl \
-        vim \
-        less \
-        gcc \
-        python-pip \
-        openbabel \
-        dssp \
-        ncbi-blast+ \
-        python-mysqldb \
-        mysql-server \
-        mysql-client
+&& DEBIAN_FRONTEND=noninteractive apt-get install mysql-server \
+vim \
+less \
+gcc \
+python-pip \
+openbabel \
+dssp \
+ncbi-blast+ \
+python-mysqldb \
+curl \
+mysql-client
 
 RUN pip install numpy biopython matplotlib multiprocess
 
