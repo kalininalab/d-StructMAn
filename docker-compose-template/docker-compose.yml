@@ -1,0 +1,23 @@
+version: '2'
+services:
+    structman_db:
+        image: structman-debian
+        restart: unless-stopped
+        container_name: StructMAn
+        hostname: structman
+        ports:
+            - 3306
+        cap_add:
+            - NET_ADMIN
+            - NET_RAW
+        volumes:
+            - ./structman/input_data/:/structman/input_data/:Z
+            - ./structman/results/:/structman/results/:Z
+            - ./structman/mysql_data_backup/:/structman/mysql_data_backup/:Z
+            - ./structman/custom_conf.d/:/etc/mysql/custom_conf.d/:Z
+            - ./mysql_logs/:/var/log/mysql/:Z
+        environment:
+            MYSQL_STRUCTMAN_DATABASE: "structman"
+            MYSQL_STRUCTMAN_USER_NAME: "structman"
+            MYSQL_STRUCTMAN_USER_PASSWORD: "structman_rocks"
+            MYSQL_FREQUENT_DATABASE_DUMPS: "true"
