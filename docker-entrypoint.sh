@@ -28,6 +28,7 @@ nice=0
 skip-host-cache
 skip-name-resolve
 datadir=/var/lib/mysql
+tmpdir=/tmp
 port=3306
 bind-address=0.0.0.0
 user=mysql
@@ -58,9 +59,8 @@ configure_mysql_user_and_database() {
     mysqld_safe &
     sleep 5
     mysql --user=root << EOF
-UPDATE mysql.user SET authentication_string=password('structman') WHERE User='root';
 CREATE DATABASE IF NOT EXISTS $MYSQL_STRUCTMAN_DATABASE CHARACTER SET utf8 COLLATE utf8_general_ci;
-CREATE USER "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD"; GRANT ALL ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@localhost;
+CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD"; GRANT ALL ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@localhost;
 FLUSH PRIVILEGES;
 EOF
 
