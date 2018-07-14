@@ -16,7 +16,7 @@ configure_mysql() {
 
     echo -e "# Include the configuration files from these directories
 !includedir /etc/mysql/conf.d/
-!includedir /etc/mysql/custom_conf.d/
+!includedir /etc/mysql/mysql_custom_conf.d/
 !includedir /etc/mysql/mysql.conf.d/" > /etc/mysql/my.cnf
 
     echo -e "# MySQL Server configuration

@@ -41,7 +41,7 @@ VOLUME ["/structman/results/"]
 VOLUME ["/structman/mysql_data_backup/"]
 VOLUME ["/var/log/mysql/"]
 VOLUME ["/var/lib/mysql/"]
-VOLUME ["/etc/mysql/custom_conf.d/"]
+VOLUME ["/etc/mysql/mysql_custom_conf.d/"]
 
 # Ports
 EXPOSE 3306
