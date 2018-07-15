@@ -25,7 +25,7 @@
 The recommended way to get this StructMAn docker image is to pull the prebuilt image from the [Docker Hub Registry](https://hub.docker.com/r/sanjaysrikakulam/structman/).
 
 ```bash
-$ docker pull docker.io/sanjaysrikakulam/structman:latest
+# docker pull docker.io/sanjaysrikakulam/structman:latest
 ```
 
 ## To use/run this image in a container
@@ -73,10 +73,90 @@ Where:
 # docker-compose up -d
 ```
 
-# Issues
+## Useful docker commands
+
+* To list the running docker containers
+ 
+ ```bash
+ # docker ps
+```
+
+* To start a container
+
+```bash
+ # docker-compose up -d
+ ```
+ 
+ * To start one or more stopped containers
+ 
+ ```bash
+ # docker start <container_name>
+ ```
+ 
+ * To start a container by specifying a path to a compose file
+ 
+  ```bash
+ # docker-compose -f <path_to_your_compose_file/docker-compose.yml> up -d
+  ```
+  
+ * To stop a container
+
+```bash
+ # docker stop <container_name>
+ ```
+
+* To read the logs of a running docker container
+
+```bash
+# docker logs <container_name>
+```
+
+* To access the shell of a running docker container
+
+```bash
+# docker exec -it <container_name> /bin/bash
+```
+
+* To remove dangling images (images with <none> tag or repo name)
+
+```bash
+# docker images -q -f dangling=true | xargs --no-run-if-empty docker rmi
+```
+
+* To list all the docker images
+
+```bash
+# docker images -a
+```
+
+* To simply remove an image
+
+```bash
+ # docker rmi <image_name or image_id>
+```
+
+* To list all exited containers
+
+```bash
+ # docker ps -a -f status=exited
+```
+
+* To remove all exited containers
+
+```bash
+ # docker rm $(docker ps -a -f status=exited -q)
+```
+
+* To remove a single container
+
+```bash
+ # docker rm <container_name>
+```
+
+# For issues
 
 If you encountered a problem running this container, you can file an [issue](https://github.com/sanjaysrikakulam/structman/issues). For us to provide any form of support, be sure to include the following information in your issue:
 
 - Host OS and version
 - Docker version ('docker version')
-- Output of `docker info` and 'docker logs <container-name>'
+- Output of `docker info` and `docker logs <container_name>`
