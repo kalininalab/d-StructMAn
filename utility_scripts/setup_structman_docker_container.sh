@@ -57,7 +57,7 @@ chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/structman
 echo "version: '2'
 services:
     structman_db:
-        image: structman-debian
+        image: docker.io/sanjaysrikakulam/structman
         restart: unless-stopped
         container_name: $container_name
         hostname: structman
