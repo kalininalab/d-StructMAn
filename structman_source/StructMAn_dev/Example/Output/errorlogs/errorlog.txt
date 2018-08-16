@@ -1,0 +1,173 @@
+###############################################################################
+Fri, 15 Jun 2018 13:06:31:
+/TL/sin/work/agress/StructMAn/Example/human_example.smlf - Session: 2
+<type 'exceptions.NameError'>
+global name 'fasta_path' is not defined
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1581, in main
+    gene_sequence_map = getSequences(new_genes,stored_genes,fasta_map,species_map,u_ac_refseq_map)
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 553, in getSequences
+    gene_sequence_map,gene_info_map = uniprot.getHumanSequences(new_genes,u_ac_refseq_map,'%s/human_info_map.tab' % human_id_mapping_path,human_proteome_path)
+  File "/TL/sin/work/agress/StructMAn/lib/uniprot.py", line 155, in getHumanSequences
+    f = open(fasta_path,'r')
+NameError: global name 'fasta_path' is not defined
+
+
+###############################################################################
+###############################################################################
+Fri, 15 Jun 2018 13:08:18:
+/TL/sin/work/agress/StructMAn/Example/human_example.smlf - Session: 1
+BLAST Error: P52701
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: P38398
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: Q13315
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: P51587
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'parseLigandDB'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1591, in main
+    pseudo_template_map,gene_template_alignment_map = paraAlignment(gene_sequence_map,pseudo_template_map,stored_genes,new_genes,gene_mut_map_new,gene_mut_map_pseudo,stored_annotations)
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1108, in paraAlignment
+    new_template_id_map = database.insertTemplates(template_insertion_list,session,db,cursor,cwd,pdb_path,smiles_path,inchi_path)
+  File "/TL/sin/work/agress/StructMAn/lib/database.py", line 1415, in insertTemplates
+    ligand_db = pdb.parseLigandDB(smiles_path,inchi_path)
+AttributeError: 'module' object has no attribute 'parseLigandDB'
+
+
+###############################################################################
+###############################################################################
+Fri, 15 Jun 2018 13:19:55:
+/TL/sin/work/agress/StructMAn/Example/human_example.smlf - Session: 1
+BLAST Error: P52701
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: P38398
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: Q13315
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+BLAST Error: P51587
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'getInfo'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 673, in paraBlast
+    templates,del_templates = templateSelection.selectTemplates(templates,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 71, in selectTemplates
+    entry = addPdbInfo(entry,pdb_path)
+  File "/TL/sin/work/agress/StructMAn/lib/templateSelection.py", line 8, in addPdbInfo
+    [resolution,r_value] = pdb.getInfo(pdb_id,chain,pdb_path)
+AttributeError: 'module' object has no attribute 'getInfo'
+
+
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'parseLigandDB'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1591, in main
+    pseudo_template_map,gene_template_alignment_map = paraAlignment(gene_sequence_map,pseudo_template_map,stored_genes,new_genes,gene_mut_map_new,gene_mut_map_pseudo,stored_annotations)
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1108, in paraAlignment
+    new_template_id_map = database.insertTemplates(template_insertion_list,session,db,cursor,cwd,pdb_path,smiles_path,inchi_path)
+  File "/TL/sin/work/agress/StructMAn/lib/database.py", line 1415, in insertTemplates
+    ligand_db = pdb.parseLigandDB(smiles_path,inchi_path)
+AttributeError: 'module' object has no attribute 'parseLigandDB'
+
+
+###############################################################################
+###############################################################################
+Fri, 15 Jun 2018 13:23:09:
+/TL/sin/work/agress/StructMAn/Example/human_example.smlf - Session: 1
+<type 'exceptions.AttributeError'>
+'module' object has no attribute 'parseLigandDB'
+Traceback (most recent call last):
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1591, in main
+    pseudo_template_map,gene_template_alignment_map = paraAlignment(gene_sequence_map,pseudo_template_map,stored_genes,new_genes,gene_mut_map_new,gene_mut_map_pseudo,stored_annotations)
+  File "/TL/sin/work/agress/StructMAn/lib/serializedPipeline.py", line 1108, in paraAlignment
+    new_template_id_map = database.insertTemplates(template_insertion_list,session,db,cursor,cwd,pdb_path,smiles_path,inchi_path)
+  File "/TL/sin/work/agress/StructMAn/lib/database.py", line 1415, in insertTemplates
+    ligand_db = pdb.parseLigandDB(smiles_path,inchi_path)
+AttributeError: 'module' object has no attribute 'parseLigandDB'
+
+
+###############################################################################
+###############################################################################
+Fri, 15 Jun 2018 13:24:41:
+/TL/sin/work/agress/StructMAn/Example/human_example.smlf - Session: 1
+Finished without any error
+###############################################################################
