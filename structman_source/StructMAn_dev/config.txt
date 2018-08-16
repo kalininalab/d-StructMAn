@@ -1,10 +1,10 @@
-db_adress=bioinfodb
-db_user_name=agress
-db_password=3GccJS8c
-db_name=struct_man_db_5
+db_adress=localhost
+db_user_name=structman
+db_password=structman_rocks
+db_name=structman
 
-blast_path=/TL/sin/work/agress/src/Helper/Blast/bin/
-dssp_path=/TL/sin/work/agress/Tools/DSSP/dssp-2.2.1/mkdssp
+blast_path=
+dssp_path=mkdssp
 pdb=/TL/sin/nobackup/pdb
 rin_db_path=/TL/sin/work/RINbase
 
