@@ -76,6 +76,13 @@ EOF
 configure_mysql
 configure_mysql_user_and_database
 
+# Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
+if [[ -f /usr/structman_library/sources/StructMAn_dev/structman.py ]]; then
+	ln -s /usr/structman_library/sources/StructMAn_dev/structman.py /usr/local/bin/
+else
+	echo "structman.py script could not be found!"
+fi
+
 echo "*** Container configuration done, starting  $@ on $HOSTNAME ***"
 
 exec "$@"
