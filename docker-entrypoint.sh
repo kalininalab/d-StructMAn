@@ -60,6 +60,8 @@ configure_mysql_user_and_database() {
     sleep 5
     mysql --user=root << EOF
 CREATE DATABASE IF NOT EXISTS $MYSQL_STRUCTMAN_DATABASE CHARACTER SET utf8 COLLATE utf8_general_ci;
+USE $MYSQL_STRUCTMAN_DATABASE;
+SOURCE /usr/structman_library/sources/StructMAn_db/struct_man_db.sql;
 CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD"; GRANT ALL ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@localhost;
 FLUSH PRIVILEGES;
 EOF
