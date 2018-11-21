@@ -15,6 +15,7 @@ LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
 # Install and update the required dependencies for StructMAn
 RUN apt-get update \
 && DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server \
+apt-utils \
 curl \
 vim \
 less \

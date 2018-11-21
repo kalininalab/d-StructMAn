@@ -12,7 +12,7 @@ configure_mysql() {
     rm -rf /etc/mysql/mysql.conf.d/mysqld.cnf &>/dev/null
     mkdir -p /var/lib/mysql /var/run/mysqld &>/dev/null
     chown -R mysql:mysql /var/lib/mysql /var/run/mysqld /var/log/mysql &>/dev/null
-    chmod 777 /var/run/mysqld &>/dev/null
+    chmod 766 /var/run/mysqld &>/dev/null
 
     echo -e "# Include the configuration files from these directories
 !includedir /etc/mysql/conf.d/
@@ -60,10 +60,13 @@ configure_mysql_user_and_database() {
     sleep 5
     mysql --user=root << EOF
 CREATE DATABASE IF NOT EXISTS $MYSQL_STRUCTMAN_DATABASE CHARACTER SET utf8 COLLATE utf8_general_ci;
-USE $MYSQL_STRUCTMAN_DATABASE;
-SOURCE /usr/structman_library/sources/StructMAn_db/struct_man_db.sql;
 CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD"; GRANT ALL ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@localhost;
 FLUSH PRIVILEGES;
+EOF
+
+    mysql --user=root << EOF
+USE $MYSQL_STRUCTMAN_DATABASE;
+SOURCE /usr/structman_library/sources/StructMAn_db/struct_man_db.sql;
 EOF
 
     # Shutdown mysqld
