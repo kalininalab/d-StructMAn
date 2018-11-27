@@ -12,7 +12,7 @@ configure_mysql() {
     rm -rf /etc/mysql/mysql.conf.d/mysqld.cnf &>/dev/null
     mkdir -p /var/lib/mysql /var/run/mysqld &>/dev/null
     chown -R mysql:mysql /var/lib/mysql /var/run/mysqld /var/log/mysql &>/dev/null
-    chmod 777 /var/run/mysqld &>/dev/null
+    chmod 766 /var/run/mysqld &>/dev/null
 
     echo -e "# Include the configuration files from these directories
 !includedir /etc/mysql/conf.d/
@@ -64,6 +64,11 @@ CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "
 FLUSH PRIVILEGES;
 EOF
 
+    mysql --user=root << EOF
+USE $MYSQL_STRUCTMAN_DATABASE;
+SOURCE /usr/structman_library/sources/StructMAn_db/struct_man_db.sql;
+EOF
+
     # Shutdown mysqld
     mysqladmin shutdown
 	
@@ -73,6 +78,13 @@ EOF
 # Initializing MySQL server configuration
 configure_mysql
 configure_mysql_user_and_database
+
+# Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
+if [[ -f /usr/structman_library/sources/StructMAn_dev/structman.py ]]; then
+	ln -s /usr/structman_library/sources/StructMAn_dev/structman.py /usr/local/bin/
+else
+	echo "structman.py script could not be found!"
+fi
 
 echo "*** Container configuration done, starting  $@ on $HOSTNAME ***"
 
