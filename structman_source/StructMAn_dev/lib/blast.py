@@ -39,7 +39,7 @@ def blast(seq,name,blast_path,blast_db_path,nr,option_seq_thresh,option_ral_thre
     f = open(blast_out, "r")
     lines = f.read()
     f.close()
-    #print lines
+    #print name,lines
     
     os.remove(blast_in)
     os.remove(blast_out)
@@ -89,29 +89,30 @@ def blast(seq,name,blast_path,blast_db_path,nr,option_seq_thresh,option_ral_thre
 
         aln_length = hit_hsp[13].text
         seq_id = 100*float(hit_hsp[10].text)/float(aln_length)
-        rel_aln_length = float(aln_length)/float(target_length)
+        coverage = float(aln_length)/float(target_length)
         for hit in hits:
             pdb_id = hit
             chain = hits[hit][0]
             oligos = hits[hit][1]      
             if not len(chain) > 1:
-                if not pdb_id in entries:
-                    entries[pdb_id] = [seq_id,chain,rel_aln_length,aln_length,oligos]
+                if not (pdb_id,chain) in entries:
+                    entries[(pdb_id,chain)] = {"Seq_Id":seq_id,"Coverage":coverage,"Oligo":oligos,"Length":aln_length}
                 else:
-                    if rel_aln_length > entries[pdb_id][2]:
-                        entries[pdb_id] = [seq_id,chain,rel_aln_length,aln_length,entries[pdb_id][4]]
-                    entries[pdb_id][4].update(oligos)
+                    if coverage > entries[(pdb_id,chain)]["Coverage"]:
+                        entries[pdb_id] = {"Seq_Id":seq_id,"Coverage":coverage,"Oligo":oligos,"Length":aln_length}
+                    entries[(pdb_id,chain)]["Oligo"].update(oligos)
     #print entries
-    entry_list = []
+    structures = {}
     #print option_seq_thresh
     #print option_ral_thresh
     
-    for pdb_id in entries:
-        if not (float(entries[pdb_id][0]) < option_seq_thresh):
-            if not ((entries[pdb_id][3] < 50) and (entries[pdb_id][2] < option_ral_thresh)):
-                entry_list.append([pdb_id,entries[pdb_id][0],entries[pdb_id][1],entries[pdb_id][2]])
-                oligo_map[pdb_id] = entries[pdb_id][4]
-    #print entry_list
+    for (pdb_id,chain) in entries:
+        #if pdb_id.count('_AU') == 1:
+        #    print pdb_id
+        if not (float(entries[(pdb_id,chain)]["Seq_Id"]) < option_seq_thresh):
+            if not ((entries[(pdb_id,chain)]["Length"] < 50) and (entries[(pdb_id,chain)]["Coverage"] < option_ral_thresh)):
+                structures[(pdb_id,chain)] = entries[(pdb_id,chain)]
+    #print structures
     #print "Reduction: ",len(entries),len(entry_list)
-    return(entry_list,oligo_map)
+    return structures
 

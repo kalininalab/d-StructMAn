@@ -24,7 +24,7 @@ table={
 stop_codons = ('TAG','TGA','TAA')
 
 #called by serializedPipeline
-def annovar_pipeline(vcf_file,tax_id,annovar_path,host,user,pw,db_name,mrna,mail_adress,ref_id=None):
+def annovar_pipeline(vcf_file,tax_id,annovar_path,host,user,pw,db_name,mrna,mail_adress='',ref_id=None):
     if mrna == None:
         print "Start Annovar Pipeline with vcf_file: %s, taxonomic ID: %s and ref_id: %s" % (vcf_file,str(tax_id),str(ref_id))
         (name,ucsc_id,ref_path) = searchInAnnovarDB(tax_id,host,user,pw,db_name,ref_id=ref_id)
@@ -51,17 +51,24 @@ def ToSmlf(vcf_file,fasta):
     lines = f.readlines()
     f.close()
 
+    nucleic = True
+    n_acids = set(['A','C','T','G'])
+
     gene_seq_map = {}
-    g_gene_map = {}
     for line in lines:
         line = line.replace('\n','')
         if line[0] == '>':
             g_id = line.split()[0][1:]
             gene_name = line.split()[1]
-            gene_seq_map[gene_name] = ''
-            g_gene_map[g_id] = gene_name
+            gene_seq_map[g_id] = ''
         else:
-            gene_seq_map[gene_name] += line
+            gene_seq_map[g_id] += line
+            """
+            if nucleic:
+                for char in line:
+                    if not char in n_acids:
+                        nucleic = False
+            """
 
     f = open(vcf_file,'r')
     lines = f.readlines()
@@ -69,11 +76,15 @@ def ToSmlf(vcf_file,fasta):
     
     smlf_lines = []
 
+    #n = 0
     for line in lines:
+        #n += 1
         if line[0] == '#':
             continue
         words = line.replace('\n','').split()
         g_id = words[0]
+        if g_id == '.':
+            continue
         pos = int(words[1])
         pid = words[2]
         ref = words[3]
@@ -81,12 +92,17 @@ def ToSmlf(vcf_file,fasta):
         if ref == '-' or alt == '-':
             continue
         if len(ref) == 1 and len(alt) == 1:
-            gene_name = g_gene_map[g_id]
-            seq = gene_seq_map[gene_name]
+            seq = gene_seq_map[g_id]
+            #print 'line: ',n
             
+            #print pos
+            #print seq
+            #print g_id
+            #if nucleic:
             if pos%3 == 0:
                 aa_pos = pos/3
                 triple = seq[pos-3:pos]
+                #print triple
                 new_triple = "%s%s%s" % (triple[0],triple[1],alt)
             elif pos%3 == 1:
                 aa_pos = pos/3 + 1
@@ -108,7 +124,7 @@ def ToSmlf(vcf_file,fasta):
             new_aa = table[new_triple]
             
             if old_aa != new_aa:
-                s_line = "%s\t%s%s%s" % (gene_name,old_aa,aa_pos,new_aa)
+                s_line = "%s\t%s%s%s" % (g_id,old_aa,aa_pos,new_aa)
                 smlf_lines.append(s_line)
 
     cwd = os.getcwd()

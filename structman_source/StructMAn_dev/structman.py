@@ -15,6 +15,7 @@ config = ''
 infile = ''
 overwrite = False
 annotationtable = False
+num_of_cores = None
 
 
 def parseConfig(config):
@@ -58,7 +59,7 @@ def main(db_name,db_adress,db_password,db_user_name,infile,main_file_path,config
 
     #run the main pipeline
     if session_id == None:
-        session_id = serializedPipeline.main(infile,config,out_folder,main_file_path)
+        session_id = serializedPipeline.main(infile,config,out_folder,main_file_path,num_of_cores)
 
     #run the output scripts
     session_name = infilename.rsplit('.',1)[0]
@@ -87,9 +88,9 @@ if __name__ == "__main__":
 
     argv = sys.argv[1:]
     try:
-        opts,args = getopt.getopt(argv,"c:i:",['overwrite','annotationtable'])
+        opts,args = getopt.getopt(argv,"c:i:n:",['overwrite','annotationtable'])
     except getopt.GetoptError:
-        print "Illegal Input"
+        print("Illegal Input")
         sys.exit(2)
 
     for opt,arg in opts:
@@ -97,6 +98,8 @@ if __name__ == "__main__":
             config = arg
         if opt == '-i':
             infile = arg
+        if opt == '-n':
+            num_of_cores = int(arg)
         if opt == '--overwrite':
             overwrite = True
         if opt == '--annotationtable':
@@ -113,10 +116,10 @@ if __name__ == "__main__":
         elif os.path.exists('%s/config.txt' % main_file_path.rsplit('/',1)[0]):
             config = '%s/config.txt' % main_file_path.rsplit('/',1)[0]
         else:
-            print "No config file found, please use -c [Path to config]"
+            print("No config file found, please use -c [Path to config]")
             sys.exit(2)
 
-    print "Using following config file: %s" % config
+    print("Using following config file: %s" % config)
     config = os.path.abspath(config)
 
     parseConfig(config)

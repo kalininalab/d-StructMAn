@@ -4,6 +4,7 @@ import sys
 import subprocess
 import time
 import gzip
+import database
 
 
 threeToOne = {
@@ -268,6 +269,27 @@ threeToOne = {
     "ZCL": "F", "ZCY": "C", "ZDU": "U", "ZFB": "X", "ZGU": "G",
     "ZHP": "N", "ZTH": "T", "ZU0": "T", "ZZJ": "A"}
 
+oneToThree = {'C':'CYS', 
+'D':'ASP',
+'S':'SER',
+'V':'VAL',
+'Q':'GLN',
+'K':'LYS',
+'P':'PRO',
+'T':'THR',
+'F':'PHE',
+'A':'ALA',
+'H':'HIS',
+'G':'GLY',
+'I':'ILE',
+'E':'GLU',
+'L':'LEU',
+'R':'ARG',
+'W':'TRP',
+'N':'ASN',
+'Y':'TYR',
+'M':'MET',
+'X':'UNK'}
 
 def abrToLigId(abr):
     if len(abr) == 1:
@@ -284,8 +306,9 @@ def LigIdToAbr(LigId):
 def getSequenceAU(pdb_id,chain,pdb_path):
     path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
     if not os.path.isfile(path):
-        url = 'https://www.rcsb.org/pdb/files/%s.pdb' %pdb_id
-        print "Did not found asymetric unit entry in local pdb, search online: ",url
+        url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+        if pdb_path != '':
+            print "Did not found asymetric unit entry in local pdb, search online: ",url
         try:      
             request = urllib2.Request(url)
             response = urllib2.urlopen(request)
@@ -328,11 +351,83 @@ def getSequenceAU(pdb_id,chain,pdb_path):
                     i += 1
     return seq,res_pos_map
 
-def getSequence(pdb_id,chain,pdb_path):
+def getSequencePlain(pdb_id,chain,pdb_path):
+
+    obsolete_path = '%s/data/structures/obsolete/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+
+    if os.path.isfile(obsolete_path):
+        f = gzip.open(obsolete_path, 'rb')
+        page = f.read()
+        f.close()
+        pdb_id = page.split('\n')[1].split()[3]
+
     path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    
     if not os.path.isfile(path):
-        url = 'https://www.rcsb.org/pdb/files/%s.pdb1' %pdb_id
-        print "Did not found entry in local pdb, search online: ",url
+        url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+        if pdb_path != '':
+            print "Did not found entry in local pdb, search online: ",url
+        try:      
+            request = urllib2.Request(url)
+            response = urllib2.urlopen(request)
+            page = response.read(20000000)
+        except:
+            print "Did not find the PDB-file: %s" % pdb_id
+            return "",{}
+    else:
+        f = gzip.open(path, 'rb')
+        page = f.read()
+        f.close()
+
+    lines = page.split('\n')
+
+    seq = ""
+
+    used_res = set()
+
+    for line in lines:
+        record_name = line[0:6].replace(" ","")
+        atom_nr = line[6:11].replace(" ","")
+        atom_name = line[12:16].replace(" ","")
+        res_name = line[17:20].replace(" ","")
+        if len(line) > 21:
+            chain_id = line[21]
+            res_nr = line[22:27].replace(" ","") # this includes the insertion code
+
+            if chain != chain_id:
+                continue
+
+            if record_name == "ATOM" or record_name == 'HETATM':
+                if record_name == 'HETATM':
+                    if res_name not in threeToOne:
+                        continue
+                if not res_nr in used_res:
+                    aa = threeToOne[res_name][0]
+                    seq = seq + aa
+                    used_res.add(res_nr)
+
+    return seq
+
+def getSequence(pdb_id,chain,pdb_path,AU=False):
+
+    obsolete_path = '%s/data/structures/obsolete/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+
+    if os.path.isfile(obsolete_path):
+        f = gzip.open(obsolete_path, 'rb')
+        page = f.read()
+        f.close()
+        pdb_id = page.split('\n')[1].split()[3]
+
+    path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if AU:
+        path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if not os.path.isfile(path):
+        url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+        if AU:
+            url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+
+        if pdb_path != '':
+            print "Did not found entry in local pdb, search online: ",url
         try:      
             request = urllib2.Request(url)
             response = urllib2.urlopen(request)
@@ -383,27 +478,46 @@ def getSequence(pdb_id,chain,pdb_path):
 
 
 #called by serializedPipeline
-def getSequences(pdb_dict,pdb_path):
+def getSequences(pdb_dict,pdb_path,AU=False):
     pdb_sequence_map = {}
     pdb_pos_map = {}
     for pdb_chain_tuple in pdb_dict:
         [pdb,chain] = pdb_chain_tuple.split(':')
-        seq,res_pos_map = getSequence(pdb,chain,pdb_path)
+        seq,res_pos_map = getSequence(pdb,chain,pdb_path,AU=AU)
         pdb_sequence_map[pdb_chain_tuple] = seq
         pdb_pos_map[pdb_chain_tuple] = res_pos_map
-    #print pdb_sequence_map,pdb_pos_map
+    #print pdb_sequence_map#,pdb_pos_map
     return pdb_sequence_map,pdb_pos_map
+
+#called by serializedPipeline
+def getSequencesPlain(pdb_dict,pdb_path):
+    pdb_sequence_map = {}
+    for pdb_chain_tuple in pdb_dict:
+        [pdb,chain] = pdb_chain_tuple.split(':')
+        seq = getSequencePlain(pdb,chain,pdb_path)
+        pdb_sequence_map[pdb_chain_tuple] = seq
+    #print "Plain",pdb_sequence_map
+    return pdb_sequence_map
 
 
 #called by serializedPipeline
 #called by templateFiltering
-def standardParsePDB(pdb_id,pdb_path,return_ori_chain_map=False):
+def standardParsePDB(pdb_id,pdb_path):
 
+    AU = False
     path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+        AU = True
+        path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+
     if not os.path.isfile(path):
         
-        url = 'https://www.rcsb.org/pdb/files/%s.pdb1' %pdb_id
-        print "Did not found entry in local pdb, search online: ",url
+        url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+        if AU:
+            url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+        if pdb_path != '':
+            print "Did not found entry in local pdb, search online: ",url
         try:      
             request = urllib2.Request(url)
             response = urllib2.urlopen(request)
@@ -417,14 +531,9 @@ def standardParsePDB(pdb_id,pdb_path,return_ori_chain_map=False):
 
     lines = page.split('\n')
 
-    chain_id_map = {}
-    ori_chain_id_map = {}
-    chain_type_map = {}
-    original_chains = []
-    chain_ids = []
+    chain_ids = set()
     newlines = []
-    current_chain = None
-    i = 0
+
     current_atom_nr = 1
     for line in lines:
         if len(line) > 20:
@@ -438,41 +547,31 @@ def standardParsePDB(pdb_id,pdb_path,return_ori_chain_map=False):
             if record_name == "ENDMDL":
                 newlines.append(line)
                 break
-            elif record_name == "ATOM" or record_name == "MODRES" or (record_name == "HETATM" and not boring(res_name)):
-                if not chain_id in chain_id_map:
-                    current_chain = chain_id_list[i]
-                    chain_id_map[chain_id] = current_chain
-                    ori_chain_id_map[current_chain] = chain_id
-                    original_chains.append(chain_id)
-                    chain_ids.append(current_chain)
-                    i += 1
-                if chain_id not in chain_type_map:
-                    if record_name == "ATOM":
-                        if len(res_name) == 1:
-                            chain_type = "RNA"
-                        elif len(res_name) == 2:
-                            chain_type = "DNA"
-                        elif len(res_name) == 3:
-                            chain_type = "Protein"
-                        chain_type_map[chain_id] = chain_type
+            elif record_name == "ATOM" or record_name == "MODRES" or record_name == "HETATM":
+                if record_name == 'HETATM' and res_name not in threeToOne:
+                    if boring(res_name):
+                        continue
+                if not chain_id in chain_ids:
+                    chain_ids.add(chain_id)
+
                             
                 if current_atom_nr > 99999:
                     atom_str = "%s%s" % ((6-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                    newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                    newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id,line[22:])
                 else:
                     atom_str = "%s%s" % ((5-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                    newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                    newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id,line[22:])
                 current_atom_nr += 1
                 newlines.append(newline)
             elif record_name == "TER":
                 if len(line) > 21:
-                    if chain_id in chain_id_map:
+                    if chain_id in chain_ids:
                         if current_atom_nr > 99999:
                             atom_str = "%s%s" % ((6-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                            newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                            newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id,line[22:])
                         else:
                             atom_str = "%s%s" % ((5-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                            newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                            newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id,line[22:])
                         current_atom_nr += 1
                         newlines.append(newline)
                     else:
@@ -483,49 +582,49 @@ def standardParsePDB(pdb_id,pdb_path,return_ori_chain_map=False):
 
 
     template_page = '\n'.join(newlines)
-    if return_ori_chain_map:
-        return template_page,ori_chain_id_map
+
     return template_page
 
-#template-structure: [pdb_id,seq_id,chain,aln_length,resolution,ligands,r-value,templateSelectionScore]
 #called by serializedPipeline
-def getStandardizedPdbFile(template,pdb_path,oligos=''):
+def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
     #print(template)
     times = [0.0,0.0,0.0]
     t0 = time.time()
-    pdb_id = template[0]
-    chain = template[2]
-
+    AU = False
     path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+        path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+        AU = True
     if not os.path.isfile(path):
-        url = 'https://www.rcsb.org/pdb/files/%s.pdb1' %pdb_id
-        print "Did not found entry in local pdb, search online: ",url
+        url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+        if AU:
+            url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+        if pdb_path != '':
+            print "Did not found entry in local pdb, search online: ",url
         try:      
             request = urllib2.Request(url)
             response = urllib2.urlopen(request)
             page = response.read(20000000)
         except:
-            return "",'','',"Did not find the PDB-file: %s" % pdb_id,times
+            return "",'',"Did not find the PDB-file: %s (%s)" % (pdb_id,url),times
     else:
         f = gzip.open(path, 'rb')
         page = f.read()
         f.close()
 
+    structure['IAP'] = []
     t1 = time.time()
 
     lines = page.split('\n')
 
-    template[5] = []
-    chain_id_map = {}
     chain_type_map = {}
     modres_map = {}
 
     lig_set = {}
-    original_chains = []
-    chain_ids = []
+
     newlines = []
-    current_chain = None
-    i = 0
+
     current_atom_nr = 1
     new_target_chain = None
     for line in lines:
@@ -549,15 +648,7 @@ def getStandardizedPdbFile(template,pdb_path,oligos=''):
             if record_name == "ENDMDL":
                 newlines.append(line)
                 break
-            elif record_name == "ATOM" or record_name == 'MODRES' or (record_name == "HETATM" and not boring(res_name)):
-                if not chain_id in chain_id_map:
-                    current_chain = chain_id_list[i] #current_chain is the chain-id after the standardization process: A,B,C,...
-                    chain_id_map[chain_id] = current_chain #chain_id_map maps the original chains to the new chains
-                    original_chains.append(chain_id)
-                    chain_ids.append(current_chain)
-                    if chain == chain_id:
-                        new_target_chain = current_chain
-                    i += 1
+            elif record_name == "ATOM" or record_name == 'MODRES' or record_name == "HETATM":
                 if chain_id not in chain_type_map:
                     if record_name == "ATOM":
                         if len(res_name) == 1:
@@ -567,27 +658,32 @@ def getStandardizedPdbFile(template,pdb_path,oligos=''):
                         elif len(res_name) == 3:
                             chain_type = "Protein"
                         chain_type_map[chain_id] = chain_type
-                        template[5].append([chain_type,chain_id_map[chain_id]])
+                        
+                    elif record_name == 'HETATM':
+                        if res_name in threeToOne or not boring(res_name):#For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in threeToOne, which are hopefully some kind of anormal amino acids
+                            chain_type = 'Peptide'
+                            chain_type_map[chain_id] = chain_type
+                elif record_name == "ATOM" and chain_type_map[chain_id] == 'Peptide':
+                    chain_type_map[chain_id] = 'Protein'
+
                 if record_name == "HETATM":
-                    if res_name in threeToOne:
-                        continue #modified residue are not parsed as ligands
-                    if chain_id not in lig_set:
-                        lig_set[chain_id] = set()
+                    if res_name not in threeToOne and not boring(res_name): #modified residue are not parsed as ligands
+                        if chain_id not in lig_set:
+                            lig_set[chain_id] = set()
                         if not res_nr in lig_set[chain_id]:                
                             lig_set[chain_id].add(res_nr)
                             
                             if (chain_id,res_nr) in modres_map:
                                 continue #modified residue are not parsed as ligands
 
-                            if not boring(res_name):
-                                template[5].append(["Ligand",res_name,res_nr,chain_id_map[chain_id]])
+                            structure['IAP'].append(["Ligand",res_name,res_nr,chain_id])
 
                 if current_atom_nr > 99999:
                     atom_str = "%s%s" % ((6-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                    newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                    newline = "%s%s%s%s%s" % (line[0:5],atom_str,line[11:21],chain_id,line[22:])
                 else:
                     atom_str = "%s%s" % ((5-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                    newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                    newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id,line[22:])
 
                 current_atom_nr += 1
 
@@ -596,9 +692,9 @@ def getStandardizedPdbFile(template,pdb_path,oligos=''):
 
             elif record_name == "TER":
                 if len(line) > 21:
-                    if chain_id in chain_id_map:
+                    if chain_id in chain_type_map:
                         atom_str = "%s%s" % ((5-len(str(current_atom_nr)))*" ",str(current_atom_nr))
-                        newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id_map[chain_id],line[22:])
+                        newline = "%s%s%s%s%s" % (line[0:6],atom_str,line[11:21],chain_id,line[22:])
                         current_atom_nr += 1
                         newlines.append(newline)
                     else:
@@ -607,27 +703,40 @@ def getStandardizedPdbFile(template,pdb_path,oligos=''):
                 else:
                     newlines.append(line)
 
+    pep_not_lig = []
+    for chain_id in chain_type_map:
+        chain_type = chain_type_map[chain_id]
+        structure['IAP'].append([chain_type,chain_id])
+
+    for chain_id in chain_type_map:
+        chain_type = chain_type_map[chain_id]
+        if chain_type == 'Peptide':
+            for i,iap in enumerate(structure['IAP']):
+                if iap[0] == 'Ligand':
+                    if iap[3] == chain_id:
+                        pep_not_lig.append(i)
+
+    pep_not_lig = sorted(pep_not_lig,reverse=True)
+
+    """
+    if pep_not_lig != []:
+        print pdb_id,chain
+        print chain_type_map
+        print structure
+        print pep_not_lig
+    """
+
+    for i in pep_not_lig:
+        del structure['IAP'][i]
+
     t2 = time.time()
-
-    new_oligos = set([])
-    for oligo_chain in oligos:
-        if oligo_chain in chain_id_map:
-            new_oligos.add(chain_id_map[oligo_chain])
-
-    if new_target_chain == None:
-        if not tryNotAssembly:
-            return getStandardizedPdbFile(template,pdb_path,tryNotAssembly=True)
-        else:
-            return ("",'','',"Did not find the chain in the PDB: %s,%s" % (chain,pdb_id),times)
-    template[2] = new_target_chain
-    template[10] = chain
-    template[11] = ''.join(original_chains)
     
     template_page = '\n'.join(newlines)
 
     t3 = time.time()
     times = [t1-t0,t2-t1,t3-t2]
-    return template_page,template,new_oligos,None,times
+    #print(template)
+    return template_page,structure,None,times
     
 #called by database
 def parseLigandDB(smiles_path,inchi_path):
@@ -661,12 +770,9 @@ def parseLigandDB(smiles_path,inchi_path):
     return ligand_db
 
 #get called by database
-def getSI(pdb_id,name,res,chain,cwd,pdb_path):
+def getSI(pdb_id,name,res,chain,pdb_path):
     
-    if pdb_id.count('_na') > 0:
-        pdb_page = standardParsePDB(pdb_id,pdb_path=pdb_path,tryNotAssembly = True)
-    else:
-        pdb_page = standardParsePDB(pdb_id,pdb_path=pdb_path,tryNotAssembly = False)
+    pdb_page = standardParsePDB(pdb_id,pdb_path=pdb_path)
 
     cwd = os.getcwd()
     lines = pdb_page.split('\n')
@@ -706,7 +812,7 @@ def getSI(pdb_id,name,res,chain,cwd,pdb_path):
     if len(smiles) > 0:
         smiles = smiles[0]
     else:
-        print name,res,chain,pdb_id
+        print "Ligand not found in database: ",name,res,chain,pdb_id
     f.close()
     f = open(inchiname, "r")
     inchi = f.read()
@@ -717,13 +823,15 @@ def getSI(pdb_id,name,res,chain,cwd,pdb_path):
     return (smiles,inchi)
 
 def getHeader(pdb_id,pdb_path):
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
     path = "%s/data/structures/divided/pdb/%s/pdb%s.ent.gz" % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
     if os.path.isfile(path):
         f = gzip.open(path, 'rb')
         page = f.read()
         f.close()
     else:
-        url = 'https://www.rcsb.org/pdb/files/%s.pdb?headerOnly=YES' %pdb_id
+        url = 'https://files.rcsb.org/header/%s.pdb' % pdb_id
         try:      
             request = urllib2.Request(url)
             response = urllib2.urlopen(request)
@@ -754,53 +862,57 @@ def getChains(line):
 def getInfo(pdb_id,target_chain,pdb_path):
     page = getHeader(pdb_id,pdb_path)
     if page == "":
-        return [None,None]
+        return None
     #print(pdb_id)
     lines = page.split("\n")
-    nmr = False
-    r_value = None
+    abort = False
     resolution = None
+
+    not_crystal = False
+
+    
     for line in lines:
-        if nmr:
+        if abort:
             break
+        #if pdb_id == '1J8K_AU':
+        #    print line
         words = line.split()
         if len(words) > 0:
             #Filter out NMR-structures, if you decide to use them in future, remember Recoord
             if words[0] == "EXPDTA":
                 if words[2] == "NMR":
-                    #This will lead to an filtering of the nmr template                    
-                    resolution = 100.0
-                    nmr = True
+                    resolution = 2.5
+                    not_crystal = True
+
                 if words[1] == "POWDER":
                     resolution = 100.0
-                    nmr = True
-                '''
-                if words[1] == "ELECTRON" and words[2] == "MICROSCOPY":
-                    #This will lead to an filtering of the EM template                    
-                    resolution = 100.0
-                    nmr = True
-                '''
-                if words[1] == "SOLUTION" and (words[2] == "SCATTERING" or words[2] == "SCATTERING;" or words[2] == "NMR;" or words[2] == "NMR"):
-                    #This will lead to an filtering of the Modelling produced Template                    
-                    resolution = 100.0
-                    nmr = True
+                    abort = True
 
+
+                if words[1] == "SOLUTION" and (words[2] == "SCATTERING" or words[2] == "SCATTERING;" or words[2] == "NMR;" or words[2] == "NMR"):
+                    resolution = 2.5
+                    not_crystal = True
+
+                #if line.count('ELECTRON MICROSCOPY'):
+                #    resolution = 2.5
+                #    not_crystal = True
+
+                if line.count('NMR') > 0:
+                    resolution = 2.5
+                    not_crystal = True
+
+                
             if words[0] == "REMARK":
+                if not_crystal:
+                    continue
                 if len(words) > 2:
                     if words[1] == "2":
                         if words[2] == "RESOLUTION.":
                             resolution = words[3]
-                    elif words[1] == "3":
-                        if len(words) > 5:
-                            #Complicated, there are many different types of R-Values, just take the smallest one
-                            if words[2] == "R" and words[3] == "VALUE" and words[4] == "(WORKING" and words[5] == "+":
-                                w = line.split(":")
-                                r_val = w[len(w)-1]
-                                r_val = r_val.replace(" ","")
-                                if not r_val == "NULL":
-                                    r_val = float(r_val)
-                                    if r_val < r_value:
-                                        r_value = r_val
+                            if resolution == 'NULL':
+                                resolution = None
+                            abort = True
+
             if words[0] == "SEQRES":
                 break
         
@@ -809,16 +921,82 @@ def getInfo(pdb_id,target_chain,pdb_path):
                 if len(words) > 2:
                     if " ".join(words[1:3]) == "CA ATOMS":
                         resolution = 100.0
-                        nmr = True
+                        abort = True
             if words[0] == 'REMARK': #the authors of 1L9U were not able to make a proper MDLTYP entry
                 if "COORDINATES" in words:
                     if "CONTAIN" in words:
                         if "ONLY" in words:
                             if "CA" in words:
                                 resolution = 100.0
-                                nmr = True
+                                abort = True
 
-    return [resolution,r_value]
+    #print resolution
+    if resolution == None:
+        resolution = 100.0
+    try:
+        resolution = float(resolution)
+    except:
+        raise NameError("Resolution buggy for: %s" % pdb_id)
+    return resolution
+
+def colorStructure(pdb_id,chain,outfile,db,cursor,pdb_path):
+    colors = {"Surface" : ' 10.00','Core' : ' 90.00','Contact Ligand' : ' 70.00','Contact Protein' : ' 50.00','Contact DNA' : ' 30.00', 'Contact RNA' : ' 40.00'}
+
+    res_class_map = database.getStructureClassification(pdb_id,chain,db,cursor)
+
+    #print res_class_map
+    AU = False
+    path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+        path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+        AU = True
+
+    if not os.path.isfile(path):
+        
+        url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+        if AU:
+            url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+
+        if pdb_path != '':
+            print "Did not found entry in local pdb, search online: ",url
+        try:      
+            request = urllib2.Request(url)
+            response = urllib2.urlopen(request)
+            page = response.read(20000000)
+        except:
+            return ""#,'',"Did not find the PDB-file: %s" % pdb_id
+    else:
+        f = gzip.open(path, 'rb')
+        page = f.read()
+        f.close() 
+
+    lines = page.split('\n')
+
+    newlines = []
+
+    for line in lines:
+        if len(line) > 20:
+            record_name = line[0:6].replace(" ","")
+            atom_nr = line[6:11].replace(" ","")
+            atom_name = line[12:16].replace(" ","")
+            res_name = line[17:20].replace(" ","")
+            if len(line) > 21:
+                chain_id = line[21]
+                res_nr = line[22:27].replace(" ","")
+            if record_name == "ENDMDL":
+                newlines.append(line)
+                break
+            elif record_name == "ATOM" or record_name == "MODRES" or record_name == "HETATM":
+                if chain_id == chain and res_nr in res_class_map:
+                    res_class = res_class_map[res_nr]
+                    color_code = colors[res_class]
+                    line = "%s%s%s" % (line[:60],color_code,line[66:])
+        newlines.append(line)
+
+    f = open(outfile,'w')
+    f.write('\n'.join(newlines))
+    f.close()
 
 ions = set(["LI","NA","K","MG","CA","RB","CS","BE","SR","BA","SC","TI","V","CR","MN","FE","CO","NI","CU","ZN","F","CL","SI","AL","Y",
         "ZR","NB","MO","TC","RU","PD","AG","CD","IN","SN","GA","AS","SB","TE","I","BR","AT","PT","AU","HG","TL","PB"])

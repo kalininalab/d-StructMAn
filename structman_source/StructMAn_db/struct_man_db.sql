@@ -3,7 +3,7 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: bioinfodb:3306
--- Generation Time: Oct 02, 2018 at 04:18 PM
+-- Generation Time: Dec 12, 2018 at 12:54 PM
 -- Server version: 5.6.10
 -- PHP Version: 5.6.33-0+deb8u1+mpi1
 
@@ -17,8 +17,10 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8 */;
 
 --
--- Database: `struct_man_db_7`
+-- Database: `struct_man_db_1`
 --
+CREATE DATABASE IF NOT EXISTS `struct_man_db_1` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;
+USE `struct_man_db_1`;
 
 -- --------------------------------------------------------
 
@@ -36,7 +38,7 @@ CREATE TABLE IF NOT EXISTS `Alignment` (
   PRIMARY KEY (`Alignment_Id`,`Gene`,`Structure`),
   KEY `Gene` (`Gene`),
   KEY `Structure` (`Structure`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=3103150 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1377734 ;
 
 -- --------------------------------------------------------
 
@@ -57,7 +59,7 @@ CREATE TABLE IF NOT EXISTS `Gene` (
   PRIMARY KEY (`Gene_Id`),
   UNIQUE KEY `Name` (`Uniprot_Ac`,`Uniprot_Id`),
   KEY `Uniprot_Ac` (`Uniprot_Ac`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=114609 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=48210 ;
 
 -- --------------------------------------------------------
 
@@ -71,7 +73,7 @@ CREATE TABLE IF NOT EXISTS `GO_Term` (
   `Id` varchar(64) NOT NULL,
   PRIMARY KEY (`GO_Term_Id`),
   UNIQUE KEY `Name` (`Id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=30376 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=23597 ;
 
 -- --------------------------------------------------------
 
@@ -85,7 +87,7 @@ CREATE TABLE IF NOT EXISTS `Ligand` (
   `Smiles` text NOT NULL,
   `Inchi` text NOT NULL,
   PRIMARY KEY (`Ligand_Id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=21258 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=15883 ;
 
 -- --------------------------------------------------------
 
@@ -101,7 +103,7 @@ CREATE TABLE IF NOT EXISTS `Mutation` (
   `IUPRED_Glob` tinyint(1) DEFAULT NULL,
   PRIMARY KEY (`Mutation_Id`),
   KEY `Gene` (`Gene`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=37114008 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=19419541 ;
 
 -- --------------------------------------------------------
 
@@ -114,7 +116,7 @@ CREATE TABLE IF NOT EXISTS `Pathway` (
   `Reactome_Id` varchar(32) NOT NULL,
   `Name` varchar(255) NOT NULL,
   PRIMARY KEY (`Pathway_Id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=2478 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=2351 ;
 
 -- --------------------------------------------------------
 
@@ -126,6 +128,7 @@ CREATE TABLE IF NOT EXISTS `Residue` (
   `Residue_Id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `Structure` int(11) unsigned NOT NULL,
   `Number` varchar(32) DEFAULT NULL,
+  `Amino_Acid` char(1) DEFAULT NULL,
   `Sub_Lig_Dist` text,
   `Sub_Chain_Distances` text,
   `Relative_Surface_Access` float DEFAULT NULL,
@@ -142,8 +145,9 @@ CREATE TABLE IF NOT EXISTS `Residue` (
   `Long_Interaction_Score` float DEFAULT NULL,
   `Secondary_Structure_Assignment` char(1) DEFAULT NULL,
   PRIMARY KEY (`Residue_Id`,`Structure`),
-  KEY `Structure` (`Structure`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=41672048 ;
+  KEY `Structure` (`Structure`),
+  KEY `Residue_Id` (`Residue_Id`)
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=25064386 ;
 
 -- --------------------------------------------------------
 
@@ -212,8 +216,10 @@ CREATE TABLE IF NOT EXISTS `RS_Ligand_Structure` (
 CREATE TABLE IF NOT EXISTS `RS_Mutation_Residue` (
   `Mutation` int(11) NOT NULL,
   `Residue` int(11) unsigned NOT NULL,
-  PRIMARY KEY (`Mutation`,`Residue`),
-  KEY `Residue` (`Residue`)
+  `Structure` int(11) unsigned NOT NULL,
+  `Gene` int(10) unsigned NOT NULL,
+  KEY `Structure` (`Structure`,`Gene`),
+  KEY `Gene` (`Gene`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -243,7 +249,7 @@ CREATE TABLE IF NOT EXISTS `Session` (
   `Start` datetime NOT NULL,
   `End` datetime DEFAULT NULL,
   PRIMARY KEY (`Session_Id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=2 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=3 ;
 
 -- --------------------------------------------------------
 
@@ -259,7 +265,7 @@ CREATE TABLE IF NOT EXISTS `Structure` (
   `Homooligomer` varchar(64) DEFAULT NULL,
   `Chains` text,
   PRIMARY KEY (`Structure_Id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=156303 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=95427 ;
 
 --
 -- Constraints for dumped tables
@@ -316,8 +322,8 @@ ALTER TABLE `RS_Ligand_Structure`
 -- Constraints for table `RS_Mutation_Residue`
 --
 ALTER TABLE `RS_Mutation_Residue`
-  ADD CONSTRAINT `RS_Mutation_Residue_ibfk_1` FOREIGN KEY (`Residue`) REFERENCES `Residue` (`Residue_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `RS_Mutation_Residue_ibfk_2` FOREIGN KEY (`Mutation`) REFERENCES `Mutation` (`Mutation_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+  ADD CONSTRAINT `RS_Mutation_Residue_ibfk_3` FOREIGN KEY (`Structure`) REFERENCES `Structure` (`Structure_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `RS_Mutation_Residue_ibfk_4` FOREIGN KEY (`Gene`) REFERENCES `Gene` (`Gene_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `RS_Mutation_Session`

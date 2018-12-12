@@ -3,6 +3,10 @@ import database
 import os
 import babel
 import time
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
 
 db_adress = ""
 db_user_name = ""
@@ -30,9 +34,131 @@ ligand_filter = None
 proteome = False
 intertable_conf=False
 
+def makeViolins(violins,outfile,session_name,add=''):
+    fs = 10  # fontsize
+    plt.clf()
+
+    for violin_tag in violins:
+        fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(12, 12))
+        classes = violins[violin_tag].keys()
+        pos = range(len(classes))
+        data = [violins[violin_tag][cl] for cl in classes]
+        #print classes
+        axes.violinplot(data, pos, widths=0.5,
+                              showmeans=True, showextrema=True, showmedians=True,
+                              bw_method='silverman')
+
+        axes.set_xticks(pos)
+        axes.set_xticklabels(classes,rotation='vertical')
+        #axes[n].set_xlabel(classes, rotation='vertical')
+
+
+    #for ax in axes.flatten():
+    #    ax.set_yticklabels([])
+
+        fig.suptitle("Violin Plots %s - %s value" % (session_name,violin_tag))
+        #fig.subplots_adjust(hspace=0.0)
+        plt.tight_layout()
+        #plt.show()
+        violin_file = '%s.violin_plots_%s%s.png' % (outfile,violin_tag,add)
+        plt.savefig(violin_file)
+
+
+def plotScatter(scatter_plots,outfile,session_name):
+
+    """
+    x_values = []
+    y_values = []
+
+    for pdb in dssp_map:
+        for (chain,res) in dssp_map[pdb]:
+            (acc,aa) = dssp_map[pdb][(chain,res)]
+            measure = measure_map[pdb][chain][res]
+            x_values.append(acc)
+            if not anti_corr:
+                y_values.append(measure)
+            else:
+                y_values.append(-measure)
+
+    fig, ax = plt.subplots()
+    ax.scatter(x_values,y_values,alpha=0.01)
+    ax.set_xlabel('RSA', fontsize=15)
+    ax.set_ylabel(y_axis_name, fontsize=15)
+
+    plt.savefig(outfile,dpi=300)
+    """
+    fs = 10  # fontsize
+    plt.clf()
+    scores = ['LI score','CI score','SI score','MI score','LoI score']
+    degrees = ['LI degree','CI degree','SI degree','MI degree','LoI degree']
+    labels = ['Ligand Interaction Score','Chain Interaction Score','Short Interaction Score','Medium Interaction Score','Long Interaction Score']
+    for scatter_tag in scatter_plots:
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 12))
+
+        n = 0
+        for score in scores:
+            b = n
+            a = 0
+            if n > 1:
+                b = n -2
+                a = 1
+            for Class in scatter_plots[scatter_tag][score]:
+                if Class == 'Core':
+                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='red')
+                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
+                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)
+                """else:
+                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='blue')
+                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
+                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)"""
+            n += 1
+
+
+        fig.suptitle("Scatter Plots Interaction Scores %s - %s value" % (session_name,scatter_tag))
+        #fig.subplots_adjust(hspace=0.0)
+        plt.tight_layout()
+        #plt.show()
+        scatter_file = '%s.scatter_plots_Iscore_%s.png' % (outfile,scatter_tag)
+        #print scatter_file
+        plt.savefig(scatter_file)
+        #print scatter_file
+        plt.clf()
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 12))
+        n = 0
+        for score in degrees:
+
+            b = n
+            a = 0
+            if n > 1:
+                b = n - 2
+                a = 1
+            for Class in scatter_plots[scatter_tag][score]:
+                if Class == 'Core':
+                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='red')
+                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
+                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)
+                """else:
+                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='blue')
+                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
+                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)"""
+            n += 1
+
+
+        fig.suptitle("Scatter Plots Interaction Degrees %s - %s value" % (session_name,scatter_tag))
+        #fig.subplots_adjust(hspace=0.0)
+        plt.tight_layout()
+        #plt.show()
+        scatter_file = '%s.scatter_plots_Idegrees_%s.png' % (outfile,scatter_tag)
+        #print scatter_file
+        plt.savefig(scatter_file)
+        #print scatter_file
+
+
 def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=False):
     #Uniprot	AAC	Weighted Surface/Core	Complex Class	Simple Class	Confidence Value	Secondary Structure	Chemical Distance	Blosum62 Value	Uniprot Id
     outfile = '%s/%s' % (outfolder,session_name)
+
+    t0 = time.time()
 
     f = open(annotationfile,'r')
     lines = f.readlines()
@@ -58,13 +184,16 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
     hc_size = 0
     hc_threshs = [0.0,0.2,0.4,0.6,0.8]
 
+    violins = {}
+    comp_violins = {}
+
     for line in lines[1:]:
         words = line.replace('\n','').split('\t')
-        species = words[2]
-        tag = words[3]
-        classification = words[5]
-        simple_classification = words[6]
-        confidence = float(words[7])
+        species = words[4]
+        tag = words[5]
+        classification = words[7]
+        simple_classification = words[8]
+        confidence = float(words[9])
 
         size += 1
 
@@ -95,6 +224,27 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
 
         tags = tag.split(',')
         for tag in tags:
+            if tag[0] == '#':
+                violin_tag,violin_value = tag[1:].split(':')
+
+                violin_value = float(violin_value)
+
+                if not violin_tag in violins:
+                    violins[violin_tag] = {}
+
+                if not simple_classification in violins[violin_tag]:
+                    violins[violin_tag][simple_classification] = []
+                violins[violin_tag][simple_classification].append(violin_value)
+
+                if not violin_tag in comp_violins:
+                    comp_violins[violin_tag] = {}
+
+                if not classification in comp_violins[violin_tag]:
+                    comp_violins[violin_tag][classification] = []
+                comp_violins[violin_tag][classification].append(violin_value)
+
+                continue
+
             if not tag in tag_map:
                 tag_map[tag] = {}
                 simple_tag_map[tag] = {}
@@ -132,6 +282,15 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
                     else:
                         simple_high_confidence_map[simple_classification] += 1
                     hc_size += 1
+
+    t1 = time.time()
+    print ('Time for classDistribution Part1: %s' % str(t1-t0))
+
+    makeViolins(violins,outfile,session_name)
+    makeViolins(comp_violins,outfile,session_name,add='_complex_classes')
+
+    t2 = time.time()
+    print ('Time for classDistribution Part2: %s' % str(t2-t1))
 
     classes = class_map.keys()
     outlines = ['\t%s' % '\t'.join(classes)]
@@ -239,8 +398,11 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
         f.write('\n'.join(simple_high_confidence_outlines))
         f.close()
 
-def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,by_tag=False):
-    
+    t3 = time.time()
+    print ('Time for classDistribution Part3: %s' % str(t3-t2))
+
+def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,session_name,by_tag=False):
+    outfile = "%s/%s" % (outfile,session_name)
     f = open(InteractionProfilesfile,'r')
     lines = f.readlines()
     f.close()
@@ -251,18 +413,21 @@ def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,by_tag=Fals
     min_score = None
     max_score = None
 
+    if len(lines) == 1:
+        return
+
     for line in lines[1:]:
         row = line.replace('\n','').split('\t')
-        Ligand_Interaction_Degree = float(row[2])
-        Ligand_Interaction_Score = float(row[3])
-        Chain_Interaction_Degree = float(row[4])
-        Chain_Interaction_Score = float(row[5])
-        Short_Interaction_Degree = float(row[6])
-        Short_Interaction_Score = float(row[7])
-        Medium_Interaction_Degree = float(row[8])
-        Medium_Interaction_Score = float(row[9])
-        Long_Interaction_Degree = float(row[10])
-        Long_Interaction_Score = float(row[11])
+        Ligand_Interaction_Degree = float(row[4])
+        Ligand_Interaction_Score = float(row[5])
+        Chain_Interaction_Degree = float(row[6])
+        Chain_Interaction_Score = float(row[7])
+        Short_Interaction_Degree = float(row[8])
+        Short_Interaction_Score = float(row[9])
+        Medium_Interaction_Degree = float(row[10])
+        Medium_Interaction_Score = float(row[11])
+        Long_Interaction_Degree = float(row[12])
+        Long_Interaction_Score = float(row[13])
 
 
         degrees = [Ligand_Interaction_Degree,Chain_Interaction_Degree,Short_Interaction_Degree,Medium_Interaction_Degree,Long_Interaction_Degree]
@@ -290,52 +455,90 @@ def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,by_tag=Fals
     degree_tag_sizes = {}
     score_tag_sizes = {}
 
+    scatter_plots = {}
+
     for line in lines[1:]:
         row = line.replace('\n','').split('\t')
-        Ligand_Interaction_Degree = float(row[2])
-        Ligand_Interaction_Score = float(row[3])
-        Chain_Interaction_Degree = float(row[4])
-        Chain_Interaction_Score = float(row[5])
-        Short_Interaction_Degree = float(row[6])
-        Short_Interaction_Score = float(row[7])
-        Medium_Interaction_Degree = float(row[8])
-        Medium_Interaction_Score = float(row[9])
-        Long_Interaction_Degree = float(row[10])
-        Long_Interaction_Score = float(row[11])
+        Ligand_Interaction_Degree = float(row[4])
+        Ligand_Interaction_Score = float(row[5])
+        Chain_Interaction_Degree = float(row[6])
+        Chain_Interaction_Score = float(row[7])
+        Short_Interaction_Degree = float(row[8])
+        Short_Interaction_Score = float(row[9])
+        Medium_Interaction_Degree = float(row[10])
+        Medium_Interaction_Score = float(row[11])
+        Long_Interaction_Degree = float(row[12])
+        Long_Interaction_Score = float(row[13])
+        Class = row[14]
+        comp_class = row[15]
 
         degrees = {'LI degree':Ligand_Interaction_Degree,'CI degree':Chain_Interaction_Degree,'SI degree':Short_Interaction_Degree,'MI degree':Medium_Interaction_Degree,'LoI degree':Long_Interaction_Degree}
         scores = {'LI score':Ligand_Interaction_Score,'CI score':Chain_Interaction_Score,'SI score':Short_Interaction_Score,'MI score':Medium_Interaction_Score,'LoI score':Long_Interaction_Score}
 
         if by_tag:
-            tag = row[12]
-            for degree_name in degrees:
-                combined_tag = "%s %s" % (tag,degree_name)
-                if not combined_tag in degree_tag_map:
-                    degree_tag_map[combined_tag] = [0]*bins
-                degree = degrees[degree_name]
-                for i in range(1,bins+1):
-                    if degree < min_degree+i*degree_bin_size:
-                        degree_tag_map[combined_tag][i-1] += 1
-                        break
-                if not combined_tag in degree_tag_sizes:
-                    degree_tag_sizes[combined_tag] = 1
-                else:
-                    degree_tag_sizes[combined_tag] += 1
-            for score_name in scores:
-                combined_tag = "%s %s" % (tag,score_name)
-                if not combined_tag in score_tag_map:
-                    score_tag_map[combined_tag] = [0]*bins
-                score = scores[score_name]
-                for i in range(1,bins+1):
-                    if score < min_score+i*score_bin_size:
-                        score_tag_map[combined_tag][i-1] += 1
-                        break
-                if not combined_tag in score_tag_sizes:
-                    score_tag_sizes[combined_tag] = 1
-                else:
-                    score_tag_sizes[combined_tag] += 1
+            tags = row[3]
+            tags = '%s,All' % tags
+            for tag in tags.split(','):
+                if tag[0] == '#':
+                    scatter_tag,scatter_value = tag[1:].split(':')
+                    scatter_value = float(scatter_value)
+
+                    if not scatter_tag in scatter_plots:
+                        scatter_plots[scatter_tag] = {}
+
+                        for score in scores:
+                            scatter_plots[scatter_tag][score] = {}
+
+                        for degree in degrees:
+                            scatter_plots[scatter_tag][degree] = {}
+
+                    for score in scores:
+                        if not Class in scatter_plots[scatter_tag][score]:
+                            scatter_plots[scatter_tag][score][Class] = [[],[]]
+                    for score in scores:
+                        sc = scores[score]
+                        scatter_plots[scatter_tag][score][Class][0].append(sc)
+                        scatter_plots[scatter_tag][score][Class][1].append(scatter_value)
+
+                    for degree in degrees:
+                        if not Class in scatter_plots[scatter_tag][degree]:
+                            scatter_plots[scatter_tag][degree][Class] = [[],[]]
+                    for degree in degrees:
+                        deg = degrees[degree]
+                        scatter_plots[scatter_tag][degree][Class][0].append(deg)
+                        scatter_plots[scatter_tag][degree][Class][1].append(scatter_value)
+
+                    continue
+                for degree_name in degrees:
+                    combined_tag = "%s %s" % (tag,degree_name)
+                    if not combined_tag in degree_tag_map:
+                        degree_tag_map[combined_tag] = [0]*bins
+                    degree = degrees[degree_name]
+                    for i in range(1,bins+1):
+                        if degree < min_degree+i*degree_bin_size:
+                            degree_tag_map[combined_tag][i-1] += 1
+                            break
+                    if not combined_tag in degree_tag_sizes:
+                        degree_tag_sizes[combined_tag] = 1
+                    else:
+                        degree_tag_sizes[combined_tag] += 1
+                for score_name in scores:
+                    combined_tag = "%s %s" % (tag,score_name)
+                    if not combined_tag in score_tag_map:
+                        score_tag_map[combined_tag] = [0]*bins
+                    score = scores[score_name]
+                    for i in range(1,bins+1):
+                        if score < min_score+i*score_bin_size:
+                            score_tag_map[combined_tag][i-1] += 1
+                            break
+                    if not combined_tag in score_tag_sizes:
+                        score_tag_sizes[combined_tag] = 1
+                    else:
+                        score_tag_sizes[combined_tag] += 1
         else:
             pass #TODO
+
+    plotScatter(scatter_plots,outfile,session_name)
 
     #print tag_sizes
     startline_words = ['']
@@ -362,7 +565,7 @@ def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,by_tag=Fals
             words.append(str(r))
         outlines.append('\t'.join(words))
 
-    f = open(outfile,'w')
+    f = open('%s.interaction_profile_means.tsv' % outfile,'w')
     f.write('\n'.join(outlines))
     f.close()
 
@@ -618,20 +821,29 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
 
     session_name = (infile.rsplit("/",1)[1]).rsplit(".",1)[0]
 
-    database.updateGeneScores(session_id,db,cursor)
+    #database.updateGeneScores(session_id,db,cursor)
+
+    t0 = time.time()
 
     if classification:
-        classfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable)
+        classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable)
+        t01 = time.time()
         for classfile in classfiles:
             classDistributionFromFile(classfile,output_path,session_name)
+        t02 = time.time()
+        print "Time for producing classification distributions: ",t02-t01
+        if intertable:
+            for interfile in interfiles:
+                InteractionScoreAveragesFromFile(interfile,output_path,session_name,by_tag=True)
+
+    t1 = time.time()
+    print "Time for producing classification file: ",t1-t0    
 
     t0 = time.time()
     if anno:
-        (ofile,reduced) = database.prodAnoOut("%s/%s.anotations.tsv" % (output_path,session_name),session_id,db_name,db_adress,db_user_name,db_password,ligand_filter=ligand_filter,proteome=proteome)
-        if reduced:
-            os.rename("%s/%s.anotations.tsv" % (output_path,session_name),"%s/%s.R.anotations.tsv" % (output_path,session_name))
+        ofile = database.prodAnoOut("%s/%s.anotations.tsv" % (output_path,session_name),session_id,db_name,db_adress,db_user_name,db_password,ligand_filter=ligand_filter,proteome=proteome)
     t1 = time.time()
-    print "Time for prodAnoOut2: ",t1-t0    
+    print "Time for producing annotation file: ",t1-t0    
     if gene:
         database.sortGenes(session_id,"%s/%s.protsort.tsv" % (output_path,session_name),db,cursor)
     if go:

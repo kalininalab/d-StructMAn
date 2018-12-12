@@ -40,24 +40,23 @@ residue_max_acc = {
 }
 
 #called by templateSelection
-def qualityScore(resolution,rel_aln_length,seq_id,r_value,resolution_wf=0.25,rel_aln_length_wf=0.5,seq_id_wf=1.0,r_value_wf=0.1):
+def qualityScore(resolution,coverage,seq_id,resolution_wf=0.25,coverage_wf=0.5,seq_id_wf=1.0):
     seq_id = float(seq_id)
     resolution = float(resolution)
-    r_value = float(r_value)
-    rel_aln_length = float(rel_aln_length)
+    coverage = float(coverage)
     if seq_id > 1.0:
         seq_id = seq_id/100.0
-    if rel_aln_length > 1.0:
-        rel_aln_length = rel_aln_length/100.0
+    if coverage > 1.0:
+        coverage = coverage/100.0
     
     #project the criteria to [0,1] via logistic regression
     resolution_value = (1+math.exp((1.5*resolution)-4))**(-1)
-    r_value = 1.0 - r_value
+
     seq_value = (1+math.exp(10*(0.4-seq_id)))**(-1)
 
-    ws = sum((resolution_wf,rel_aln_length_wf,seq_id_wf,r_value_wf))
-    #print resolution_value,rel_aln_length,seq_id,r_value
-    quality = sum((resolution_value*resolution_wf,rel_aln_length*rel_aln_length_wf,seq_value*seq_id_wf,r_value*r_value_wf))/ws
+    ws = sum((resolution_wf,coverage_wf,seq_id_wf))
+    #print resolution_value,coverage,seq_id,r_value
+    quality = sum((resolution_value*resolution_wf,coverage*coverage_wf,seq_value*seq_id_wf))/ws
     return quality
 
 #called by database
@@ -103,7 +102,7 @@ def calcDSSP(path,DSSP,angles=False):
     # Alert user for errors 
     if err.strip():
         if not out.strip():
-            errorlist.append(('DSSP failed to produce an output\n%s\n%s\n' % (path,err),'','',''))
+            #errorlist.append(('DSSP failed to produce an output\n%s\n%s\n' % (path,err),'','',''))
             return dssp_dict,errorlist
 
     lines = out.split('\n')
@@ -131,10 +130,14 @@ def calcDSSP(path,DSSP,angles=False):
         acc = float(line[34:38])
         aa_type_one_letter = line[13]
         try:
-            aa = Polypeptide.one_to_three(aa_type_one_letter)
-            macc = residue_max_acc['Sander'][aa]
+            if aa_type_one_letter == 'X':
+                macc = 220.0
+            else:
+                aa = Polypeptide.one_to_three(aa_type_one_letter)
+                macc = residue_max_acc['Sander'][aa]
             racc = acc/macc
         except:
+            errorlist.append(('DSSP failed for: \n%s\nChain: %s, Residue: %s\n' % (path,chain,res),'','',''))
             racc = None
 
         if len(line) > 115:
@@ -149,7 +152,7 @@ def calcDSSP(path,DSSP,angles=False):
 
     return dssp_dict,errorlist
 
-def parsePDB(input_page,chain_id_map):
+def parsePDB(input_page):
     """
     Parses a PDB-file and takes all atomic coordinates.
 
@@ -214,12 +217,12 @@ def parsePDB(input_page,chain_id_map):
                         siss_map[chain_id][res_nr] = [res_name,{}]
                     siss_map[chain_id][res_nr][1][atom_nr] = (atom_name,x,y,z)
                     
-                    if not chain_id_map[chain_id] in res_contig_map:
-                        res_contig_map[chain_id_map[chain_id]] = {res_nr:1}
-                        contig_help_map[chain_id_map[chain_id]] = 1
-                    elif not res_nr in res_contig_map[chain_id_map[chain_id]]:
-                        contig_help_map[chain_id_map[chain_id]] += 1
-                        res_contig_map[chain_id_map[chain_id]][res_nr] = contig_help_map[chain_id_map[chain_id]]
+                    if not chain_id in res_contig_map:
+                        res_contig_map[chain_id] = {res_nr:[1,res_name]}
+                        contig_help_map[chain_id] = 1
+                    elif not res_nr in res_contig_map[chain_id]:
+                        contig_help_map[chain_id] += 1
+                        res_contig_map[chain_id][res_nr] = [contig_help_map[chain_id],res_name]
 
             if record_name == "HETATM":
                 if len(line) > 50:
@@ -229,22 +232,34 @@ def parsePDB(input_page,chain_id_map):
                     if not chain_id in coordinate_map:
                         coordinate_map[chain_id] = [{},{}]
                     
-                    if (chain_id,res_nr) in modres_map: #If it is modified residue, than add it to the normal residues...
+                    if (chain_id,res_nr) in modres_map or res_name in pdb.threeToOne: #If it is modified residue, than add it to the normal residues...
+                        if atom_name[0] in ('H','D'):
+                            continue
                         if res_nr not in coordinate_map[chain_id][0]:
                             coordinate_map[chain_id][0][res_nr] = [res_name,{}]
                         coordinate_map[chain_id][0][res_nr][1][atom_nr] = (atom_name,x,y,z)
 
-                        if not chain_id_map[chain_id] in res_contig_map:
-                            res_contig_map[chain_id_map[chain_id]] = {res_nr:1}
-                            contig_help_map[chain_id_map[chain_id]] = 1
-                        elif not res_nr in res_contig_map[chain_id_map[chain_id]]:
-                            contig_help_map[chain_id_map[chain_id]] += 1
-                            res_contig_map[chain_id_map[chain_id]][res_nr] = contig_help_map[chain_id_map[chain_id]]
+                        if pdb.threeToOne[res_name][0] in pdb.oneToThree:
+                            siss_het_res_name = pdb.oneToThree[pdb.threeToOne[res_name][0]]
+                        else:
+                            siss_het_res_name = 'UNK'
+                        if not chain_id in siss_map:
+                            siss_map[chain_id] = {}
+                        if not res_nr in siss_map[chain_id]:
+                            siss_map[chain_id][res_nr] = [siss_het_res_name,{}]
+                        siss_map[chain_id][res_nr][1][atom_nr] = (atom_name,x,y,z)
+
+                        if not chain_id in res_contig_map:
+                            res_contig_map[chain_id] = {res_nr:[1,res_name]}
+                            contig_help_map[chain_id] = 1
+                        elif not res_nr in res_contig_map[chain_id]:
+                            contig_help_map[chain_id] += 1
+                            res_contig_map[chain_id][res_nr] = [contig_help_map[chain_id],res_name]
                     else:    
                         if res_nr not in coordinate_map[chain_id][1]:#If not, then add it to the ligands
                             coordinate_map[chain_id][1][res_nr] = [res_name,{}]
                         coordinate_map[chain_id][1][res_nr][1][atom_nr] = (atom_name,x,y,z)
-                        ligands.add((chain_id_map[chain_id],res_nr))
+                        ligands.add((chain_id,res_nr))
                         
     return coordinate_map,siss_map,res_contig_map,ligands
 
@@ -312,22 +327,29 @@ def getMinDist(c_map,res,chain,res2,chain2,het=0,het2=0):
     return min_d,min_atom,min_atom2
 
 #called by serializedPipeline
-def structuralAnalysis(sub_info_map,pdb_id,stored_annotations,pdb_path,dssp_path,rin_db_path,anno_anno=False,dssp=True,calculate_interaction_profiles=True):
+def structuralAnalysis(pdb_id,target_chain,s_id,structure,pdb_path,dssp_path,rin_db_path,anno_anno=False,dssp=True,calculate_interaction_profiles=True):
     #print pdb_id,sub_info_map
 
-    page,chain_id_map = pdb.standardParsePDB(pdb_id,pdb_path,return_ori_chain_map=True)
+    page = pdb.standardParsePDB(pdb_id,pdb_path)
 
     if page == '':
         print "Error while parsing: ",pdb_id
-        return {},{}
+        return {},{},[]
 
-    coordinate_map,siss_coord_map,res_contig_map,ligands = parsePDB(page,chain_id_map)
+    coordinate_map,siss_coord_map,res_contig_map,ligands = parsePDB(page)
+
+    target_residues = res_contig_map[target_chain].keys()
+
+    #print(coordinate_map)
+    #print(siss_coord_map)
+    #print(res_contig_map)
+    #print(ligands)
 
     errorlist = []
 
     if dssp:
         #write temp pdb file
-        tmp_path = 'tmp_%s.pdb' % pdb_id
+        tmp_path = 'tmp_%s_%s.pdb' % (pdb_id,target_chain)
         f = open(tmp_path,'w')
         f.write(page)
         f.close()
@@ -347,142 +369,109 @@ def structuralAnalysis(sub_info_map,pdb_id,stored_annotations,pdb_path,dssp_path
 
     #if not dssp:
     #surface-calculation with SISI
-    target_residues_map = {}
-    target_residues = []
-    for template_id in sub_info_map:
 
-        (sub_infos,target_chain,oligos) = sub_info_map[template_id]
-        #t_m_amount += len(sub_infos)
-        if not target_chain in coordinate_map:
-            continue
-        for aac_base in sub_infos:
-            sub_info = sub_infos[aac_base]
-            substitution_residue_template = sub_info[1]
-            if substitution_residue_template != "-":
-                target_res_id = sub_info[0]
-                substitution_residue_template = sub_info[1]
-                if substitution_residue_template == "-" or not target_res_id in coordinate_map[target_chain][0]:
-                    continue
+    #siss_coord_map: {Chain:{String:[String,{String:(String,float,float,float)}]}} ; Maps residue-id on residue name and atom map. atom map maps atom-id on atom name and atomic coordinates.
+    try:
+        centroid_map = siss.calcCentroidMap(siss_coord_map[target_chain],target_residues,False)
 
-                target_residues.append((chain_id_map[target_chain],target_res_id))
+        dist_matrix = siss.calcDistMatrix(siss_coord_map[target_chain],centroid_map,target_residues,False)
 
-                if target_chain not in target_residues_map:
-                    target_residues_map[target_chain] = []
-                target_residues_map[target_chain].append(target_res_id)
-                #if target_res_id not in siss_coord_map:
-                #    print template,target_res_id,siss_coord_map
-
-    siss_map = {}
-    for target_chain in target_residues_map:
-        #siss_coord_map: {Chain:{String:[String,{String:(String,float,float,float)}]}} ; Maps residue-id on residue name and atom map. atom map maps atom-id on atom name and atomic coordinates.
-        try:
-            centroid_map = siss.calcCentroidMap(siss_coord_map[target_chain],target_residues_map[target_chain],False)
-
-            dist_matrix = siss.calcDistMatrix(siss_coord_map[target_chain],centroid_map,target_residues_map[target_chain],False)
-
-        
-            siss_map[target_chain] = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues_map[target_chain],False)
-        except:
-            [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
-            errorlist.append(("Siss error: %s,%s\n%s\n" % (pdb_id,target_chain,str(target_residues_map[target_chain])),e,f,g))
+        siss_map = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues,False)
+    except:
+        [e,f,g] = sys.exc_info()
+        g = traceback.format_exc(g)
+        errorlist.append(("Siss error: %s,%s\n" % (pdb_id,target_chain),e,f,g))
 
     profiles = {}
     error = None
     if calculate_interaction_profiles:
-        profiles,error = rin.lookup(pdb_id,target_residues,ligands,res_contig_map,rin_db_path)
+        profiles,error = rin.lookup(pdb_id,None,target_chain,ligands,res_contig_map,rin_db_path)
     if error != None:
         errorlist.append((error,'','',''))
 
     annotation_dict = {}
 
+    oligos = structure['Oligo']
     #anno_amount = 0
     
-    for template_id in sub_info_map:
-        (sub_infos,target_chain,oligos) = sub_info_map[template_id]
-        if not target_chain in coordinate_map:
-            continue
-        annotation_dict[template_id] = [pdb_id,{}] #to save the pdb_id here is useful later for the database
-        for aac_base in sub_infos:
-            if template_id in stored_annotations:
-                if aac_base in stored_annotations[template_id]:
-                    continue #Do not recalculate, whats already in the database
-            sub_info = sub_infos[aac_base]
-            target_res_id = sub_info[0]
-
-            substitution_residue_template = sub_info[1]
-            if substitution_residue_template == "-" or not target_res_id in coordinate_map[target_chain][0]:
-                annotation_dict[template_id][1][aac_base] = 0
+    for target_res_id in res_contig_map[target_chain]:
+        three_letter = res_contig_map[target_chain][target_res_id][1]
+        if three_letter in pdb.threeToOne:
+            if pdb.threeToOne[three_letter][0] in pdb.oneToThree:
+                one_letter = pdb.threeToOne[three_letter][0]
+            else:
+                one_letter = 'X'
+        else:
+            one_letter = 'X'
+        min_dists = {}
+        min_chain_dists = {}
+        #Distance Calculations
+        for chain in coordinate_map:
+            #Sub - Chain - Calculations
+            if chain != target_chain and len(coordinate_map[chain][0]) > 0:
+                min_chain_dist,min_res,atom_sub,atom_chain = getMinSubDist(coordinate_map,target_res_id,target_chain,chain)
+                min_chain_dists[chain] = (min_chain_dist,(atom_chain,atom_sub),min_res)
+            #Sub - Lig - Calculations
+            for hetres in coordinate_map[chain][1]:
+                min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,hetres,chain,het2=1)
+                abr = coordinate_map[chain][1][hetres][0]
+                ligand_identifier = "%s_%s_%s" % (abr,hetres,chain)
+                min_dists[ligand_identifier] = (min_d,(atom,atom2))
+        
+        #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}    
+        #Homomer Sub - Sub Calculations:
+        homomer_map = {}
+        residue_type = coordinate_map[target_chain][0][target_res_id][0]
+        for homo_chain in oligos:
+            if homo_chain == target_chain:
                 continue
-            min_chain_dists = {}
-            min_dists = {}
-            
-            
+            if not homo_chain in coordinate_map:
+                continue
+            if not target_res_id in coordinate_map[homo_chain][0]:
+                continue #Sanity Check - residue-id must be the same in the homo-chain
+            if coordinate_map[homo_chain][0][target_res_id][0] != residue_type:
+                continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
+            min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,target_res_id,homo_chain)                
+            homomer_map[homo_chain] = (min_d,atom,atom2)        
 
-            #Distance Calculations
-            for chain in coordinate_map:
-                #Sub - Chain - Calculations
-                if chain != target_chain and len(coordinate_map[chain][0]) > 0:
-                    min_chain_dist,min_res,atom_sub,atom_chain = getMinSubDist(coordinate_map,target_res_id,target_chain,chain)
-                    min_chain_dists[chain] = (min_chain_dist,(atom_chain,atom_sub),min_res)
-                #Sub - Lig - Calculations
-                for hetres in coordinate_map[chain][1]:
-                    min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,hetres,chain,het2=1)
-                    abr = coordinate_map[chain][1][hetres][0]
-                    ligand_identifier = "%s_%s_%s" % (abr,hetres,chain)
-                    min_dists[ligand_identifier] = (min_d,(atom,atom2))
-            
-            #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}    
-            #Homomer Sub - Sub Calculations:
-            homomer_map = {}
-            residue_type = coordinate_map[target_chain][0][target_res_id][0]
-            for homo_chain in oligos:
-                if homo_chain == target_chain:
-                    continue
-                if not homo_chain in coordinate_map:
-                    continue
-                if not target_res_id in coordinate_map[homo_chain][0]:
-                    continue #Sanity Check - residue-id must be the same in the homo-chain
-                if coordinate_map[homo_chain][0][target_res_id][0] != residue_type:
-                    continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
-                min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,target_res_id,homo_chain)                
-                homomer_map[homo_chain] = (min_d,atom,atom2)        
-
-            
-            if dssp:
-                if target_chain in dssp_dict:
-                    if target_res_id in dssp_dict[target_chain]:
-                        (raac,ssa) = dssp_dict[target_chain][target_res_id]
-                    else:
-                        if target_res_id in siss_map:
-                            siss_value = siss_map[target_res_id]
-                        else:
-                            siss_value = None
-                        ssa = None 
-                        raac  = siss_value
+        
+        if dssp:
+            if target_chain in dssp_dict:
+                if target_res_id in dssp_dict[target_chain]:
+                    (raac,ssa) = dssp_dict[target_chain][target_res_id]
                 else:
-                    [e,f,g] = sys.exc_info()
-                    g = traceback.format_exc(g)
-                    errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
+                    #print(target_res_id)
+                    #print(siss_map)
+                    siss_value = None
                     if target_res_id in siss_map:
                         siss_value = siss_map[target_res_id]
-                    else:
-                        siss_value = None
+
                     ssa = None 
                     raac  = siss_value
             else:
+                [e,f,g] = sys.exc_info()
+                g = traceback.format_exc(g)
+                errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
+                dssp = False
                 if target_res_id in siss_map:
                     siss_value = siss_map[target_res_id]
                 else:
                     siss_value = None
                 ssa = None 
                 raac  = siss_value
-            if (chain_id_map[target_chain],target_res_id) in profiles:
-                profile = profiles[(chain_id_map[target_chain],target_res_id)]
-            else:
-                profile = None
-            annotation_dict[template_id][1][aac_base] = (min_dists,min_chain_dists,raac,target_res_id,ssa,homomer_map,profile)
-            #anno_amount += 1
+        else:
+            siss_value = None
+            if target_res_id in siss_map:
+                siss_value = siss_map[target_res_id]
+                    
+            ssa = None 
+            raac  = siss_value
+        if (target_chain,target_res_id) in profiles:
+            profile = profiles[(target_chain,target_res_id)]
+        else:
+            profile = None
+        annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile)
+        #anno_amount += 1
 
     
 
@@ -564,19 +553,21 @@ def weakCriteria(seq,res,rel_aln_len,seq_thresh,res_thresh,rel_aln_len_thresh):
         return False
 
 #template-structure: [pdb_id,seq_id,chain,aln_length,resolution,ligands,r-value,templateSelectionScore]
-def good(template,seq_threshold,resolution_threshold,cov_threshold):
-    seq_id = template[1]
-    resolution = template[4]
-    rel_aln_len = template[3]
-    if weakCriteria(seq_id,resolution,rel_aln_len,seq_threshold,resolution_threshold,cov_threshold):
+def good(structure,seq_threshold,resolution_threshold,cov_threshold):
+    seq_id = structure['Seq_Id']
+    resolution = structure['Resolution']
+    cov = structure['Coverage']
+    if weakCriteria(seq_id,resolution,cov,seq_threshold,resolution_threshold,cov_threshold):
         return False
     return True
 
 #called by serializedPipeline
-def filterTemplates(templates,seq_threshold,resolution_threshold,cov_threshold):  
-    filtered_templates = []   
-    for template in templates:
-        if good(template,seq_threshold,resolution_threshold,cov_threshold):
-            filtered_templates.append(template)
-    return filtered_templates
+def filterTemplates(structures,seq_threshold,resolution_threshold,cov_threshold):
+    #print structures
+    filtered_structures = {}
+    for (pdb_id,chain) in structures:
+        if good(structures[(pdb_id,chain)],seq_threshold,resolution_threshold,cov_threshold):
+            filtered_structures[(pdb_id,chain)] = structures[(pdb_id,chain)]
+
+    return filtered_structures
 

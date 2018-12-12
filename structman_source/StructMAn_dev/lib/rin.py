@@ -67,7 +67,7 @@ def getProfile(interaction_map,residue,ligands,res_contig_map):
         else:
             if not res_b in res_contig_map[chain]:
                 continue
-            res_dist = abs(res_contig_map[chain][res]-res_contig_map[chain][res_b])
+            res_dist = abs(res_contig_map[chain][res][0]-res_contig_map[chain][res_b][0])
             if res_dist < 2:
                 profile['neighbor'][0] += 1
                 profile['neighbor'][1] += score
@@ -80,8 +80,8 @@ def getProfile(interaction_map,residue,ligands,res_contig_map):
     return profile
 
 #called by templateFiltering
-def lookup(pdb_id,residues,ligands,res_contig_map,base_path):
-    pdb_id = pdb_id.lower().replace('_na','')
+def lookup(pdb_id,residues,chain,ligands,res_contig_map,base_path):
+    pdb_id = pdb_id.replace('_AU','').lower()
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
 
     network_file = "%s/%s.sif.gz" % (folder_path,pdb_id)
@@ -96,12 +96,21 @@ def lookup(pdb_id,residues,ligands,res_contig_map,base_path):
     interaction_map = getIAmap(interaction_score_file)
 
     profile_map = {}
-    for residue in residues:
-        profile = getProfile(interaction_map,residue,ligands,res_contig_map)
-        if profile == None:
-            print pdb_id,residue
-            continue
-        profile_map[residue] = profile
-    return profile_map,None
+    if residues != None:
+        for residue in residues:
+            profile = getProfile(interaction_map,residue,ligands,res_contig_map)
+            if profile == None:
+                print pdb_id,residue
+                continue
+            profile_map[residue] = profile
+        return profile_map,None
+    else:
+        for res_nr in res_contig_map[chain]:
+            profile = getProfile(interaction_map,(chain,res_nr),ligands,res_contig_map)
+            if profile == None:
+                print pdb_id,(chain,res_nr)
+                continue
+            profile_map[(chain,res_nr)] = profile
+        return profile_map,None
 
 

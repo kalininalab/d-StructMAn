@@ -1,5 +1,7 @@
 import urllib,urllib2
 import time
+import MySQLdb
+import sys
 
 def getUniprotId(query,querytype):
     url = 'https://www.uniprot.org/uploadlists/'
@@ -36,75 +38,208 @@ def getUniprotId(query,querytype):
     return uniprot_id
 
 #called by serializedPipeline
-def humanIdMapping(u_acs,ac_map,map_folder,obsolete_check=True):
+def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
+    genes = {}
+    new_tag_map = {}
+    new_species_map = {}
+    for ac in ac_map:
+        genes[ac] = ['',set([]),ac_map[ac]]
+        if ac in tag_map:
+            new_tag_map[ac] = tag_map[ac]
+        if ac in species_map:
+            new_species_map[ac] = species_map[ac]
 
-    #print u_acs
-    #print ac_map.keys()
+    #Step one: map everything to uniprot-ac
+    if len(id_map) > 0:
+        if db != None:
+            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Id IN ('%s')" % "','".join(id_map.keys())
+            try:
+                cursor.execute(sql)
+                results = cursor.fetchall()
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
 
-    iso_map = {}
-    for u_ac in u_acs:
-        if u_ac.count('-') == 1:
-            [u_ac,iso] = u_ac.split('-')
-        else:
-            iso = 'c'
-        if not u_ac in iso_map:
-            iso_map[u_ac] = [iso]
-        else:
-            iso_map[u_ac].append(iso)
+            for row in results:
+                u_ac = row[0]
+                u_id = row[1]
+                if not u_ac in genes:
+                    genes[u_ac] = [u_id,set([]),id_map[u_id]]
+                    if u_id in tag_map:
+                        new_tag_map[u_ac] = tag_map[u_id]
 
-    u_ac_id_map = {}
+                    if u_id in species_map:
+                        new_species_map[u_ac] = species_map[u_id]
 
-    u_ac_refseq_map = {}
-
-    if obsolete_check:
-        obs_set = set([])
-        upd_set = {}
-        obs_map = {}
-        f = open('%s/human_obsolete_acs.tab' % map_folder,'r')
-        lines = f.readlines()
-        f.close()
-        for line in lines:
-            [obs_ac,upd_ac] = line[:-1].split('\t')
-            if obs_ac in iso_map:
-                obs_set.add(obs_ac)
-                upd_set[upd_ac] = iso_map[obs_ac]
-                obs_map[upd_ac] = ac_map[obs_ac]
-        for obs_ac in obs_set:
-            del ac_map[obs_ac]
-            del iso_map[obs_ac]
-        iso_map.update(upd_set)
-        ac_map.update(obs_map)
-    
-    f = open('%s/human_ac_mapping.tab' % map_folder,'r')
-    lines = f.readlines()
-    f.close()
-
-    for line in lines:
-        words = line[:-1].split('\t')
-        if words[0] in iso_map:
-            ref_map = {}
-            if words[2] != '':
-                refs = words[2][:-1].split(';')
-                for ref in refs:
-                    [iso,refdouble] = ref.split(':')
-                    if not iso in ref_map:
-                        ref_map[iso] = [refdouble]
-                    else:
-                        ref_map[iso].append(refdouble)
-            for iso in iso_map[words[0]]:
-                if iso == 'c':
-                    iso_ac = words[0]
                 else:
-                    iso_ac = '%s-%s' % (words[0],iso)
-                u_ac_id_map[iso_ac] = words[1]
-                if iso in ref_map:
-                    ref_str = ','.join(ref_map[iso])
-                    u_ac_refseq_map[iso_ac] = ref_str
+                    genes[u_ac][0] = u_id
+                    genes[u_ac][2] = genes[u_ac][2]|id_map[u_id]
+                    new_tag_map[u_ac] = tag_map[u_id]
 
-    #print ac_map.keys()
-    #print u_ac_id_map
+                    if u_id in tag_map:
+                        if u_ac in new_tag_map:
+                            new_tag_map[u_ac].update(tag_map[u_id])
+                        else:
+                            new_tag_map[u_ac] = tag_map[u_id]
 
-    return u_ac_id_map,u_ac_refseq_map,ac_map
+                    if u_id in species_map:
+                        new_species_map[u_ac] = species_map[u_id]
+
+        else:
+            id_ac_map = getUniprotIds(id_map.keys(),'ID',target_type="ACC")
+            for u_id in id_ac_map:
+                u_ac = id_ac_map[u_id]
+                if not u_ac in genes:
+                    genes[u_ac] = [u_id,set([]),id_map[u_id]]
+                    if u_id in tag_map:
+                        new_tag_map[u_ac] = tag_map[u_id]
+
+                    if u_id in species_map:
+                        new_species_map[u_ac] = species_map[u_id]
+
+                else:
+                    genes[u_ac][0] = u_id
+                    genes[u_ac][2] = genes[u_ac][2]|id_map[u_id]
+                    new_tag_map[u_ac] = tag_map[u_id]
+
+                    if u_id in tag_map:
+                        if u_ac in new_tag_map:
+                            new_tag_map[u_ac].update(tag_map[u_id])
+                        else:
+                            new_tag_map[u_ac] = tag_map[u_id]
+
+                    if u_id in species_map:
+                        new_species_map[u_ac] = species_map[u_id]
+
+    if len(np_map) > 0:
+        if db != None:
+            sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Refseq IN ('%s')" % "','".join(np_map.keys())
+            try:
+                cursor.execute(sql)
+                results = cursor.fetchall()
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+
+            for row in results:
+                u_ac = row[0]
+                ref = row[1]
+                if not u_ac in genes:
+                    genes[u_ac] = ['',set([ref]),np_map[ref]]
+                    if ref in tag_map:
+                        new_tag_map[u_ac] = tag_map[ref]
+
+                    if ref in species_map:
+                        new_species_map[u_ac] = species_map[ref]
+                else:
+                    genes[u_ac][1].add(ref)
+                    genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                    if ref in tag_map:
+                        if u_ac in new_tag_map:
+                            new_tag_map[u_ac].update(tag_map[ref])
+                        else:
+                            new_tag_map[u_ac] = tag_map[ref]
+
+                    if ref in species_map:
+                        new_species_map[u_ac] = species_map[ref]
+
+        else:
+            np_ac_map = getUniprotIds(np_map.keys(),'P_REFSEQ_AC',target_type="ACC")
+            for ref in np_ac_map:
+                u_ac = np_ac_map[ref]
+                if not u_ac in genes:
+                    genes[u_ac] = ['',set([ref]),np_map[ref]]
+                    if ref in tag_map:
+                        new_tag_map[u_ac] = tag_map[ref]
+
+                    if ref in species_map:
+                        new_species_map[u_ac] = species_map[ref]
+                else:
+                    genes[u_ac][1].add(ref)
+                    genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                    if ref in tag_map:
+                        if u_ac in new_tag_map:
+                            new_tag_map[u_ac].update(tag_map[ref])
+                        else:
+                            new_tag_map[u_ac] = tag_map[ref]
+
+                    if ref in species_map:
+                        new_species_map[u_ac] = species_map[ref]
+
+    #Step two: get uniprot-id and refseqs from uniprot-ac
+
+    ac_iso_map = {}
+    id_search = []
+    for u_ac in genes:
+        if genes[u_ac][0] != '':
+            continue
+        split = u_ac.split('-')
+        if len(split) == 2:
+            base,iso = split
+            if not base in ac_iso_map:
+                ac_iso_map[base] = [iso]
+            else:
+                ac_iso_map[base].append(iso)
+
+            id_search.append(base)
+        else:
+            id_search.append(u_ac)
+
+    if len(id_search) > 0:
+        if db != None:
+            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(id_search)
+            try:
+                cursor.execute(sql)
+                results = cursor.fetchall()
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+
+            for row in results:
+                u_ac = row[0]
+                u_id = row[1]
+                if u_ac in genes:
+                    genes[u_ac][0] = u_id
+                if u_ac in ac_iso_map:
+                    for iso in ac_iso_map[u_ac]:
+                        genes['%s-%s' % (u_ac,iso)][0] = u_id
+        else:
+            ac_id_map = getUniprotIds(id_search,'ACC',target_type="ID")
+            for u_ac in ac_id_map:
+                u_id = ac_id_map[u_ac]
+                if u_ac in genes:
+                    genes[u_ac][0] = u_id
+                if u_ac in ac_iso_map:
+                    for iso in ac_iso_map[u_ac]:
+                        genes['%s-%s' % (u_ac,iso)][0] = u_id
+
+    if db != None:
+        sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(genes.keys())
+        try:
+            cursor.execute(sql)
+            results = cursor.fetchall()
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+
+        for row in results:
+            u_ac = row[0]
+            ref = row[1]
+            genes[u_ac][1].add(ref)
+    else:
+        ac_np_map = getUniprotIds(genes.keys(),'ACC',target_type="P_REFSEQ_AC")
+        for u_ac in ac_np_map:
+            ref = ac_np_map[u_ac]
+            genes[u_ac][1].add(ref)
+
+    return genes,new_tag_map,new_species_map
+
 
 #called by serializedPipeline
 def getUniprotIds(query_ids,querytype,target_type="ID"):
@@ -138,10 +273,14 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
         for line in lines[1:]:
             words = line.split()
             if len(words) > 1:
-                if not words[0] in query_ids:
+                quer = words[0]
+                target = words[1]
+                if not quer in query_ids:
                     error = True
                     break
-                uniprot_ids[words[0]] = words[1]
+                if quer == target:
+                    target = words[3].split(';')[0]
+                uniprot_ids[quer] = target
         if error:
 
             if len(query_ids) == 1:
@@ -172,73 +311,89 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
                 return {}
     return uniprot_ids
 
-#called by serializePipeline
-def getHumanSequences(u_acs,u_ac_refseq_map,info_map_path,human_proteome_path):
-    f = open(human_proteome_path,'r')
-    lines = f.readlines()
-    f.close()
-
-    canon_set = set([])
-    control_set = set([])
-    for u_ac in u_acs:
-        canon_set.add(u_ac.split('-')[0])
-        control_set.add(u_ac)
-    canon_map = {}
-    canon = False
-
-    seq_go = False
-    seq = ''
+#called by serializedPipeline
+def getSequencesPlain(u_acs,db,cursor):
     gene_sequence_map = {}
-    for line in lines:
-        if line[0] == '>':
-            if seq_go:
-                if canon:
-                    canon_map[u_ac] = seq
-                else:
-                    gene_sequence_map[u_ac] = seq
-                seq_go = False
-                seq = ''
-            u_ac = line.split('|')[1]
-            if u_ac.count('-') == 0:
-                canon = True
-                if u_ac in canon_set:
-                    seq_go = True
-            else:
-                canon = False
-                if u_ac in u_acs:
-                    seq_go = True
-                    control_set.remove(u_ac)
-        elif seq_go:
-            seq += line[:-1]
-    if seq_go:
-        if canon:
-            canon_map[u_ac] = seq
-        else:
+    if db != None:
+        if len(u_acs) == 0:
+            return {}
+        t0 = time.time()
+        sql = "SELECT Uniprot_Ac,Sequence FROM Sequences WHERE Uniprot_Ac IN ('%s')" % "','".join(u_acs)
+        try:
+            cursor.execute(sql)
+            results = cursor.fetchall()
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+
+        t1 = time.time()
+        print "getSequences Part 1: ",str(t1-t0)
+
+        
+        for row in results:
+            u_ac = row[0]
+            if not u_ac in u_acs:
+                continue
+            seq = row[1]
             gene_sequence_map[u_ac] = seq
+
+        t2 = time.time()
+        print "getSequences Part 2: ",str(t2-t1)
+
+    missing_set = set()
+
+    for u_ac in u_acs:
+        if not u_ac in gene_sequence_map:
+            missing_set.add(u_ac)
+            #print u_ac
+
+    t3 = time.time()
+    print "getSequences Part 3: ",str(t3-t2)
+
+    #print len(missing_set)
+    #sys.exit()
+    for u_ac in missing_set:
+        seq,refseqs,go_terms,pathways = getSequence(u_ac)
         gene_sequence_map[u_ac] = seq
 
-    for u_ac in control_set:
-        gene_sequence_map[u_ac] = canon_map[u_ac.split('-')[0]]
+    t4 = time.time()
+    print "getSequences Part 4: ",str(t4-t3)
 
+    return gene_sequence_map
+
+#called by serializePipeline
+def getSequences(u_acs,info_map_path,db,cursor,pdb_dict):
     #print u_acs
-    #print gene_sequence_map.keys()
+    t0 = time.time()
 
+    gene_sequence_map = getSequencesPlain(u_acs,db,cursor)
+
+    
     f = open(info_map_path,'r')
     lines = f.readlines()
     f.close()
 
+    gene_info_map = {}
     iso_map = {}
     for u_ac in u_acs:
+        #if u_ac in missing_set:
+        #    continue
         if u_ac.count('-') == 1:
-            [u_ac,iso] = u_ac.split('-')
+            [base,iso] = u_ac.split('-')
         else:
+            base = u_ac
             iso = 'c'
-        if not u_ac in iso_map:
-            iso_map[u_ac] = [iso]
+        if not base in iso_map:
+            iso_map[base] = [iso]
         else:
-            iso_map[u_ac].append(iso)
+            iso_map[base].append(iso)
+        gene_info_map[u_acs[u_ac]] = ({},{},gene_sequence_map[u_ac])
 
-    gene_info_map = {}
+    t4 = time.time()
+    print "Time for extracting from Fasta Part 4: %s" % str(t4-t0)
+
+    
     for line in lines:
         words = line[:-1].split('\t')
         u_ac = words[0]
@@ -263,11 +418,24 @@ def getHumanSequences(u_acs,u_ac_refseq_map,info_map_path,human_proteome_path):
                     iso_u_ac = u_ac
                 else:
                     iso_u_ac = '%s-%s' % (u_ac,iso)
-                if iso_u_ac in u_ac_refseq_map:
-                    refseqs = u_ac_refseq_map[iso_u_ac]
-                else:
-                    refseqs = ''
-                gene_info_map[u_acs[iso_u_ac]] = (refseqs,go_terms,pathways,gene_sequence_map[iso_u_ac])
+                gene_info_map[u_acs[iso_u_ac]] = (go_terms,pathways,gene_sequence_map[iso_u_ac])
+
+    t5 = time.time()
+    print "Time for extracting from Fasta Part 5: %s" % str(t5-t4)
+
+    """
+    #print missing_set
+    #sys.exit()
+    for u_ac in missing_set:
+        seq,refseqs,go_terms,pathways = getSequence(u_ac)
+        gene_sequence_map[u_ac] = seq
+        gene_info_map[u_acs[u_ac]] = (refseqs,go_terms,pathways,seq)
+
+    t6 = time.time()
+    print "Time for extracting from Fasta Part 6: %s" % str(t6-t5)
+    """
+
+    #print gene_sequence_map
 
     return gene_sequence_map,gene_info_map
 
@@ -283,7 +451,7 @@ def getSequence(uniprot_ac,tries=0):
         response = urllib2.urlopen(request)
         page = response.read(9000000)
     except:
-        if tries < 4:
+        if tries < 3:
             return getSequence(uniprot_ac,tries=tries+1)
 
         else:
@@ -330,6 +498,7 @@ def getSequence(uniprot_ac,tries=0):
         words = line.split()
         if len(words) == 0:
             print uniprot_ac
+            return (1,"",{},{})
         if words[0] == "DR":
             if len(words) > 1:
                 if words[1] == "GO;":

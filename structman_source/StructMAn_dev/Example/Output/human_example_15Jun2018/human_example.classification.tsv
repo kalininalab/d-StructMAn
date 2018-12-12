@@ -1,7 +1,0 @@
-Uniprot	AAC	Species	Tag	Weighted Surface/Core	Class	Simple Class	Confidence Value	Secondary Structure	Chemical Distance	Blosum62 Value	Uniprot Id
-P38398	C1787C	None	None	Core	Core	Core	0.626279814815	disorder	0.0	9	BRCA1_HUMAN
-P38398	G1788G	None	None	Surface	Surface	Surface	0.359973866075	disorder	0.0	6	BRCA1_HUMAN
-P51587	Q3066Q	None	None	Surface	Metal Interaction	Ligand Interaction	0.322696	disorder	0.0	5	BRCA2_HUMAN
-P51587	F3065F	None	None	Surface	Metal Interaction	Ligand Interaction	0.322696	disorder	0.0	6	BRCA2_HUMAN
-P52701	F882F	None	None	Core	Core	Core	0.659855833333	disorder	0.0	6	MSH6_HUMAN
-P52701	T1219T	None	None	Core	Double Interaction: Protein and Ligand far	Ligand Interaction	0.540915642857	disorder	0.0	5	MSH6_HUMAN
