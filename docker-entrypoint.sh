@@ -4,22 +4,51 @@
 
 set -euo pipefail
 
-echo "*** Container configuration starting for $HOSTNAME ***"
+# Get the default StructMAn database name from the source file stored under /usr/structman_library/sources/StructMAn_db/
+if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql | wc -l) == 1 ]]; then
+    for sql_file in /usr/structman_library/sources/StructMAn_db/*.sql; do
+        STRUCTMAN_DB=$(basename $sql_file | cut -d "." -f 1)
+    done
+elif [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql | wc -l) == 0 ]]; then
+    echo "===>    There does not seem to be any default StructMAn database file in the source directory (/usr/structman_library/sources/StructMAn_db/). Aborting the container setup!    <==="
+    exit 1
+fi
+
+echo "***** Container configuration starting for the host $HOSTNAME *****"
 
 # Remove old configuration files and make the new ones and change the file/folder permissions/ownership
 configure_mysql() {
     rm -rf /etc/mysql/my.cnf &>/dev/null
     rm -rf /etc/mysql/mysql.conf.d/mysqld.cnf &>/dev/null
-    mkdir -p /var/lib/mysql /var/run/mysqld &>/dev/null
-    chown -R mysql:mysql /var/lib/mysql /var/run/mysqld /var/log/mysql &>/dev/null
-    chmod 766 /var/run/mysqld &>/dev/null
+    
+    # Setup the MySQL data directory
+    mkdir -p /var/lib/mysql
+    chmod -R 0777 /var/lib/mysql
+    chown -R mysql:mysql /var/lib/mysql
 
-    echo -e "# Include the configuration files from these directories
+    # Setup the MySQL run directory
+    mkdir -p /var/run/mysqld
+    chmod -R 0777 /var/run/mysqld
+    chown -R mysql:mysql /var/run/mysqld
+    rm -rf var/run/mysqld/mysqld.sock.lock
+
+    # Setup the MySQL log directory
+    mkdir -p /var/log/mysql
+    chmod -R 0777 /var/log/mysql
+
+    # Remove debian system's maintenance password
+    sed 's/password = .*/password = /g' -i /etc/mysql/debian.cnf
+
+    # Configure MySQL server
+    if [[ ! -f /etc/mysql/my_structman.cnf ]]; then
+        echo -e "# Include the configuration files from these directories
 !includedir /etc/mysql/conf.d/
 !includedir /etc/mysql/mysql_custom_conf.d/
-!includedir /etc/mysql/mysql.conf.d/" > /etc/mysql/my.cnf
+!includedir /etc/mysql/mysql.conf.d/" > /etc/mysql/my_structman.cnf
+    fi
 
-    echo -e "# MySQL Server configuration
+    if [[ ! -f /etc/mysql/mysql.conf.d/structman_mysqld.cnf ]]; then
+        echo -e "# MySQL Server configuration
 [mysqld_safe]
 socket=/var/run/mysqld/mysqld.sock
 nice=0
@@ -48,44 +77,77 @@ socket=/var/run/mysqld/mysqld.sock
 
 [mysql]
 default-character-set=utf8
-socket=/var/run/mysqld/mysqld.sock" > /etc/mysql/mysql.conf.d/mysqld.cnf
+socket=/var/run/mysqld/mysqld.sock" > /etc/mysql/mysql.conf.d/structman_mysqld.cnf
 
-    echo "MySQL server configuration is done"
+    fi
+    echo "===>	MySQL server configuration is done	<==="
 }
 
-# Create and configure new MySQL user and StructMAn database
-configure_mysql_user_and_database() {
-    # Change mysql root user's password
-    mysqld_safe &
-    sleep 5
-    mysql --user=root << EOF
-CREATE DATABASE IF NOT EXISTS $MYSQL_STRUCTMAN_DATABASE CHARACTER SET utf8 COLLATE utf8_general_ci;
-CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@localhost IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD"; GRANT ALL ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@localhost;
+# Initialize MySQL and ceate a new MySQL user for the application
+initialize_mysql_and_create_users() {
+    # Initialize MySQL data directory
+    if [[ ! -d /var/lib/mysql/mysql ]]; then
+        echo "===>    Initializing MySQL database server!	<==="
+        mysqld --initialize-insecure --user=mysql > /dev/null 2>&1 &
+        sleep 5
+
+        # Start mysql server
+        service mysql start > /dev/null 2>&1 &
+        sleep 5
+
+        # Create a debian-sys-maint user and a StructMAn db user
+        echo "===>    Creating a debian system maintenance user and a MySQL StructMAn user  <==="
+        mysql --user=root << EOF
+CREATE USER IF NOT EXISTS 'debian-sys-maint'@'localhost' IDENTIFIED BY '';
+GRANT ALL PRIVILEGES on *.* TO 'debian-sys-maint'@'localhost' IDENTIFIED BY '' WITH GRANT OPTION;
+
+CREATE USER IF NOT EXISTS "$MYSQL_STRUCTMAN_USER_NAME"@'localhost' IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD";
+GRANT ALL PRIVILEGES ON *.* TO "$MYSQL_STRUCTMAN_USER_NAME"@'localhost' IDENTIFIED BY "$MYSQL_STRUCTMAN_USER_PASSWORD" WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 EOF
 
-    mysql --user=root << EOF
-USE $MYSQL_STRUCTMAN_DATABASE;
-SOURCE /usr/structman_library/sources/StructMAn_db/struct_man_db.sql;
-EOF
+        echo "===>    MySQL user $MYSQL_STRUCTMAN_USER_NAME has been created with the password $MYSQL_STRUCTMAN_USER_PASSWORD    <==="
+    fi
+}
 
-    # Shutdown mysqld
-    mysqladmin shutdown
-	
-	echo "Created MySQL user 'structman' and database 'structman' and its password is set to 'structman_rocks'"
+
+# Create a default database and import the default StructMAn SQL file if not exists
+configure_database() {
+    if [[ ! -d /var/lib/mysql/$STRUCTMAN_DB ]]; then
+        mysql --user=root < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB.sql
+
+        if [[ $? == 0 ]]; then
+            echo "===>    MySQL StructMAn default database has been created and imported successfully!    <==="
+        else
+            echo "===>    MySQL StructMAn default database could not be created or imported. Aborting the container setup!   <==="
+            exit 1
+        fi
+
+        #Shutdown MySQL server
+         service mysql stop &>/dev/null
+
+         echo "===>    Container cleanup in progress!    <==="
+         killall mysql &>/dev/null
+    fi
+}
+
+# Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
+configure_structman() {
+    if [[ -f /usr/structman_library/sources/StructMAn/structman.py ]]; then
+        if [[ ! -e /usr/local/bin/structman.py ]]; then
+            ln -s /usr/structman_library/sources/StructMAn/structman.py /usr/local/bin/
+        fi
+    else
+            echo "===>    structman.py script could not be found!    <==="
+    fi
 }
 
 # Initializing MySQL server configuration
 configure_mysql
-configure_mysql_user_and_database
+initialize_mysql_and_create_users
+configure_database
+configure_structman
 
-# Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
-if [[ -f /usr/structman_library/sources/StructMAn_dev/structman.py ]]; then
-	ln -s /usr/structman_library/sources/StructMAn_dev/structman.py /usr/local/bin/
-else
-	echo "structman.py script could not be found!"
-fi
-
-echo "*** Container configuration done, starting  $@ on $HOSTNAME ***"
+echo "***** Container setup and configuration done, starting  $@ on $HOSTNAME *****"
 
 exec "$@"

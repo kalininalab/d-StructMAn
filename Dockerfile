@@ -15,7 +15,6 @@ LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
 # Install and update the required dependencies for StructMAn
 RUN apt-get update \
 && DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server \
-apt-utils \
 curl \
 vim \
 less \
@@ -25,7 +24,9 @@ openbabel \
 dssp \
 ncbi-blast+ \
 python-mysqldb \
-mysql-client
+mysql-client && \
+rm -rf /var/lib/apt/lists/* && \
+rm -rf /var/lib/mysql
 
 RUN pip install numpy biopython matplotlib multiprocess
 
@@ -36,16 +37,11 @@ ADD ./structman_source /usr/structman_library/sources/
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Default volumes to organize all the files under one roof (some of them are bind mounted into the container)
-VOLUME ["/structman/input_data/"]
-VOLUME ["/structman/results/"]
-VOLUME ["/structman/mysql_data_backup/"]
-VOLUME ["/var/log/mysql/"]
-VOLUME ["/var/lib/mysql/"]
-VOLUME ["/etc/mysql/mysql_custom_conf.d/"]
+# Default volumes to organize all the files under one roof and to allow backup
+VOLUME ["/structman/input_data/", "/structman/results/", "/var/lib/mysql/", "/etc/mysql/mysql_custom_conf.d/"]
 
 # Ports
-EXPOSE 3306
+EXPOSE 3306/tcp
 
 # Initialization and setup
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

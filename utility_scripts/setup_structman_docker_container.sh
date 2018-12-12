@@ -46,11 +46,10 @@ fi
 
 # Creates the default folder structure
 if [[ -d "$path" ]] ; then
-        mkdir -p $path/$directory_name/{mysql_lib,mysql_logs,structman/{input_data,results,mysql_data_backup,mysql_custom_conf.d}}
+        mkdir -p $path/$directory_name/{structman/{input_data,results,mysql_custom_conf.d}}
 fi
 
 # Setup the default selinux context exclusively for the above created sub-directories
-chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/mysql_logs"
 chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/structman"
 
 # Creates a default docker-compose file
@@ -67,14 +66,9 @@ services:
             - NET_ADMIN
             - NET_RAW
         volumes:
-            - ./structman/input_data/:/structman/input_data/:Z
-            - ./structman/results/:/structman/results/:Z
-            - ./structman/mysql_data_backup/:/structman/mysql_data_backup/:Z
-            - ./structman/custom_conf.d/:/etc/mysql/mysql_custom_conf.d/:Z
-            - ./mysql_logs/:/var/log/mysql/:Z
-            - ./mysql_lib/:/var/lib/mysql/:Z
+            - ./structman/input_data/:/structman/input_data/
+            - ./structman/results/:/structman/results/
+            - ./structman/custom_conf.d/:/etc/mysql/mysql_custom_conf.d/
         environment:
-            MYSQL_STRUCTMAN_DATABASE: \"structman\"
             MYSQL_STRUCTMAN_USER_NAME: \"structman\"
             MYSQL_STRUCTMAN_USER_PASSWORD: \"structman_rocks\"
-            MYSQL_FREQUENT_DATABASE_DUMPS: \"true\" " > $path/$directory_name/docker-compose.yml
