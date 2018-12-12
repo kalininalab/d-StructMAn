@@ -1,7 +1,7 @@
 db_adress=localhost
 db_user_name=structman
 db_password=structman_rocks
-db_name=structman
+db_name=struct_man_db_1
 
 blast_path=
 dssp_path=mkdssp
