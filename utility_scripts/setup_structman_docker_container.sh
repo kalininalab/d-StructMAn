@@ -71,4 +71,4 @@ services:
             - ./structman/custom_conf.d/:/etc/mysql/mysql_custom_conf.d/
         environment:
             MYSQL_STRUCTMAN_USER_NAME: \"structman\"
-            MYSQL_STRUCTMAN_USER_PASSWORD: \"structman_rocks\"
+            MYSQL_STRUCTMAN_USER_PASSWORD: \"structman_rocks\" " > $path/$directory_name/docker-compose.yml
