@@ -46,7 +46,7 @@ fi
 
 # Creates the default folder structure
 if [[ -d "$path" ]] ; then
-        mkdir -p $path/$directory_name/{structman/{input_data,results,mysql_custom_conf.d}}
+        mkdir -p $path/$directory_name/structman/{input_data,results,mysql_custom_conf.d}
 fi
 
 # Setup the default selinux context exclusively for the above created sub-directories
