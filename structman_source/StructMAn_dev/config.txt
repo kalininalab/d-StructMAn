@@ -5,17 +5,7 @@ db_name=structman
 
 blast_path=
 dssp_path=mkdssp
-pdb=/TL/sin/nobackup/pdb
-rin_db_path=/TL/sin/work/RINbase
 
-do_genesort=False
-do_pathdiff=False
-do_pathway=False
-do_godiff=False
-do_anno=False
-do_goterm=False
 tanimoto_cutoff=0.5
 
-error_annotations_into_db=True
-anno_session_mapping=True
-calculate_interaction_profiles=True
+resources=auto
