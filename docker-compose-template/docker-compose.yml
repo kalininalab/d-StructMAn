@@ -1,7 +1,7 @@
 version: '2'
 services:
     structman_db:
-        image: structman-debian
+        image: docker.io/sanjaysrikakulam/structman
         restart: unless-stopped
         container_name: StructMAn
         hostname: structman
@@ -11,9 +11,11 @@ services:
             - NET_ADMIN
             - NET_RAW
         volumes:
-            - ./structman/input_data/:/structman/input_data/
-            - ./structman/results/:/structman/results/
-            - ./structman/custom_conf.d/:/etc/mysql/custom_conf.d/
+            - ./structman/input_data/:/structman/input_data/:Z
+            - ./structman/results/:/structman/results/:Z
+            - ./structman/custom_conf.d/:/etc/mysql/mysql_custom_conf.d/:Z
+            - ./mysql_lib/:/var/lib/mysql/:Z
+            - ./mysql_logs/:/var/log/mysql/:Z
         environment:
             MYSQL_STRUCTMAN_USER_NAME: "structman"
             MYSQL_STRUCTMAN_USER_PASSWORD: "structman_rocks"

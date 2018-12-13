@@ -38,11 +38,12 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Default volumes to organize all the files under one roof and to allow backup
-VOLUME ["/structman/input_data/", "/structman/results/", "/var/lib/mysql/", "/etc/mysql/mysql_custom_conf.d/"]
+VOLUME ["/structman/input_data/", "/structman/results/", "/structman/mysql_data_backup/", "/var/log/mysql/", "/var/lib/mysql/", "/etc/mysql/mysql_custom_conf.d/"]
 
 # Ports
 EXPOSE 3306/tcp
 
 # Initialization and setup
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["mysqld_safe"]
+
+CMD ["mysqld"]
