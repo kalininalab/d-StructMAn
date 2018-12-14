@@ -21,7 +21,7 @@ fi
 configure_structman() {
     if [[ -f /usr/structman_library/sources/StructMAn/structman.py ]]; then
         if [[ ! -e /usr/local/bin/structman.py ]]; then
-            ln -s /usr/structman_library/sources/StructMAn/structman.py /usr/local/bin/
+            ln -s /usr/structman_library/sources/StructMAn/* /usr/local/bin/
         fi
     else
         echo "===>    **structman.py** script could not be found. Aborting the container setup!    <==="
