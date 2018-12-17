@@ -70,6 +70,25 @@ def ToSmlf(vcf_file,fasta):
                         nucleic = False
             """
 
+    stop_codons = set(['TAA','TAG','TGA'])
+    rev_stop_codons = set(['TTA','CTA','TCA'])
+
+    inverse = {'A':'T','T':'A','G':'C','C':'G'}
+
+    for g in gene_seq_map:
+        seq = gene_seq_map[g]
+        #print seq
+        if seq[0:3] in rev_stop_codons and seq[-3:] not in stop_codons:
+            seq = seq[::-1]
+            inv_seq = ''
+            
+            for nuc in list(seq):
+                inv_seq = '%s%s' % (inv_seq,inverse[nuc]) 
+            gene_seq_map[g] = inv_seq
+            #print g
+
+    #sys.exit()
+
     f = open(vcf_file,'r')
     lines = f.readlines()
     f.close()

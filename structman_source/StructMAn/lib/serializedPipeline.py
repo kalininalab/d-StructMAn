@@ -384,14 +384,14 @@ def buildQueue(filename,junksize,mrna_fasta=None):
                 aachange = words[1].replace("\n","")
                 if not sp_id.count(':') == 1:
 
-                    if ord(aachange[0]) > 47 and ord(aachange[0]) < 58:
+                    if ord(aachange[0]) > 47 and ord(aachange[0]) < 58: #if first char is a number
                         aa1 = 'X'
                         aachange = "X%s" % aachange
                     else:
                         aa1 = aachange[0]
 
 
-                    if ord(aachange[-1]) > 47 and ord(aachange[-1]) < 58:
+                    if ord(aachange[-1]) > 47 and ord(aachange[-1]) < 58: #if last char is a number
                         aa2 = aachange[0]
                         pos = int(aachange[1:])
                         aachange = "%s%s" % (aachange,aa2)

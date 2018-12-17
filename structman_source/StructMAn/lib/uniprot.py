@@ -341,6 +341,9 @@ def getSequencesPlain(u_acs,db,cursor):
         t2 = time.time()
         print "getSequences Part 2: ",str(t2-t1)
 
+    else:
+        t2 = time.time()
+
     missing_set = set()
 
     for u_ac in u_acs:

@@ -593,6 +593,7 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
         for aac in aaclist:
             aac_base = aac[:-1]
             pos = aac_base[1:]
+            aa2 = aac[-1]
             mut_id = update_map[gene_id][pos]
             if not mut_id in mut_new_aa_map:
                 mut_new_aa_map[mut_id] = set()
@@ -601,9 +602,9 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
                 mut_new_aa_map[mut_id].add(aac[-1])
             if gene in tag_map:
                 if aac in tag_map[gene]:
-                    tag_update_map[mut_id] = tag_map[gene][aac]
+                    tag_update_map[(mut_id,aa2)] = tag_map[gene][aac]
             else:
-                tag_update_map[mut_id] = None
+                tag_update_map[(mut_id,aa2)] = None
             if gene in gene_mut_map_new and aac_base in gene_mut_map_new[gene]:
                 if not gene in gene_mut_map_new_id:
                     gene_mut_map_new_id[gene] = (gene_id,{aac_base:mut_id})
@@ -626,10 +627,11 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
 
     #print mut_new_aa_map
     for mut_id in mut_new_aa_map:
-        if tag_update_map[mut_id] == None:
-            value_strs.append("('%s','%s','%s',NULL)" % (str(database_session),str(mut_id),','.join(mut_new_aa_map[mut_id])))
-        else:
-            value_strs.append("('%s','%s','%s','%s')" % (str(database_session),str(mut_id),','.join(mut_new_aa_map[mut_id]),tag_update_map[mut_id]))
+        for new_aa in mut_new_aa_map[mut_id]:
+            if tag_update_map[(mut_id,new_aa)] == None:
+                value_strs.append("('%s','%s','%s',NULL)" % (str(database_session),str(mut_id),new_aa))
+            else:
+                value_strs.append("('%s','%s','%s','%s')" % (str(database_session),str(mut_id),new_aa,tag_update_map[(mut_id,new_aa)]))
 
     #print value_strs
 
@@ -2527,7 +2529,10 @@ def getChemicalDistance(aac):
     #print aac
     try:
         if aac.count(',') < 1:
-            chemical_distance = chem_dist_matrix[aac[0]][aac[-1]]
+            aa1 = aac[0]
+            aa2 = aac[-1]
+            
+            chemical_distance = chem_dist_matrix[aa1][aa2]
         else:
             aa1 = aac[0]
             aa2s = aac.split(",")
@@ -2537,6 +2542,7 @@ def getChemicalDistance(aac):
                 chem_dists.append(chem_dist_matrix[aa1][aa2])
             chemical_distance = float(sum(chem_dists))/float(len(chem_dists))
     except:
+        #print aac
         return None
     return chemical_distance
 
@@ -3021,7 +3027,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
     interfiles = []
     for option in options_map:
         residue_dict = options_map[option]
-        min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter)
+        min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=ligand_filter)
         t11 = time.time()
         print "Time for mindistout part 11: ",t11-t10
 
@@ -3674,7 +3680,7 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,mutat
         if best_res_iaa != None:
             best_res = best_res_iaa
 
-        class_dict[m] = mut_class,conf,weighted_sc,best_res,amount_of_structures
+        class_dict[m] = mut_class,conf,weighted_sc,conf_sc,best_res,amount_of_structures
         t4 += time.time()
 
     print 'createClassDict part 1: ',t1-t0
@@ -3693,9 +3699,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,mutat
         if not glob:
             mut_class = 'Disorder'
             conf = iupred
-            weighted_sc = None
+            weighted_sc = 'Surface'
+            conf_sc = iupred
             best_res = None
-            class_dict[m] = mut_class,conf,weighted_sc,best_res,0
+            class_dict[m] = mut_class,conf,weighted_sc,conf_sc,best_res,0
     t5 = time.time()
 
     print 'createClassDict part 5: ',t5-t41
@@ -3761,7 +3768,7 @@ def writeInterFile(outfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,t
         #(u_ac,u_id,species) = g_u_dict[mutation_dict[m][1]]
         (u_ac,gpan,u_id,error_code,error,species,gene_score) = gene_score_dict[gene_id]
 
-        Class,conf,weighted_sc,best_res,amount_of_structures = class_dict[m]
+        Class,conf,weighted_sc,conf_sc,best_res,amount_of_structures = class_dict[m]
         simple_class = simplifyClass(Class,weighted_sc)
 
         if m in inter_dict:
@@ -3786,7 +3793,7 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
         else:
             mv_sec_ass = None
 
-        Class,conf,weighted_sc,best_res,amount_of_structures = class_dict[m]
+        Class,conf,weighted_sc,conf_sc,best_res,amount_of_structures = class_dict[m]
         simple_class = simplifyClass(Class,weighted_sc)
 
         if best_res != None:
