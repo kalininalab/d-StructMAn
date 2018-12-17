@@ -46,23 +46,25 @@ Where:
 
 ```
 └── docker-compose.yml
+└── mysql_lib
 └── mysql_logs
 └── structman
     ├── input_data
     ├── results
-    ├── mysql_data_backup
     └── mysql_custom_conf.d
 ```
 ## Directory setup
 
 - **docker-compose.yml:** This compose file contains default setup and configuration for your StructMAn instance to run successfully
-- **mysql_logs:** This is where MySQL will write its error log
+- **mysql_lib:** MySQL will use this folder as its data directory
+- **mysql_logs:** MySQL will use this folder to store error logs
 - **structman:** This is where we organize all the files, so that we can keep them under one roof
-- **input_data:** A user has to upload their input files in this directory
+- **input_data:** A user has to upload their input files into this directory
 - **reuslts:** StructMAn by default will write all the generated output to this directory
-- **mysql_data_backup:** If this ENV "MYSQL_FREQUENT_DATABASE_DUMPS" in docker-compose.yml file is set to "true" then a cron job will be initiated to make MySQL structman database dumps frequently as a backup to this directory
 - **mysql_custom_conf.d:** Before starting the container, a user can add any additional MySQL server configuration, if it wasn't already implemented/enabled
-- **NOTE: All these volumes are bind mounted and for more information on [bind mounts](https://docs.docker.com/storage/bind-mounts/)**
+- **NOTE 1: All these volumes are bind mounted and for more information on [bind mounts](https://docs.docker.com/storage/bind-mounts/)**
+- **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
+
 
 ## Docker Compose
 
@@ -72,14 +74,34 @@ Where:
 ```bash
 # docker-compose up -d
 ```
-
-## Useful docker commands
-
+# How to access the structman tool running in the container
 * To list the running docker containers
  
  ```bash
  # docker ps
 ```
+
+* Type 1: To run StructMAn from within the running container
+
+ ```bash
+ # docker exec -it <container_name> /bin/bash
+```
+*This will allow you to access the shell of the running container*
+
+* Accessing the StructMAn application
+
+ ```bash
+ # structman.py -i </structman/input_data/<input_file_name>> -o </structman/results/> 
+```
+
+* Type 2: To access StructMAn from your localhost itself
+
+ ```bash
+ # docker exec -it StructMAn structman.py -i </structman/input_data/<input_file_name>> -o </structman/results/>
+```
+*This command will run the application (StructMAn) inside the container from your localhost*
+
+## Useful docker commands
 
 * To start a container
 
@@ -132,25 +154,25 @@ Where:
 * To simply remove an image
 
 ```bash
- # docker rmi <image_name or image_id>
+# docker rmi <image_name or image_id>
 ```
 
 * To list all exited containers
 
 ```bash
- # docker ps -a -f status=exited
+# docker ps -a -f status=exited
 ```
 
 * To remove all exited containers
 
 ```bash
- # docker rm $(docker ps -a -f status=exited -q)
+# docker rm $(docker ps -a -f status=exited -q)
 ```
 
 * To remove a single container
 
 ```bash
- # docker rm <container_name>
+# docker rm <container_name>
 ```
 
 # For issues
