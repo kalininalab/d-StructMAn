@@ -652,10 +652,15 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
                 pdb_dict[gene] = stored_genes[gene]
 
         t0 = time.time()
-        db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
-        cursor_uniprot = db_uniprot.cursor()
+        try:
+            db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
+            cursor_uniprot = db_uniprot.cursor()
+        except:
+            db_uniprot = None
+            cursor_uniprot = None
         gene_sequence_map,gene_info_map = uniprot.getSequences(new_genes,'%s/human_info_map.tab' % human_id_mapping_path,db_uniprot,cursor_uniprot,pdb_dict)
-        db_uniprot.close()
+        if db_uniprot != None:
+            db_uniprot.close()
         t1 = time.time()
         print "Time for getSequences Part 1: %s" % str(t1-t0)
 
