@@ -70,7 +70,7 @@ services:
         volumes:
             - ./structman/input_data/:/structman/input_data/:Z
             - ./structman/results/:/structman/results/:Z
-            - ./structman/custom_conf.d/:/etc/mysql/mysql_custom_conf.d/:Z
+            - ./structman/mysql_custom_conf.d/:/etc/mysql/mysql_custom_conf.d/:Z
             - ./mysql_lib/:/var/lib/mysql/:Z
             - ./mysql_logs/:/var/log/mysql/:Z
         environment:
