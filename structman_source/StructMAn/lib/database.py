@@ -1707,6 +1707,7 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
     for (pdb_id,chain) in structurelist:
         s_id = structure_id_map[(pdb_id,chain)]
         (resolution,oligos,interaction_partner) = structurelist[(pdb_id,chain)]
+        ligand_ids = set()
         for iap in interaction_partner:
             ia_type = iap[0]
             if ia_type == "Ligand":
@@ -1717,6 +1718,9 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
                     ligand_id = new_ligand_map[name]
                 else:
                     continue
+                if ligand_id in ligand_ids:
+                    continue
+                ligand_ids.add(ligand_id)
                 res = iap[2]
                 chain = iap[3]
                 value_strs.append("('%s','%s','%s','%s')" % (str(ligand_id),str(s_id),str(chain),str(res)))
