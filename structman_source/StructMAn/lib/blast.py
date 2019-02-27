@@ -4,7 +4,7 @@ import gzip
 import xml.etree.ElementTree as ET
 
 #called by serializedPipeline
-def blast(seq,name,blast_path,blast_db_path,nr,option_seq_thresh,option_ral_thresh,cwd = None):
+def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,cwd = None):
     FNULL = open(os.devnull, 'w')
     if cwd == None:
         cwd = os.getcwd()
@@ -103,14 +103,12 @@ def blast(seq,name,blast_path,blast_db_path,nr,option_seq_thresh,option_ral_thre
                     entries[(pdb_id,chain)]["Oligo"].update(oligos)
     #print entries
     structures = {}
-    #print option_seq_thresh
-    #print option_ral_thresh
     
     for (pdb_id,chain) in entries:
         #if pdb_id.count('_AU') == 1:
         #    print pdb_id
-        if not (float(entries[(pdb_id,chain)]["Seq_Id"]) < option_seq_thresh):
-            if not ((entries[(pdb_id,chain)]["Length"] < 50) and (entries[(pdb_id,chain)]["Coverage"] < option_ral_thresh)):
+        if not (float(entries[(pdb_id,chain)]["Seq_Id"]) < seq_thresh):
+            if not ((entries[(pdb_id,chain)]["Length"] < 50) and (entries[(pdb_id,chain)]["Coverage"] < cov_thresh)):
                 structures[(pdb_id,chain)] = entries[(pdb_id,chain)]
     #print structures
     #print "Reduction: ",len(entries),len(entry_list)

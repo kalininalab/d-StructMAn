@@ -21,8 +21,7 @@ import annovar
 
 
 #dev options:
-anno_anno_calculation = False
-full_anno_anno_calculation = False
+neighborhood_calculation = False
 error_annotations_into_db = True
 anno_session_mapping = True
 calculate_interaction_profiles=False
@@ -167,7 +166,7 @@ def parseConfig(config):
     global error_annotations_into_db
     global anno_session_mapping
     global mrna_fasta
-    global anno_anno_calculation
+    global neighborhood_calculation
     global calculate_interaction_profiles
     global pdb_input_asymetric_unit
     global resources
@@ -248,9 +247,9 @@ def parseConfig(config):
                     anno_session_mapping = False
             elif opt == 'mrna':
                 mrna_fasta = arg
-            elif opt == 'anno_anno_calculation':
+            elif opt == 'neighborhood_calculation':
                 if arg == 'True':
-                    anno_anno_calculation = True
+                    neighborhood_calculation = True
             elif opt == 'calculate_interaction_profiles':
                 if arg == 'True':
                     calculate_interaction_profiles = True
@@ -266,7 +265,7 @@ def parseConfig(config):
         proc_n = multiprocessing.cpu_count() -1
         if proc_n <= 0:
             proc_n = 1
-        print 'Using %s core(s)' % str(proc_n)
+
         blast_processes = proc_n
         alignment_processes = proc_n
         annotation_processes = proc_n
@@ -274,12 +273,13 @@ def parseConfig(config):
 
     if num_of_cores != None:
         proc_n = num_of_cores
-        print 'Using %s core(s)' % str(proc_n)
+        
         blast_processes = proc_n
         alignment_processes = proc_n
         annotation_processes = proc_n
         number_of_processes = proc_n
 
+    print 'Using %s core(s)' % str(proc_n)
 
 def sequenceScan(genes):
     global pdb_path
@@ -335,7 +335,6 @@ def sequenceScan(genes):
 def buildQueue(filename,junksize,mrna_fasta=None):
     global auto_scale_template_percentage
     global species
-    global anno_anno_calculation
     global human_id_mapping_path
     global db
     global cursor
@@ -543,8 +542,6 @@ def buildQueue(filename,junksize,mrna_fasta=None):
     #return [genes],ac_id_map #if this not commented, all genes are taken in one cycle
 
     if s > junksize:
-        if anno_anno_calculation:
-            print "CAUTION. Anno-Anno calculation may be wrong for large datasets (>%s Genes)" % str(junksize)
 
         n_of_batches = s/junksize
         if s%junksize != 0:
@@ -881,7 +878,7 @@ def paraBlast(process_queue_blast,out_queue,lock,i,err_queue):
             (gene,seq) = inp
             target_name = gene.replace("/","")
             #print  gene,seq
-            structures = blast.blast(seq,target_name,blast_path,blast_db_path,option_number_of_templates,option_seq_thresh,option_ral_thresh,cwd = "%s/%d" %(cwd,i))
+            structures = blast.blast(seq,target_name,blast_path,blast_db_path,nr=option_number_of_templates,seq_thresh=option_seq_thresh,cov_thresh=option_ral_thresh,cwd = "%s/%d" %(cwd,i))
             #print gene,structures
             #print "Blast",len(structures)
             structures = templateSelection.selectTemplates(structures,pdb_path)
@@ -914,7 +911,6 @@ def autoTemplateSelection(gene_sequence_map,new_genes):
     global blast_db_path
     global No_Errors
     global anno_session_mapping
-    global anno_anno_calculation
 
     t0 = time.time()
 
@@ -1003,6 +999,11 @@ def autoTemplateSelection(gene_sequence_map,new_genes):
 
     #print structure_map
 
+    #for gene in structure_map:
+    #    print gene
+    #    for tup in structure_map[gene]:
+    #        print tup,structure_map[gene][tup]
+
     return structure_map,gene_error_map
 
 def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map):
@@ -1076,8 +1077,7 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
             pos_res_map = {}
         #print u_ac
         for structure_id in gene_structure_alignment_map[gene_id]:
-            
-            pdb_id,chain = structure_id_map[structure_id]
+            structure_id_map[(pdb_id,chain)] = structure_id
             (target_seq,template_seq,coverage,seq_id) = gene_structure_alignment_map[gene_id][structure_id]
             #print structure_id,aaclist
             input_queue.put((aaclist,structure_id,pos_res_map,pdb_id,chain,target_seq,template_seq,gene_id))
@@ -1363,9 +1363,11 @@ def align(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
                 """
                 #print "before alignment"
                 #print wildtype_sequence,aaclist
+                #if pdb_id == '4JAN' and chain == 'I':
+                #    print template_page
                 (coverage,seq_id,sub_infos,alignment_pir,errors,times,aaclist,update_map) = globalAlignment.alignBioPython(gene,wildtype_sequence,pdb_id,template_page,chain,aaclist)
                 structure['Seq_Id'] = seq_id
-                structure['coverage'] = coverage
+                structure['Coverage'] = coverage
                 n = 0
                 for ti in times:
                     aligntimes[n] += ti
@@ -1402,10 +1404,14 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
     global option_chain_wf
     global cwd
     global session
-    global full_anno_anno_calculation
     global No_Errors
     global anno_session_mapping
     global error_annotations_into_db
+
+    global smiles_path
+    global inchi_path
+    global pdb_path
+
     #new structure of template_map: {Uniprot-Id:({template-id:new template},{template-id:stored-template},oligo_map)}
     #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
     #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
@@ -1414,6 +1420,14 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
     
     input_queue = manager.Queue()
 
+    #new structure for paralell annotation: give each annotation process a pdb and dict of chain and structure information,
+    #all chains without structure information shall go into the database as fully annotated structures, which are not aligned (yet)
+    #these are unmapped chains, or protein interaction partners, their presence in the database is necesary for the computation of the structural neighborhood
+    #a new structure-structure entry has to be created and has to be inserted into the database before the residue insertion
+    #homooligomer information is not present for such cases, this information has to be updated, if the chain is mapped at a later iteration or run
+    pdb_structure_map = {}
+    size_sorted = {}
+    max_size = 0
 
     for gene in structure_map:
         structures = structure_map[gene]
@@ -1422,25 +1436,56 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
                 continue
             structure = structures[(pdb_id,chain)]
             s_id = structure_id_map[(pdb_id,chain)]
-            input_queue.put((pdb_id,chain,structure,s_id))
-            #print pdb_id,chain
+            if not pdb_id in pdb_structure_map:
+                pdb_structure_map[pdb_id] = {}
+                
+                size = 0
+                for iap in structure['IAP']:
+                    if iap[0] != 'Ligand':
+                        size += 1
+                if size > max_size:
+                    max_size = size
+                if not size in size_sorted:
+                    size_sorted[size] = []
+                size_sorted[size].append(pdb_id)
+            pdb_structure_map[pdb_id][chain] = (s_id,structure)
+
+    #print size_sorted
+
+    n_of_structs = 0
+    while max_size > 0:
+        if max_size in size_sorted:
+            for pdb_id in size_sorted[max_size]:
+                input_queue.put((pdb_id,pdb_structure_map[pdb_id]))
+                n_of_structs += 1
+        max_size -= 1
+
+    t01 = time.time()
+    print "Annotation Part 0.1: %s" % (str(t01-t0))
+    
 
     total_annotations = {}
-    min_anno_anno_dict = {}
+    interacting_structure_dict = {}
+
     out_queue = manager.Queue()
     error_queue = manager.Queue()
     err_queue = manager.Queue()
     processes = {}
+    if annotation_processes > n_of_structs:
+        annotation_processes = n_of_structs
     for i in range(1,annotation_processes + 1):
         try:
             os.stat("%s/%d" %(cwd,i))
         except:
             os.mkdir("%s/%d" %(cwd,i))
-        p = Process(target=annotate, args=(input_queue,out_queue,error_queue,lock,cwd,i,err_queue))
+        p = Process(target=annotate, args=(input_queue,out_queue,error_queue,lock,cwd,i,err_queue,t01,i))
         processes[i] = p
         p.start()
     for i in processes:
         processes[i].join()
+
+    t02 = time.time()
+    print "Annotation Part 0.2: %s" % (str(t02-t01))
 
     err_queue.put(None)
     while True:
@@ -1455,7 +1500,7 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         No_Errors = False
 
     t1 = time.time()
-    print "Annotation Part 1: %s" % (str(t1-t0))
+    print "Annotation Part 1: %s" % (str(t1-t02))
     
     with lock:
         out_queue.put(None)
@@ -1464,57 +1509,26 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         out = out_queue.get()
         if out == None:
             break
-        (annotations,anno_anno_dict,s_id) = out
+        (annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict) = out
         #print len(annotations)
-        total_annotations[s_id] = annotations
-        #save only the minimal distance between two mutations
-        if not full_anno_anno_calculation:
-            for (template_id,template_id_2,aac_base,aac_base_2) in anno_anno_dict:
-                (min_d,(atom,atom2),chain,chain_2) = anno_anno_dict[(template_id,template_id_2,aac_base,aac_base_2)]
-                pdb_id = annotations[template_id][0]
-                pdb_id_2 = annotations[template_id_2][0]
-                if not aac_base in template_mutation_map[pdb_id][1][template_id]:
-                    continue
-                if not aac_base_2 in template_mutation_map[pdb_id_2][1][template_id_2]:
-                    continue
-                mut_id = template_mutation_map[pdb_id][1][template_id][aac_base]
-                mut_id_2 = template_mutation_map[pdb_id_2][1][template_id_2][aac_base_2]
-                if int(mut_id) < int(mut_id_2):
-                    if not (mut_id,mut_id_2) in min_anno_anno_dict:
-                        min_anno_anno_dict[(mut_id,mut_id_2)] = (template_id,template_id_2,min_d,atom,atom2,chain,chain_2)
-                    elif min_d < min_anno_anno_dict[(mut_id,mut_id_2)][2]:
-                        min_anno_anno_dict[(mut_id,mut_id_2)] = (template_id,template_id_2,min_d,atom,atom2,chain,chain_2)
-                else:
-                    if not (mut_id_2,mut_id) in min_anno_anno_dict:
-                        min_anno_anno_dict[(mut_id_2,mut_id)] = (template_id_2,template_id,min_d,atom,atom2,chain_2,chain)
-                    elif min_d < min_anno_anno_dict[(mut_id_2,mut_id)][2]:
-                        min_anno_anno_dict[(mut_id_2,mut_id)] = (template_id_2,template_id,min_d,atom,atom2,chain_2,chain)
-        #or save all distances found in all strucutures
-        else:
-            for (template_id,template_id_2,aac_base,aac_base_2) in anno_anno_dict:
-                (min_d,(atom,atom2),chain,chain_2) = anno_anno_dict[(template_id,template_id_2,aac_base,aac_base_2)]
-                pdb_id = annotations[template_id][0]
-                pdb_id_2 = annotations[template_id_2][0]
-                if not aac_base in template_mutation_map[pdb_id][1][template_id]:
-                    continue
-                if not aac_base_2 in template_mutation_map[pdb_id_2][1][template_id_2]:
-                    continue
-                mut_id = template_mutation_map[pdb_id][1][template_id][aac_base]
-                mut_id_2 = template_mutation_map[pdb_id_2][1][template_id_2][aac_base_2]
-                if int(mut_id) < int(mut_id_2):
-                    if not (mut_id,mut_id_2) in min_anno_anno_dict:
-                        min_anno_anno_dict[(mut_id,mut_id_2)] = [(template_id,template_id_2,min_d,atom,atom2,chain,chain_2)]
-                    else:
-                        min_anno_anno_dict[(mut_id,mut_id_2)].append((template_id,template_id_2,min_d,atom,atom2,chain,chain_2))
-                else:
-                    if not (mut_id_2,mut_id) in min_anno_anno_dict:
-                        min_anno_anno_dict[(mut_id_2,mut_id)] = [(template_id_2,template_id,min_d,atom,atom2,chain_2,chain)]
-                    else:
-                        min_anno_anno_dict[(mut_id_2,mut_id)].append((template_id_2,template_id,min_d,atom,atom2,chain_2,chain))
+
+        for chain in interacting_chain_map:
+            interacting_structure_dict[(pdb_id,chain)] = interacting_chain_map[chain]
+        
+        for chain in annotation_chain_dict:
+            annotations = annotation_chain_dict[chain]
+
+            total_annotations[(pdb_id,chain)] = annotations,residue_residue_dict[chain]
+            
+
+    t11 = time.time()
+    print 'Annotation Part 1.1: %s' % (str(t11-t1))
+    interacting_structure_ids = database.insertInteractingChains(interacting_structure_dict,db,cursor,smiles_path,inchi_path,pdb_path)
+
 
     t2  = time.time()
-    print "Annotation Part 2: %s" % (str(t2-t1))
-    structure_residue_map = database.insertResidues(total_annotations,min_anno_anno_dict,db,cursor,full_anno_anno_calculation=full_anno_anno_calculation)
+    print "Annotation Part 2: %s" % (str(t2-t11))
+    structure_residue_map = database.insertResidues(total_annotations,db,cursor,structure_id_map,interacting_structure_ids)
     #print structure_residue_map
 
     t3  = time.time()
@@ -1528,9 +1542,9 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
 
     print "Annotation Part 4: %s" % (str(t4-t3))
 
-def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
+def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue,t01,i):
     global compute_surface
-    global anno_anno_calculation
+    global neighborhood_calculation
     global calculate_interaction_profiles
     global dssp
     global dssp_path
@@ -1542,13 +1556,16 @@ def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
     while True:
         inp = input_queue.get()
         if inp == None:
+            #t02 = time.time()
+            #print "Annotation Process %s: %s" % (str(i),str(t02-t01))
             return
         #print inp
-        (pdb_id,chain,structure,s_id) = inp
+        (pdb_id,chain_structure_map) = inp
+        #print 'Proc %s - annotate: %s' % (str(i),pdb_id)
         try:
-            annotations,anno_anno_dict,errorlist = templateFiltering.structuralAnalysis(pdb_id,chain,s_id,structure,pdb_path,dssp_path,rin_db_path,anno_anno=anno_anno_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
+            annotation_chain_dict,interacting_chain_map,residue_residue_dict,errorlist = templateFiltering.structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
             with lock:
-                out_queue.put((annotations,anno_anno_dict,s_id))
+                out_queue.put((annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict))
                 if len(errorlist) > 0:
                     for (error,e,f,g) in errorlist:
                         err_queue.put((error,f,g,pdb_id))

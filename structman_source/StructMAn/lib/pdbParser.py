@@ -664,7 +664,13 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
                             chain_type = 'Peptide'
                             chain_type_map[chain_id] = chain_type
                 elif record_name == "ATOM" and chain_type_map[chain_id] == 'Peptide':
-                    chain_type_map[chain_id] = 'Protein'
+                    if len(res_name) == 1:
+                        chain_type = "RNA"
+                    elif len(res_name) == 2:
+                        chain_type = "DNA"
+                    elif len(res_name) == 3:
+                        chain_type = "Protein"
+                    chain_type_map[chain_id] = chain_type
 
                 if record_name == "HETATM":
                     if res_name not in threeToOne and not boring(res_name): #modified residue are not parsed as ligands
@@ -718,16 +724,17 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
 
     pep_not_lig = sorted(pep_not_lig,reverse=True)
 
-    """
-    if pep_not_lig != []:
-        print pdb_id,chain
-        print chain_type_map
-        print structure
-        print pep_not_lig
-    """
-
     for i in pep_not_lig:
         del structure['IAP'][i]
+
+    irregular_homo_chains = [] #Happens for repeated chains in asymetric units, which do not occur in the biological assembly
+    for i,homo_chain in enumerate(structure['Oligo']):
+        if not homo_chain in chain_type_map:
+            irregular_homo_chains.append(i)
+
+    irregular_homo_chains = sorted(irregular_homo_chains,reverse=True)
+    for i in irregular_homo_chains:
+        del structure['Oligo'][i]
 
     t2 = time.time()
     
@@ -736,6 +743,7 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
     t3 = time.time()
     times = [t1-t0,t2-t1,t3-t2]
     #print(template)
+
     return template_page,structure,None,times
     
 #called by database
@@ -859,10 +867,11 @@ def getChains(line):
     return chain_ids
 
 #called by templateSelection
-def getInfo(pdb_id,target_chain,pdb_path):
+#called by templateFiltering
+def getInfo(pdb_id,pdb_path):
     page = getHeader(pdb_id,pdb_path)
     if page == "":
-        return None
+        return None,{}
     #print(pdb_id)
     lines = page.split("\n")
     abort = False
@@ -870,7 +879,10 @@ def getInfo(pdb_id,target_chain,pdb_path):
 
     not_crystal = False
 
-    
+    homomer_dict = {}
+
+    multiple_chain_line = False
+
     for line in lines:
         if abort:
             break
@@ -878,6 +890,21 @@ def getInfo(pdb_id,target_chain,pdb_path):
         #    print line
         words = line.split()
         if len(words) > 0:
+
+            if words[0] == 'COMPND':
+                #print line
+                
+                if line[11:16] == 'CHAIN' or multiple_chain_line:
+                    if line.count(';') == 0:
+                        multiple_chain_line = True
+                    else:
+                        multiple_chain_line = False
+                    chains = line[10:].replace('CHAIN:','').replace(' ','').replace(';','').split(',')
+                    #print chains
+                    for chain in chains:
+                        homomer_dict[chain] = chains
+                    
+
             #Filter out NMR-structures, if you decide to use them in future, remember Recoord
             if words[0] == "EXPDTA":
                 if words[2] == "NMR":
@@ -937,7 +964,7 @@ def getInfo(pdb_id,target_chain,pdb_path):
         resolution = float(resolution)
     except:
         raise NameError("Resolution buggy for: %s" % pdb_id)
-    return resolution
+    return resolution,homomer_dict
 
 def colorStructure(pdb_id,chain,outfile,db,cursor,pdb_path):
     colors = {"Surface" : ' 10.00','Core' : ' 90.00','Contact Ligand' : ' 70.00','Contact Protein' : ' 50.00','Contact DNA' : ' 30.00', 'Contact RNA' : ' 40.00'}

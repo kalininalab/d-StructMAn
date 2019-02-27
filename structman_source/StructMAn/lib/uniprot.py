@@ -123,28 +123,88 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                 [e,f,g] = sys.exc_info()
                 raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
 
+            ref_u_ac_map = {} #different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
+            gene_id_snap = set(genes.keys()) #snapshot of u_acs not originating from refseq-mapping
+
             for row in results:
                 u_ac = row[0]
                 ref = row[1]
-                if not u_ac in genes:
-                    genes[u_ac] = ['',set([ref]),np_map[ref]]
-                    if ref in tag_map:
-                        new_tag_map[u_ac] = tag_map[ref]
 
-                    if ref in species_map:
-                        new_species_map[u_ac] = species_map[ref]
-                else:
-                    genes[u_ac][1].add(ref)
-                    genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
-
-                    if ref in tag_map:
-                        if u_ac in new_tag_map:
-                            new_tag_map[u_ac].update(tag_map[ref])
-                        else:
+                if (not ref in ref_u_ac_map):
+                    ref_u_ac_map[ref] = u_ac
+                    if not u_ac in genes:
+                        genes[u_ac] = ['',set([ref]),np_map[ref]]
+                        if ref in tag_map:
                             new_tag_map[u_ac] = tag_map[ref]
 
-                    if ref in species_map:
-                        new_species_map[u_ac] = species_map[ref]
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+                    else:
+                        genes[u_ac][1].add(ref)
+                        genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                        if ref in tag_map:
+                            if u_ac in new_tag_map:
+                                new_tag_map[u_ac].update(tag_map[ref])
+                            else:
+                                new_tag_map[u_ac] = tag_map[ref]
+
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+                elif u_ac in gene_id_snap:
+                    if ref_u_ac_map[ref].count('-') == 0 and u_ac.count('-') > 0:
+                        ref_u_ac_map[ref] = u_ac
+                    if not u_ac in genes:
+                        genes[u_ac] = ['',set([ref]),np_map[ref]]
+                        if ref in tag_map:
+                            new_tag_map[u_ac] = tag_map[ref]
+
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+                    else:
+                        genes[u_ac][1].add(ref)
+                        genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                        if ref in tag_map:
+                            if u_ac in new_tag_map:
+                                new_tag_map[u_ac].update(tag_map[ref])
+                            else:
+                                new_tag_map[u_ac] = tag_map[ref]
+
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+
+                elif ref_u_ac_map[ref].count('-') == 0:
+                    if u_ac.count('-') > 0:
+                        #if the current u_ac does not contain a '-' and the new found u_ac contains a '-': replace the corresponding ids
+                        old_ac = ref_u_ac_map[ref]
+                        ref_u_ac_map[ref] = u_ac
+                        del genes[old_ac]
+                        if ref in tag_map:
+                            del new_tag_map[old_ac]
+                        if ref in species_map:
+                            del new_species_map[old_ac]
+
+                        if not u_ac in genes:
+                            genes[u_ac] = ['',set([ref]),np_map[ref]]
+                            if ref in tag_map:
+                                new_tag_map[u_ac] = tag_map[ref]
+
+                            if ref in species_map:
+                                new_species_map[u_ac] = species_map[ref]
+                        else:
+                            genes[u_ac][1].add(ref)
+                            genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                            if ref in tag_map:
+                                if u_ac in new_tag_map:
+                                    new_tag_map[u_ac].update(tag_map[ref])
+                                else:
+                                    new_tag_map[u_ac] = tag_map[ref]
+
+                            if ref in species_map:
+                                new_species_map[u_ac] = species_map[ref]
+
 
         else:
             np_ac_map = getUniprotIds(np_map.keys(),'P_REFSEQ_AC',target_type="ACC")
@@ -328,7 +388,7 @@ def getSequencesPlain(u_acs,db,cursor):
             raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
 
         t1 = time.time()
-        print "getSequences Part 1: ",str(t1-t0)
+        #print "getSequences Part 1: ",str(t1-t0)
 
         
         for row in results:
@@ -339,7 +399,7 @@ def getSequencesPlain(u_acs,db,cursor):
             gene_sequence_map[u_ac] = seq
 
         t2 = time.time()
-        print "getSequences Part 2: ",str(t2-t1)
+        #print "getSequences Part 2: ",str(t2-t1)
 
     else:
         t2 = time.time()
@@ -352,7 +412,7 @@ def getSequencesPlain(u_acs,db,cursor):
             #print u_ac
 
     t3 = time.time()
-    print "getSequences Part 3: ",str(t3-t2)
+    #print "getSequences Part 3: ",str(t3-t2)
 
     #print len(missing_set)
     #sys.exit()
@@ -361,7 +421,7 @@ def getSequencesPlain(u_acs,db,cursor):
         gene_sequence_map[u_ac] = seq
 
     t4 = time.time()
-    print "getSequences Part 4: ",str(t4-t3)
+    #print "getSequences Part 4: ",str(t4-t3)
 
     return gene_sequence_map
 

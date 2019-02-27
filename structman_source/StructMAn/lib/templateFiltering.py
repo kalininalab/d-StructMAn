@@ -171,6 +171,11 @@ def parsePDB(input_page):
     modres_map = {}
     res_contig_map = {}
     contig_help_map = {}
+
+    chain_type_map = {}
+
+    box_map = {}
+
     ligands = set()
 
     for line in lines:
@@ -199,7 +204,31 @@ def parsePDB(input_page):
                 chain_id = line[21]
                 res_nr = line[22:27].replace(" ","") #[22:27] includes the insertion_code
                 #insertion_code = line[26]
-                
+            
+            if record_name == "ATOM" or record_name == 'MODRES' or record_name == "HETATM":
+                if chain_id not in chain_type_map:
+                    if record_name == "ATOM":
+                        if len(res_name) == 1:
+                            chain_type = "RNA"
+                        elif len(res_name) == 2:
+                            chain_type = "DNA"
+                        elif len(res_name) == 3:
+                            chain_type = "Protein"
+                        chain_type_map[chain_id] = chain_type
+                        
+                    elif record_name == 'HETATM':
+                        if res_name in pdb.threeToOne or not pdb.boring(res_name):#For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in threeToOne, which are hopefully some kind of anormal amino acids
+                            chain_type = 'Peptide'
+                            chain_type_map[chain_id] = chain_type
+                elif record_name == "ATOM" and chain_type_map[chain_id] == 'Peptide':
+                    if len(res_name) == 1:
+                        chain_type = "RNA"
+                    elif len(res_name) == 2:
+                        chain_type = "DNA"
+                    elif len(res_name) == 3:
+                        chain_type = "Protein"
+                    chain_type_map[chain_id] = chain_type
+
             if record_name == "ATOM":
                 if len(line) > 50 and not atom_name[0] in ('H','D'):
                     x = float(line[30:38].replace(" ",""))
@@ -207,9 +236,23 @@ def parsePDB(input_page):
                     z = float(line[46:54].replace(" ",""))
                     if not chain_id in coordinate_map:
                         coordinate_map[chain_id] = [{},{}]
+                        box_map[chain_id] = [x,x,y,y,z,z]
                     if res_nr not in coordinate_map[chain_id][0]:
                         coordinate_map[chain_id][0][res_nr] = [res_name,{}]
                     coordinate_map[chain_id][0][res_nr][1][atom_nr] = (atom_name,x,y,z)
+
+                    if x < box_map[chain_id][0]:
+                        box_map[chain_id][0] = x
+                    if x > box_map[chain_id][1]:
+                        box_map[chain_id][1] = x
+                    if y < box_map[chain_id][2]:
+                        box_map[chain_id][2] = y
+                    if y > box_map[chain_id][3]:
+                        box_map[chain_id][3] = y
+                    if z < box_map[chain_id][4]:
+                        box_map[chain_id][4] = z
+                    if z > box_map[chain_id][1]:
+                        box_map[chain_id][4] = z
 
                     if not chain_id in siss_map:
                         siss_map[chain_id] = {}
@@ -231,6 +274,7 @@ def parsePDB(input_page):
                     z = float(line[46:54].replace(" ",""))
                     if not chain_id in coordinate_map:
                         coordinate_map[chain_id] = [{},{}]
+                        box_map[chain_id] = [x,x,y,y,z,z]
                     
                     if (chain_id,res_nr) in modres_map or res_name in pdb.threeToOne: #If it is modified residue, than add it to the normal residues...
                         if atom_name[0] in ('H','D'):
@@ -238,6 +282,19 @@ def parsePDB(input_page):
                         if res_nr not in coordinate_map[chain_id][0]:
                             coordinate_map[chain_id][0][res_nr] = [res_name,{}]
                         coordinate_map[chain_id][0][res_nr][1][atom_nr] = (atom_name,x,y,z)
+
+                        if x < box_map[chain_id][0]:
+                            box_map[chain_id][0] = x
+                        if x > box_map[chain_id][1]:
+                            box_map[chain_id][1] = x
+                        if y < box_map[chain_id][2]:
+                            box_map[chain_id][2] = y
+                        if y > box_map[chain_id][3]:
+                            box_map[chain_id][3] = y
+                        if z < box_map[chain_id][4]:
+                            box_map[chain_id][4] = z
+                        if z > box_map[chain_id][1]:
+                            box_map[chain_id][4] = z
 
                         if pdb.threeToOne[res_name][0] in pdb.oneToThree:
                             siss_het_res_name = pdb.oneToThree[pdb.threeToOne[res_name][0]]
@@ -261,32 +318,42 @@ def parsePDB(input_page):
                         coordinate_map[chain_id][1][res_nr][1][atom_nr] = (atom_name,x,y,z)
                         ligands.add((chain_id,res_nr))
                         
-    return coordinate_map,siss_map,res_contig_map,ligands
+    return coordinate_map,siss_map,res_contig_map,ligands,box_map,chain_type_map
 
 def dist(coord1,coord2):
     diff = [coord1[0]-coord2[0],coord1[1]-coord2[1],coord1[2]-coord2[2]]
     d = math.sqrt(diff[0]**2.0+diff[1]**2.0+diff[2]**2.0)
     return d
 
-def getMinSubDist(c_map,target_res_id,res_chain,chain):
-    atomlist = c_map[res_chain][0][target_res_id][1]
-    test_coord = atomlist.values()[0][1:]
+def getMinSubDist(c_map,fuzzy_dist_matrix,target_res_id,res_chain,chain,distance_threshold=10.0):
 
-    top10 = []
+    top20 = []
+    top = 20
     for res in c_map[chain][0]:
-        test_coord_2 = c_map[chain][0][res][1].values()[0][1:]
-        d = dist(test_coord,test_coord_2)
-        if len(top10) < 9:
-            top10.append((res,d))
-        elif len(top10) == 9:
-            top10.append((res,d))
-            top10 = sorted(top10,key = lambda x:x[1])
-        elif d < top10[9][1]:
-            top10[9] = (res,d)
-            top10 = sorted(top10,key = lambda x:x[1])
+        if chain == res_chain and res == target_res_id:
+            continue
+        if (res_chain,chain,target_res_id,res) in fuzzy_dist_matrix:
+            d = fuzzy_dist_matrix[(res_chain,chain,target_res_id,res)]
+        else:
+            center_dist = fuzzy_dist_matrix[(res_chain,chain)]
+            return center_dist,'None','None','None',{}
+
+        if len(top20) < top:
+            top20.append((res,d))
+        elif len(top20) == top:
+            top20.append((res,d))
+            top20 = sorted(top20,key = lambda x:x[1])
+        elif d < top20[top][1]:
+            top20[top] = (res,d)
+            top20 = sorted(top20,key = lambda x:x[1])
 
     min_sub_d = None
-    for (res,d) in top10:
+    min_res = None
+    min_atom_sub = None
+    min_atom_chain = None
+    atomlist = c_map[res_chain][0][target_res_id][1]
+    inside_sphere = {}
+    for (res,d) in top20:
         for atomnr in c_map[chain][0][res][1]:
             #exclude Hydrogens
             if c_map[chain][0][res][1][atomnr][0][0] != 'H':
@@ -295,13 +362,53 @@ def getMinSubDist(c_map,target_res_id,res_chain,chain):
                     if atomlist[atomnr2][0][0] != 'H':
                         coord2 = atomlist[atomnr2][1:]
                         d = dist(coord1,coord2)
+                        if d < 1.2:
+                            continue
+                        if d < distance_threshold:
+                            if not res in inside_sphere:
+                                inside_sphere[res] = d
+                            elif d < inside_sphere[res]:
+                                inside_sphere[res] = d
                         if min_sub_d == None or d < min_sub_d:
                             min_sub_d = d
                             min_res = res
                             min_atom_sub = atomnr2
                             min_atom_chain = atomnr
 
-    return min_sub_d,min_res,min_atom_sub,min_atom_chain
+    return min_sub_d,min_res,min_atom_sub,min_atom_chain,inside_sphere
+
+def box_check(box_1,box_2,distance_threshold=5.0):
+    [min_x_1,max_x_1,min_y_1,max_y_1,min_z_1,max_z_1] = box_1
+    [min_x_2,max_x_2,min_y_2,max_y_2,min_z_2,max_z_2] = box_2
+
+    center_1 = [(min_x_1 + max_x_1)/2.,(min_y_1 + max_y_1)/2.,(min_z_1 + max_z_1)/2.]
+    center_2 = [(min_x_2 + max_x_2)/2.,(min_y_2 + max_y_2)/2.,(min_z_2 + max_z_2)/2.]
+
+    center_dist = dist(center_1,center_2)
+
+    if center_dist < (max(max_x_1-min_x_1,max_y_1-min_y_1,max_z_1-min_z_1)/2.)+(max(max_x_2-min_x_2,max_y_2-min_y_2,max_z_2-min_z_2)/2.)+distance_threshold:
+        return True,center_dist
+    else:
+        return False,center_dist
+
+def calcFuzzyDM(coordinate_map,box_map):
+    #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}
+    fuzzy_dm = {}
+    for chain in coordinate_map:
+        for chain_2 in coordinate_map:
+            neighbors,center_dist = box_check(box_map[chain],box_map[chain_2])
+            if not neighbors:
+                fuzzy_dm[(chain,chain_2)] = center_dist
+                #print chain,chain_2
+                continue
+
+            for res in coordinate_map[chain][0]:
+                test_coord = coordinate_map[chain][0][res][1].values()[0][1:]
+                for res_2 in coordinate_map[chain_2][0]:
+                    test_coord_2 = coordinate_map[chain_2][0][res_2][1].values()[0][1:]
+                    d = dist(test_coord,test_coord_2)
+                    fuzzy_dm[(chain,chain_2,res,res_2)] = d
+    return fuzzy_dm
 
 #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}
 def getMinDist(c_map,res,chain,res2,chain2,het=0,het2=0):
@@ -327,29 +434,41 @@ def getMinDist(c_map,res,chain,res2,chain2,het=0,het2=0):
     return min_d,min_atom,min_atom2
 
 #called by serializedPipeline
-def structuralAnalysis(pdb_id,target_chain,s_id,structure,pdb_path,dssp_path,rin_db_path,anno_anno=False,dssp=True,calculate_interaction_profiles=True):
+def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=False,dssp=True,calculate_interaction_profiles=True,distance_threshold=5.0):
     #print pdb_id,sub_info_map
 
     page = pdb.standardParsePDB(pdb_id,pdb_path)
+    resolution,homomer_dict = pdb.getInfo(pdb_id,pdb_path)
 
     if page == '':
         print "Error while parsing: ",pdb_id
         return {},{},[]
 
-    coordinate_map,siss_coord_map,res_contig_map,ligands = parsePDB(page)
-
-    target_residues = res_contig_map[target_chain].keys()
-
-    #print(coordinate_map)
-    #print(siss_coord_map)
-    #print(res_contig_map)
-    #print(ligands)
-
+    coordinate_map,siss_coord_map,res_contig_map,ligands,box_map,chain_type_map = parsePDB(page)
+    #print pdb_id
+    fuzzy_dist_matrix = calcFuzzyDM(coordinate_map,box_map)
     errorlist = []
+    annotations = {}
+
+    example_structure = chain_structure_map[chain_structure_map.keys()[0]][1]
+
+    for t_chain in homomer_dict:#Happens for repeated chains in asymetric units, which do not occur in the biological assembly
+        irregular_homo_chains = []
+        for i,homo_chain in enumerate(homomer_dict[t_chain]):
+            if not homo_chain in chain_type_map:
+                irregular_homo_chains.append(i)
+
+        irregular_homo_chains = sorted(irregular_homo_chains,reverse=True)
+        for i in irregular_homo_chains:
+            del homomer_dict[t_chain][i]
+
+    interacting_chain_map = {}
+
+    residue_residue_dict = {}
 
     if dssp:
         #write temp pdb file
-        tmp_path = 'tmp_%s_%s.pdb' % (pdb_id,target_chain)
+        tmp_path = 'tmp_%s.pdb' % (pdb_id)
         f = open(tmp_path,'w')
         f.write(page)
         f.close()
@@ -365,178 +484,156 @@ def structuralAnalysis(pdb_id,target_chain,s_id,structure,pdb_path,dssp_path,rin
         if dssp_dict == {}:
             dssp = False
 
-    #t_m_amount = 0
-
-    #if not dssp:
-    #surface-calculation with SISI
-
-    #siss_coord_map: {Chain:{String:[String,{String:(String,float,float,float)}]}} ; Maps residue-id on residue name and atom map. atom map maps atom-id on atom name and atomic coordinates.
-    try:
-        centroid_map = siss.calcCentroidMap(siss_coord_map[target_chain],target_residues,False)
-
-        dist_matrix = siss.calcDistMatrix(siss_coord_map[target_chain],centroid_map,target_residues,False)
-
-        siss_map = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues,False)
-    except:
-        [e,f,g] = sys.exc_info()
-        g = traceback.format_exc(g)
-        errorlist.append(("Siss error: %s,%s\n" % (pdb_id,target_chain),e,f,g))
-
     profiles = {}
     error = None
     if calculate_interaction_profiles:
-        profiles,error = rin.lookup(pdb_id,None,target_chain,ligands,res_contig_map,rin_db_path)
+        profiles,error = rin.lookup(pdb_id,None,None,ligands,res_contig_map,rin_db_path)
     if error != None:
         errorlist.append((error,'','',''))
 
-    annotation_dict = {}
+    for target_chain in res_contig_map:
+        if chain_type_map[target_chain] != 'Protein':
+            continue
+        
 
-    oligos = structure['Oligo']
-    #anno_amount = 0
-    
-    for target_res_id in res_contig_map[target_chain]:
-        three_letter = res_contig_map[target_chain][target_res_id][1]
-        if three_letter in pdb.threeToOne:
-            if pdb.threeToOne[three_letter][0] in pdb.oneToThree:
-                one_letter = pdb.threeToOne[three_letter][0]
+        if target_chain in chain_structure_map:
+            s_id,structure = chain_structure_map[target_chain]
+            #print structure
+            oligos = structure['Oligo']
+        else:
+            if target_chain in homomer_dict:
+                oligos = homomer_dict[target_chain]
+            else:
+                oligos = target_chain
+            interacting_chain_map[target_chain] = (resolution,example_structure['IAP'],oligos)
+
+        target_residues = res_contig_map[target_chain].keys()
+
+        #if not dssp:
+        #surface-calculation with SISI
+
+        #siss_coord_map: {Chain:{String:[String,{String:(String,float,float,float)}]}} ; Maps residue-id on residue name and atom map. atom map maps atom-id on atom name and atomic coordinates.
+        try:
+            centroid_map = siss.calcCentroidMap(siss_coord_map[target_chain],target_residues,False)
+
+            dist_matrix = siss.calcDistMatrix(siss_coord_map[target_chain],centroid_map,target_residues,False)
+
+            siss_map = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues,False)
+        except:
+            [e,f,g] = sys.exc_info()
+            g = traceback.format_exc(g)
+            errorlist.append(("Siss error: %s,%s\n" % (pdb_id,target_chain),e,f,g))
+
+        
+
+        annotation_dict = {}
+
+        
+        #anno_amount = 0
+        residue_residue_dict[target_chain] = {}
+        for target_res_id in res_contig_map[target_chain]:
+
+            residue_residue_dict[target_chain][target_res_id] = {}
+            three_letter = res_contig_map[target_chain][target_res_id][1]
+            if three_letter in pdb.threeToOne:
+                if pdb.threeToOne[three_letter][0] in pdb.oneToThree:
+                    one_letter = pdb.threeToOne[three_letter][0]
+                else:
+                    one_letter = 'X'
             else:
                 one_letter = 'X'
-        else:
-            one_letter = 'X'
-        min_dists = {}
-        min_chain_dists = {}
-        #Distance Calculations
-        for chain in coordinate_map:
-            #Sub - Chain - Calculations
-            if chain != target_chain and len(coordinate_map[chain][0]) > 0:
-                min_chain_dist,min_res,atom_sub,atom_chain = getMinSubDist(coordinate_map,target_res_id,target_chain,chain)
-                min_chain_dists[chain] = (min_chain_dist,(atom_chain,atom_sub),min_res)
-            #Sub - Lig - Calculations
-            for hetres in coordinate_map[chain][1]:
-                min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,hetres,chain,het2=1)
-                abr = coordinate_map[chain][1][hetres][0]
-                ligand_identifier = "%s_%s_%s" % (abr,hetres,chain)
-                min_dists[ligand_identifier] = (min_d,(atom,atom2))
-        
-        #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}    
-        #Homomer Sub - Sub Calculations:
-        homomer_map = {}
-        residue_type = coordinate_map[target_chain][0][target_res_id][0]
-        for homo_chain in oligos:
-            if homo_chain == target_chain:
-                continue
-            if not homo_chain in coordinate_map:
-                continue
-            if not target_res_id in coordinate_map[homo_chain][0]:
-                continue #Sanity Check - residue-id must be the same in the homo-chain
-            if coordinate_map[homo_chain][0][target_res_id][0] != residue_type:
-                continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
-            min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,target_res_id,homo_chain)                
-            homomer_map[homo_chain] = (min_d,atom,atom2)        
+            min_dists = {}
+            min_chain_dists = {}
+            #Distance Calculations
+            for chain in coordinate_map:
 
-        
-        if dssp:
-            if target_chain in dssp_dict:
-                if target_res_id in dssp_dict[target_chain]:
-                    (raac,ssa) = dssp_dict[target_chain][target_res_id]
+                #Sub - Chain - Calculations
+                if chain != target_chain and len(coordinate_map[chain][0]) > 0:
+                    min_chain_dist,min_res,atom_sub,atom_chain,inside_sphere = getMinSubDist(coordinate_map,fuzzy_dist_matrix,target_res_id,target_chain,chain,distance_threshold=distance_threshold)
+                    min_chain_dists[chain] = (min_chain_dist,(atom_chain,atom_sub),min_res)
+                    if chain_type_map[chain] == 'Protein' and neighborhood_calculation: #Filter DNA and RNA chains
+                        residue_residue_dict[target_chain][target_res_id][chain] = inside_sphere
+
+
+                #Residue-Residue Calculations
+                elif chain == target_chain and len(coordinate_map[chain][0]) > 0 and neighborhood_calculation:
+                    if chain_type_map[chain] == 'Protein': #Filter DNA and RNA chains
+                        min_chain_dist,min_res,atom_sub,atom_chain,inside_sphere = getMinSubDist(coordinate_map,fuzzy_dist_matrix,target_res_id,target_chain,chain,distance_threshold=distance_threshold)
+                        residue_residue_dict[target_chain][target_res_id][chain] = inside_sphere
+
+                #Sub - Lig - Calculations
+                for hetres in coordinate_map[chain][1]:
+                    min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,hetres,chain,het2=1)
+                    abr = coordinate_map[chain][1][hetres][0]
+                    ligand_identifier = "%s_%s_%s" % (abr,hetres,chain)
+                    min_dists[ligand_identifier] = (min_d,(atom,atom2))
+            
+            #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}    
+            #Homomer Sub - Sub Calculations:
+            homomer_map = {}
+            residue_type = coordinate_map[target_chain][0][target_res_id][0]
+            for homo_chain in oligos:
+                if homo_chain == target_chain:
+                    continue
+                if not homo_chain in coordinate_map:
+                    continue
+                if not target_res_id in coordinate_map[homo_chain][0]:
+                    continue #Sanity Check - residue-id must be the same in the homo-chain
+                if coordinate_map[homo_chain][0][target_res_id][0] != residue_type:
+                    continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
+                min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,target_res_id,homo_chain)                
+                homomer_map[homo_chain] = min_d        
+
+            
+            if dssp:
+                if target_chain in dssp_dict:
+                    if target_res_id in dssp_dict[target_chain]:
+                        (raac,ssa) = dssp_dict[target_chain][target_res_id]
+                    else:
+                        #print(target_res_id)
+                        #print(siss_map)
+                        siss_value = None
+                        if target_res_id in siss_map:
+                            siss_value = siss_map[target_res_id]
+
+                        ssa = None 
+                        raac  = siss_value
                 else:
-                    #print(target_res_id)
-                    #print(siss_map)
-                    siss_value = None
+                    [e,f,g] = sys.exc_info()
+                    g = traceback.format_exc(g)
+                    errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
+                    dssp = False
                     if target_res_id in siss_map:
                         siss_value = siss_map[target_res_id]
-
+                    else:
+                        siss_value = None
                     ssa = None 
                     raac  = siss_value
             else:
-                [e,f,g] = sys.exc_info()
-                g = traceback.format_exc(g)
-                errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
-                dssp = False
+                siss_value = None
                 if target_res_id in siss_map:
                     siss_value = siss_map[target_res_id]
-                else:
-                    siss_value = None
+                        
                 ssa = None 
                 raac  = siss_value
-        else:
-            siss_value = None
-            if target_res_id in siss_map:
-                siss_value = siss_map[target_res_id]
-                    
-            ssa = None 
-            raac  = siss_value
-        if (target_chain,target_res_id) in profiles:
-            profile = profiles[(target_chain,target_res_id)]
-        else:
-            profile = None
-        annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile)
-        #anno_amount += 1
+            if target_chain in profiles:
+                if target_res_id in profiles[target_chain]:
+                    profile,centrality_scores = profiles[target_chain][target_res_id]
+                else:
+                    profile = None
+                    centrality_scores = (None,None,None)
+            else:
+                profile = None
+                centrality_scores = (None,None,None)
+            annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile,centrality_scores)
 
-    
 
-    anno_anno_dict = {}
-    if anno_anno:
-        #compute the distances between all mutations for a whole structure
-        used_template_ids = set([])
-        for template_id in sub_info_map:
-            (sub_infos,target_chain,oligos) = sub_info_map[template_id]
-            if not target_chain in coordinate_map:
-                continue
-            for template_id_2 in sub_info_map:
-                if template_id_2 in used_template_ids:
-                    continue
-                
-                (sub_infos_2,target_chain_2,oligos_2) = sub_info_map[template_id_2]
-                if not target_chain_2 in coordinate_map:
-                    continue
-                for aac_base in sub_infos:
-
-                    sub_info = sub_infos[aac_base]
-                    res = sub_info[0]
-                    residue_template = sub_info[1]
-                    if residue_template == '-' or not res in coordinate_map[target_chain][0]:
-                        continue
-
-                    for aac_base_2 in sub_infos_2:
-                        if template_id in stored_annotations and template_id_2 in stored_annotations:
-                            if aac_base in stored_annotations[template_id] and aac_base_2 in stored_annotations[template_id_2]:
-                                continue
-                        
-                        sub_info_2 = sub_infos_2[aac_base_2]
-                        res_2 = sub_info_2[0]
-                        residue_template_2 = sub_info_2[1]
-                        if residue_template_2 == '-' or not res_2 in coordinate_map[target_chain_2][0]:
-                            continue
-
-                        if target_chain == target_chain_2 and res == res_2:
-                            continue #No Calculations for the same annotation, this can be eventually be need in the future. If this is the case, just comment the clause.
-
-                        #search in homomer chains, if there is a homomer mutation with shorter distance
-                        min_min_d = None
-                        for homo_chain in oligos_2:
-                            if not homo_chain in coordinate_map:
-                                continue
-                            if not res_2 in coordinate_map[homo_chain][0]:
-                                continue #Sanity Check - residue-id must be the same in the homo-chain
-                            if coordinate_map[homo_chain][0][res_2][0] != coordinate_map[target_chain_2][0][res_2][0]:
-                                continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
-                            min_d,atom,atom2 = getMinDist(coordinate_map,res,target_chain,res_2,homo_chain)
-                            if min_min_d == None or min_d < min_min_d:
-                                min_min_d = min_d
-                                min_atom = atom
-                                min_atom2 = atom2
-                                min_chain = homo_chain
-                        if min_min_d != None:
-                            anno_anno_dict[(template_id,template_id_2,aac_base,aac_base_2)] = (min_min_d,(min_atom,min_atom2),target_chain,min_chain)
-                      
-
-        used_template_ids.add(template_id)
+        annotations[target_chain] = annotation_dict
 
     #print pdb_id,t_m_amount,anno_amount
 
     #print annotation_dict
-    return annotation_dict,anno_anno_dict,errorlist
+    return annotations,interacting_chain_map,residue_residue_dict,errorlist
 
 
 #Return True, if the template is not good

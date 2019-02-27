@@ -34,6 +34,10 @@ ligand_filter = None
 proteome = False
 intertable_conf=False
 
+resources = 'manu'
+num_of_cores = None
+proc_n = 48
+
 def makeViolins(violins,outfile,session_name,add=''):
     fs = 10  # fontsize
     plt.clf()
@@ -705,6 +709,8 @@ def config(config_path):
     global ligand_filter
     global proteome
     global intertable_conf
+    global resources
+    global proc_n
     
     f = open(config_path, "r")
     lines = f.read().split('\n')
@@ -784,11 +790,22 @@ def config(config_path):
             elif opt == 'intertable':
                 if arg == 'True':
                     intertable_conf = True
+            elif opt == 'resources':
+                resources = arg
+
+    if resources == 'auto' and num_of_cores == None:
+        proc_n = multiprocessing.cpu_count() -1
+        if proc_n <= 0:
+            proc_n = 1
+        
+
+    if num_of_cores != None:
+        proc_n = num_of_cores
+
 
 #called by structman
-def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_path='',overwrite=False,anno=False,intertable=False):
-    if config_path != '':
-        config(config_path)
+def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_path='',overwrite=False,anno=False,intertable=False,n_of_cores=1):
+    
     global go
     global godiff
     global classification
@@ -805,6 +822,12 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
     global distance_threshold
     global ligand_filter
     global proteome
+    global proc_n
+    global num_of_cores
+    num_of_cores = n_of_cores
+
+    if config_path != '':
+        config(config_path)
 
     global intertable_conf
     intertable = intertable or intertable_conf
@@ -826,7 +849,7 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
     t0 = time.time()
 
     if classification:
-        classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable)
+        classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable,processes=proc_n)
         t01 = time.time()
         for classfile in classfiles:
             classDistributionFromFile(classfile,output_path,session_name)

@@ -44,6 +44,38 @@ def getIAmap(interaction_score_file):
 
     return IAmap
 
+def getCentMap(centrality_file):
+    
+    f = gzip.open(centrality_file,'r')
+    lines = f.read().split('\n')
+    f.close()
+
+    centrality_map = {}
+
+    for line in lines[1:]:
+        #A:9:_:TYR	1036.0	0.150079675503	0.829463570857
+        if line == '':
+            continue
+        if line[0] == '#':
+            continue
+        if line.count('\t') == 0:
+            print centrality_file,line
+            continue
+        raw_score = float(line.split('\t')[1])
+        score = float(line.split('\t')[2])
+        norm_score = float(line.split('\t')[3])
+        res = line.split('\t')[0]
+        
+        [chain,res_nr,insertioncode,res_name] = res.split(':')
+        res_nr = "%s%s" % (res_nr,insertioncode.replace('_',''))
+
+        if not chain in centrality_map:
+            centrality_map[chain] = {}
+        
+        centrality_map[chain][res_nr] = (raw_score,score,norm_score)
+
+    return centrality_map
+
 def getProfile(interaction_map,residue,ligands,res_contig_map):
     profile = {'ligand':[0,0.0],'interchain':[0,0.0],'neighbor':[0,0.0],'short':[0,0.0],'long':[0,0.0]}
     (chain,res) = residue
@@ -80,7 +112,7 @@ def getProfile(interaction_map,residue,ligands,res_contig_map):
     return profile
 
 #called by templateFiltering
-def lookup(pdb_id,residues,chain,ligands,res_contig_map,base_path):
+def lookup(pdb_id,residues,chains,ligands,res_contig_map,base_path):
     pdb_id = pdb_id.replace('_AU','').lower()
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
 
@@ -89,28 +121,40 @@ def lookup(pdb_id,residues,chain,ligands,res_contig_map,base_path):
     interaction_count_file = "%s/%s_nrint.ea.gz" % (folder_path,pdb_id)
     residue_file = "%s/%s_res.txt.gz" % (folder_path,pdb_id)
 
+    centrality_file = "%s/%s_btw_cent.txt.gz" % (folder_path,pdb_id)
+
     if not os.path.isfile(interaction_score_file):
         error = "Did not find RIN: %s" % folder_path
         return {},error
 
     interaction_map = getIAmap(interaction_score_file)
-
-    profile_map = {}
-    if residues != None:
-        for residue in residues:
-            profile = getProfile(interaction_map,residue,ligands,res_contig_map)
-            if profile == None:
-                print pdb_id,residue
-                continue
-            profile_map[residue] = profile
-        return profile_map,None
+    if os.path.isfile(centrality_file):
+        centrality_map = getCentMap(centrality_file)
     else:
-        for res_nr in res_contig_map[chain]:
-            profile = getProfile(interaction_map,(chain,res_nr),ligands,res_contig_map)
+        centrality_map = {}
+
+    profiles_map = {}
+    if chains == None:
+        chains = res_contig_map.keys()
+    for chain in chains:
+        profile_map = {}
+        if residues == None:
+            residues = res_contig_map[chain]
+        for res in residues:
+            if chain in centrality_map:
+                if res in centrality_map[chain]:
+                    centrality_score = centrality_map[chain][res]
+                else:
+                    centrality_score = (0.,0.,0.)
+            else:
+                centrality_score = (None,None,None)
+            profile = getProfile(interaction_map,(chain,res),ligands,res_contig_map)
             if profile == None:
-                print pdb_id,(chain,res_nr)
+                print pdb_id,res
                 continue
-            profile_map[(chain,res_nr)] = profile
-        return profile_map,None
+            profile_map[res] = profile,centrality_score
+        profiles_map[chain] = profile_map
+    return profiles_map,None
+
 
 

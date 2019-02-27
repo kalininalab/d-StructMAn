@@ -348,17 +348,21 @@ def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_
     n = 0
     tar_n = 0
     tem_n = 0
-    for char in target_aligned_sequence:
-        tem_char = template_aligned_sequence[n]
-        n += 1
-        if tem_char != '-':
-            tem_n += 1
-        if char != '-':
-            tar_n += 1
-            if tem_char == '-':
-                align_map[tar_n] = ((None,'-'),char)
-            else:
-                align_map[tar_n] = ((seq_res_map[tem_n-1],tem_char),char)
+    try:
+        for char in target_aligned_sequence:
+            tem_char = template_aligned_sequence[n]
+            n += 1
+            if tem_char != '-':
+                tem_n += 1
+            if char != '-':
+                tar_n += 1
+                if tem_char == '-':
+                    align_map[tar_n] = ((None,'-'),char)
+                else:
+                    align_map[tar_n] = ((seq_res_map[tem_n-1],tem_char),char)
+    except:
+        errors.append('Unknown alignment bug')
+        return sub_infos,errors,aaclist,{}
 
     update_map = {}
     for aac_base in aaclist:

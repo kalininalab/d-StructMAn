@@ -45,12 +45,18 @@ def selectTemplates(structures,pdb_path):
         return {}
     #print entries
     filtered_structures = {}
+    intermediate_results = {}
     for (pdb_id,chain) in structures:
-        resolution = pdb.getInfo(pdb_id,chain,pdb_path)
+        if pdb_id in intermediate_results:
+            resolution,homomer_dict = intermediate_results[pdb_id]
+        else:
+            resolution,homomer_dict = pdb.getInfo(pdb_id,pdb_path)
+            intermediate_results[pdb_id] = resolution,homomer_dict
         if resolution == None:
             continue
         filtered_structures[(pdb_id,chain)] = structures[(pdb_id,chain)]
         filtered_structures[(pdb_id,chain)]['Resolution'] = resolution
+        filtered_structures[(pdb_id,chain)]['Oligo'] = homomer_dict[chain]
 
     return filtered_structures
     
