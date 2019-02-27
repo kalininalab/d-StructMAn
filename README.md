@@ -101,6 +101,8 @@ Where:
 ```
 *This command will run the application (StructMAn) inside the container from your localhost*
 
+**NOTE: By default StructMAn will look for the input here </structman/input_data/> and stores the output here </structman/results/>. These paths are located inside the docker container and these folders are bind mounted to your localhost**
+
 ## Useful docker commands
 
 * To start a container
