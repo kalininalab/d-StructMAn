@@ -81,7 +81,7 @@ def main(db_name,db_adress,db_password,db_user_name,infiles,out_folder,main_file
 
 if __name__ == "__main__":
 
-    disclaimer = 'Usage: ./structman <-i input_file>\n\n\n##### Optional parameter: #####\n\n<-n threads> : Amount of used cores\n\n<-o output_folder> : Path to the output folder\n\n<-c config_file> : Path to the configuration file'
+    disclaimer = 'Usage: structman.py <-i input_file>\n\n\n##### Optional parameter: #####\n\n<-n threads> : Number of cores to be used\n\n<-o output_folder> : Path to the output folder\n\n<-c config_file> : Path to the configuration file'
 
     main_file_path = os.path.abspath(sys.argv[0])
 
@@ -121,12 +121,14 @@ if __name__ == "__main__":
             print 'Did not find the input path\n\n',disclaimer
             sys.exit(2)
         filelist = os.listdir(input_folder)
-        if filelist == []:
-            print 'Did not find any files inside the input folder\n\n',disclaimer
-            sys.exit(2)
+        
         infiles = []
         for infile in filelist:
-            infiles.append('%s/%s' % (input_folder,infile))
+            if infile.split('.')[-1] == 'smlf' or infile.split('.')[-1] == 'vcf':
+                infiles.append('%s/%s' % (input_folder,infile))
+        if infiles == []:
+            print 'Did not find any file inside the input folder\n\n',disclaimer
+            sys.exit(2)
 
     else:
         #make infile to global path
