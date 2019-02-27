@@ -25,6 +25,7 @@ neighborhood_calculation = False
 error_annotations_into_db = True
 anno_session_mapping = True
 calculate_interaction_profiles=False
+verbose = False
 
 resources = 'manu'
 num_of_cores = None
@@ -484,7 +485,8 @@ def buildQueue(filename,junksize,mrna_fasta=None):
     #print ac_map
 
     t1 = time.time()
-    print "buildQueue Part 1: ",str(t1-t0)
+    if verbose:
+        print "buildQueue Part 1: ",str(t1-t0)
 
     try:
         db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
@@ -497,7 +499,8 @@ def buildQueue(filename,junksize,mrna_fasta=None):
         db_uniprot.close()
 
     t2 = time.time()
-    print "buildQueue Part 2: ",str(t2-t1)
+    if verbose:
+        print "buildQueue Part 2: ",str(t2-t1)
 
     if mrna_fasta == None:
         for pdb_chain_tuple in pdb_map:
@@ -505,7 +508,8 @@ def buildQueue(filename,junksize,mrna_fasta=None):
 
 
     t3 = time.time()
-    print "buildQueue Part 3: ",str(t3-t2)
+    if verbose:
+        print "buildQueue Part 3: ",str(t3-t2)
 
     #detect human datasets and add some entries to the species map
     human_set = True
@@ -521,17 +525,19 @@ def buildQueue(filename,junksize,mrna_fasta=None):
         species = 'human'
     
     t4 = time.time()
-    print "buildQueue Part 4: ",str(t4-t3)
+    if verbose:
+        print "buildQueue Part 4: ",str(t4-t3)
 
     genes,corrected_input_pdbs = sequenceScan(genes)
 
     t5 = time.time()
-    print "buildQueue Part 5: ",str(t5-t4)
+    if verbose:
+        print "buildQueue Part 5: ",str(t5-t4)
 
     outlist = []
     #computation of auto_scale_template_percentage:
     s = len(genes)
-    print "Total genes: ",s
+    print "Total proteins: ",s
     if s > 0:
         auto_scale_template_percentage = 1-0.5**(math.log10(s)-2)
         if auto_scale_template_percentage < 0.0:
@@ -568,7 +574,8 @@ def buildQueue(filename,junksize,mrna_fasta=None):
         outlist.append(genes)
 
     t6 = time.time()
-    print "buildQueue Part 6: ",str(t6-t5)
+    if verbose:
+        print "buildQueue Part 6: ",str(t6-t5)
 
     return outlist,tag_map,species_map,fasta_map,corrected_input_pdbs
 
@@ -659,14 +666,17 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
         if db_uniprot != None:
             db_uniprot.close()
         t1 = time.time()
-        print "Time for getSequences Part 1: %s" % str(t1-t0)
+        if verbose:
+            print "Time for getSequences Part 1: %s" % str(t1-t0)
 
         pdb_sequence_map,pdb_pos_map = pdb.getSequences(pdb_dict,pdb_path,AU=pdb_input_asymetric_unit)
         t2 = time.time()
-        print "Time for getSequences Part 2: %s" % str(t2-t1)
+        if verbose:
+            print "Time for getSequences Part 2: %s" % str(t2-t1)
         gene_sequence_map.update(pdb_sequence_map)
         t3 = time.time()
-        print "Time for getSequences Part 3: %s" % str(t3-t2)
+        if verbose:
+            print "Time for getSequences Part 3: %s" % str(t3-t2)
         #print pdb_pos_map
         #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
         #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
@@ -708,13 +718,16 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
             stored_gene_new_pos[u_id] = (gene_id,new_aac_map)
 
         t4 = time.time()
-        print "Time for getSequences Part 4: %s" % str(t4-t3)
+        if verbose:
+            print "Time for getSequences Part 4: %s" % str(t4-t3)
         database.addGeneInfos(gene_info_map,db,cursor)
         t5 = time.time()
-        print "Time for getSequences Part 5: %s" % str(t5-t4)
+        if verbose:
+            print "Time for getSequences Part 5: %s" % str(t5-t4)
         gene_sequence_map = database.getSequences(stored_genes,gene_sequence_map,db,cursor)
         t6 = time.time()
-        print "Time for getSequences Part 6: %s" % str(t6-t5)
+        if verbose:
+            print "Time for getSequences Part 6: %s" % str(t6-t5)
     else:
         gene_sequence_map = {}
         for species in fasta_map:
@@ -807,13 +820,15 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
         #print iupred_map
 
         t1 = time.time()
-        print "Time for addIupred Part 1: %s" % str(t1-t0)
+        if verbose:
+            print "Time for addIupred Part 1: %s" % str(t1-t0)
         try:
             background_iu_process = database.addIupred(iupred_map,gene_mut_map_new,stored_gene_new_pos,IU_db)
         except:
             background_iu_process = None
         t2 = time.time()
-        print "Time for addIupred Part 2: %s" % str(t2-t1)
+        if verbose:
+            print "Time for addIupred Part 2: %s" % str(t2-t1)
 
     return gene_sequence_map,gene_mut_map_new,stored_gene_new_pos,{},background_iu_process
 
@@ -993,9 +1008,10 @@ def autoTemplateSelection(gene_sequence_map,new_genes):
 
         t3 += time.time()
 
-    print "Template Selection Part 1: %s" % (str(t1-t0))
-    print "Template Selection Part 2: %s" % (str(t2-t12))
-    print "Template Selection Part 3: %s" % (str(t3-t2))
+    if verbose:
+        print "Template Selection Part 1: %s" % (str(t1-t0))
+        print "Template Selection Part 2: %s" % (str(t2-t12))
+        print "Template Selection Part 3: %s" % (str(t3-t2))
 
     #print structure_map
 
@@ -1056,10 +1072,12 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
         n += 1
 
     t1 = time.time()
-    print "Alignment Part 1: %s" % (str(t1-t0))
+    if verbose:
+        print "Alignment Part 1: %s" % (str(t1-t0))
     gene_structure_alignment_map,structure_id_map = database.getAlignments(stored_genes,db,cursor)
     t2 = time.time()
-    print "Alignment Part 2: %s" % (str(t2-t1))
+    if verbose:
+        print "Alignment Part 2: %s" % (str(t2-t1))
 
     input_queue = manager.Queue()
     out_queue = manager.Queue()
@@ -1108,7 +1126,8 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
         #print mappings
 
     t3 = time.time()
-    print "Alignment Part 3: %s" % (str(t3-t2))
+    if verbose:
+        print "Alignment Part 3: %s" % (str(t3-t2))
 
     #print "before alignment"
 
@@ -1260,18 +1279,20 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
 
     t9 += time.time()
 
-    print "Amount of template-mutation pairs after alignment: ",template_sub_amount
+    if verbose:
+        print "Amount of template-mutation pairs after alignment: ",template_sub_amount
         
 
     #after_amount = 0
 
     #print "Template amounts, before and after: ",temp_amount,after_amount
-    print "Alignment Part 4: %s" % (str(t4-t31))
-    print "Alignment Part 5: %s" % (str(t5-t4))
-    print "Alignment Part 6: %s" % (str(t6-t5))
-    print "Alignment Part 7: %s" % (str(t7-t6))
-    print "Alignment Part 8: %s" % (str(t8-t7))
-    print "Alignment Part 9: %s" % (str(t9-t8))
+    if verbose:
+        print "Alignment Part 4: %s" % (str(t4-t31))
+        print "Alignment Part 5: %s" % (str(t5-t4))
+        print "Alignment Part 6: %s" % (str(t6-t5))
+        print "Alignment Part 7: %s" % (str(t7-t6))
+        print "Alignment Part 8: %s" % (str(t8-t7))
+        print "Alignment Part 9: %s" % (str(t9-t8))
 
     return structure_map,gene_template_alignment_map,structure_id_map
 
@@ -1461,7 +1482,8 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         max_size -= 1
 
     t01 = time.time()
-    print "Annotation Part 0.1: %s" % (str(t01-t0))
+    if verbose:
+        print "Annotation Part 0.1: %s" % (str(t01-t0))
     
 
     total_annotations = {}
@@ -1485,7 +1507,8 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         processes[i].join()
 
     t02 = time.time()
-    print "Annotation Part 0.2: %s" % (str(t02-t01))
+    if verbose:
+        print "Annotation Part 0.2: %s" % (str(t02-t01))
 
     err_queue.put(None)
     while True:
@@ -1500,7 +1523,8 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         No_Errors = False
 
     t1 = time.time()
-    print "Annotation Part 1: %s" % (str(t1-t02))
+    if verbose:
+        print "Annotation Part 1: %s" % (str(t1-t02))
     
     with lock:
         out_queue.put(None)
@@ -1522,25 +1546,29 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
             
 
     t11 = time.time()
-    print 'Annotation Part 1.1: %s' % (str(t11-t1))
+    if verbose:
+        print 'Annotation Part 1.1: %s' % (str(t11-t1))
     interacting_structure_ids = database.insertInteractingChains(interacting_structure_dict,db,cursor,smiles_path,inchi_path,pdb_path)
 
 
     t2  = time.time()
-    print "Annotation Part 2: %s" % (str(t2-t11))
+    if verbose:
+        print "Annotation Part 2: %s" % (str(t2-t11))
     structure_residue_map = database.insertResidues(total_annotations,db,cursor,structure_id_map,interacting_structure_ids)
     #print structure_residue_map
 
     t3  = time.time()
 
-    print "Annotation Part 3: %s" % (str(t3-t2))
+    if verbose:
+        print "Annotation Part 3: %s" % (str(t3-t2))
     #print gene_mut_map_new
     #print gene_template_alignment_map
     database.insertNewMappings(gene_mut_map_new,gene_template_alignment_map,structure_residue_map,structure_id_map,db,cursor)
 
     t4 = time.time()
 
-    print "Annotation Part 4: %s" % (str(t4-t3))
+    if verbose:
+        print "Annotation Part 4: %s" % (str(t4-t3))
 
 def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue,t01,i):
     global compute_surface
@@ -1628,15 +1656,18 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
 
     t01 = time.time()
 
-    print "Time for preparation before buildQueue: %s" % (str(t01-t0))
+    if verbose:
+        print "Time for preparation before buildQueue: %s" % (str(t01-t0))
 
     junksize = 500
 
-    print "Call buildQueue with junksize: %s and file: %s" % (str(junksize),nfname)
+    if verbose:
+        print "Call buildQueue with chunksize: %s and file: %s" % (str(junksize),nfname)
     gene_aaclist_map_list,tag_map,species_map,fasta_map,corrected_input_pdbs = buildQueue(nfname,junksize,mrna_fasta=mrna_fasta)
 
     t02 = time.time()
-    print "Time for buildQueue: %s" % (str(t02-t01))
+    if verbose:
+        print "Time for buildQueue: %s" % (str(t02-t01))
 
     #sys.exit()
 
@@ -1645,7 +1676,7 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
     #print species_map
     #print fasta_map
     
-    print "Number of junks: ",len(gene_aaclist_map_list)
+    print "Number of chunks: ",len(gene_aaclist_map_list)
 
     newsession = False
     if session == 0:     
@@ -1671,7 +1702,7 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #print "empty gene_aaclist_map"
             continue
 
-        print "Junk %s/%s" % (str(junk_nr),str(len(gene_aaclist_map_list)))
+        print "Chunk %s/%s" % (str(junk_nr),str(len(gene_aaclist_map_list)))
         junk_nr+=1
         try:
             os.stat("%s/tmp_structman_pipeline" %(output_path))
@@ -1691,7 +1722,8 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #print new_genes
 
             t2 = time.time()
-            print "Time for geneCheck: %s" % (str(t2-t1))
+            if verbose:
+                print "Time for geneCheck: %s" % (str(t2-t1))
 
             print "Before mutationCheck", len(stored_genes), len(new_genes)
             #check for already stored mutations or position twins and make all the necessary database interactions
@@ -1702,7 +1734,8 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #print gene_mut_map_new
 
             t3 = time.time()
-            print "Time for mutationCheck: %s" % (str(t3-t2))
+            if verbose:
+                print "Time for mutationCheck: %s" % (str(t3-t2))
 
             print "Before getSequences"
             #structure of gene_sequence_map: {Uniprot_Id:Sequence}
@@ -1711,7 +1744,8 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #print gene_mut_map_new
 
             t4 = time.time()
-            print "Time for getSequences: %s" % (str(t4-t3))
+            if verbose:
+                print "Time for getSequences: %s" % (str(t4-t3))
 
             print "Before autoTemplateSelection"
             #structure of template_map: {Uniprot-Id:(template-list,{template-id:stored-template},oligo_map)}
@@ -1720,21 +1754,24 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #print structure_map
 
             t5 = time.time()
-            print "Time for Template Selection: %s" % (str(t5-t4))
+            if verbose:
+                print "Time for Template Selection: %s" % (str(t5-t4))
 
             print "Before paraAlignment"
             #new structure of template_map: {Uniprot-Id:({template-id:new template},{template-id:stored-template},oligo_map)}
             structure_map,gene_template_alignment_map,structure_id_map = paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map)
 
             t6 = time.time()
-            print "Time for Alignment: %s" % (str(t6-t5))
+            if verbose:
+                print "Time for Alignment: %s" % (str(t6-t5))
 
             #structure of gene_template_alignment_map: {gene_id:{template_id:(coverage,seq_id,sub_infos,alignment_pir)}}
             print "Before paraAnnotate"
             paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,structure_id_map)
             
             t7 = time.time()
-            print "Time for Annotation: %s" % (str(t7-t6))
+            if verbose:
+                print "Time for Annotation: %s" % (str(t7-t6))
 
             t1 = time.time()
             #join the background inserts
@@ -1747,7 +1784,8 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
                 background_iu_process.join()
 
             t2 = time.time()
-            print 'Resttime for background inserts: ',t2-t1
+            if verbose:
+                print 'Resttime for background inserts: ',t2-t1
 
         #Error-Handling for a whole input line
         except:

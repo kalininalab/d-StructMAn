@@ -194,7 +194,7 @@ def geneCheck(genes_aac_list,species_map,session_id,db,cursor):
                 value_strs.append("('%s','%s','%s','%s',NULL)" % (gene.replace("'","\\'"),','.join(genes_aac_list[gene][1]),genes_aac_list[gene][0],str(session_id)))
 
         size = len(value_strs)
-        print size
+        #print size
         if size > 0:
             bound = 50000
             if size > bound:
@@ -268,6 +268,7 @@ def geneCheck(genes_aac_list,species_map,session_id,db,cursor):
     #Return the mappings uniprot-id:gene_id(and 'more restrictive?')
     t8 = time.time()
 
+    '''
     print "Time for geneCheck Part 1: %s" % str(t1-t0)
     print "Time for geneCheck Part 2: %s" % str(t2-t1)
     print "Time for geneCheck Part 3: %s" % str(t3-t2)
@@ -276,6 +277,7 @@ def geneCheck(genes_aac_list,species_map,session_id,db,cursor):
     print "Time for geneCheck Part 6: %s" % str(t6-t5)
     print "Time for geneCheck Part 7: %s" % str(t7-t6)
     print "Time for geneCheck Part 8: %s" % str(t8-t7)
+    '''
     return stored_genes,new_gene_map,gene_id_list,new_gene_ids
 
 
@@ -411,8 +413,8 @@ def getLigandDict(s_ids,db,cursor):
                 structure_dict[s_id][lig_id][1] = lig_map[lig_id]
     t2 = time.time()
 
-    print "Time for getLigandDict1: ",t1-t0
-    print "Time for getLigandDict2: ",t2-t1
+    #print "Time for getLigandDict1: ",t1-t0
+    #print "Time for getLigandDict2: ",t2-t1
 
     return structure_dict
 
@@ -717,6 +719,7 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
             process = None
         t10 = time.time()
 
+        '''
         print "Time for mutationCheck Part 1: %s" % (str(t1-t0))
         print "Time for mutationCheck Part 2: %s" % (str(t2-t1))
         print "Time for mutationCheck Part 3: %s" % (str(t3-t2))
@@ -727,7 +730,7 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
         print "Time for mutationCheck Part 8: %s" % (str(t8-t7))
         print "Time for mutationCheck Part 9: %s" % (str(t9-t8))
         print "Time for mutationCheck Part 10: %s" % (str(t10-t9))
-
+        '''
         return gene_mut_map_new_id,stored_gene_new_pos_id,process
     else:
         sql = "INSERT IGNORE INTO RS_Mutation_Session(Session,Mutation,New_AA,Tag) VALUES %s" % ','.join(value_strs)
@@ -2316,7 +2319,7 @@ def getAlignments(stored_genes,db,cursor):
     structure_map = getStructure_map(structure_ids,db,cursor)
 
     t1 = time.time()
-    print "Time for part 1 in getAlignments: %s" % (str(t1-t0))
+    #print "Time for part 1 in getAlignments: %s" % (str(t1-t0))
     return gene_structure_alignment_map,structure_map
 
 def getStructure_map(structure_ids,db,cursor):
@@ -2508,7 +2511,7 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
             min_max_tuples = [(min_s,max_s)]
 
         t1 = time.time()
-        print "Time for insertMapping Part 1: %s" % str(t1-t0)
+        #print "Time for insertMapping Part 1: %s" % str(t1-t0)
         for (min_s,max_s) in min_max_tuples:
         
             sql = "SELECT Residue_Id,Structure,Number FROM Residue WHERE Structure BETWEEN %s AND %s" % (str(min_s),str(max_s))
@@ -2539,7 +2542,7 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
                 structure_res_map[s_id][res_nr] = r_id
 
     t2 = time.time()
-    print "Time for insertMapping Part 2: %s" % str(t2-t1)
+    #print "Time for insertMapping Part 2: %s" % str(t2-t1)
 
     value_strs = []
     for (m_id,s_id,res_nr,g_id) in mappings:
@@ -2601,7 +2604,7 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
                 raise NameError("Error in insertMapping,\n%s" % (f))
 
     t3 = time.time()
-    print "Time for insertMapping Part 3: %s" % str(t3-t2)
+    #print "Time for insertMapping Part 3: %s" % str(t3-t2)
 
 def checkLigand(name,db,cursor):
     sql = "SELECT Ligand_Id FROM Ligand WHERE Name = '%s'" % name
@@ -3121,7 +3124,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
     global chem_dist_matrix
 
     t1 = time.time()
-    print "Time for mindistout part 1: ",t1-t0
+    #print "Time for mindistout part 1: ",t1-t0
 
     table = 'RS_Mutation_Session'
     rows = ['Mutation','New_AA','Tag']
@@ -3129,7 +3132,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
     results = select(db,cursor,rows,table,equals_rows=eq_rows)
 
     t2 = time.time()
-    print "Time for mindistout part 2: ",t2-t1
+    #print "Time for mindistout part 2: ",t2-t1
 
     new_aa_map = {}
     tag_map = {}
@@ -3157,7 +3160,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
     res_ids = set()
 
     t3 = time.time()
-    print "Time for mindistout part 3: ",t3-t2
+    #print "Time for mindistout part 3: ",t3-t2
 
     if not len(tag_map) == 0:
         #part 3.1
@@ -3173,7 +3176,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
             results = ()
 
         t31 = time.time()
-        print 'Time for mindistout part 3.1: ',t31-t3
+        #print 'Time for mindistout part 3.1: ',t31-t3
 
         if not results == ():
             #minimal_bin_distance = len(results)/5000
@@ -3229,7 +3232,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
         t31 = time.time()
 
     t4 = time.time()
-    print "Time for mindistout part 4: ",t4-t31
+    #print "Time for mindistout part 4: ",t4-t31
 
     residue_dict = {}
     s_ids = set()
@@ -3270,7 +3273,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
                     residue_dict[r_id] = row[1:]
     #'''
     t5 = time.time()
-    print "Time for mindistout part 5: ",t5-t4
+    #print "Time for mindistout part 5: ",t5-t4
 
     mutation_dict = getMutationDict(set(tag_map.keys()),db,cursor)
     gene_id_list = set()
@@ -3280,19 +3283,19 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
     #print gene_id_list
 
     t6 = time.time()
-    print "Time for mindistout part 6: ",t6-t5
+    #print "Time for mindistout part 6: ",t6-t5
 
     #print gene_id_list
     gene_score_dict = getGeneScoreDict(gene_id_list,session_id,db,cursor)
     #print gene_score_dict
 
     t7 = time.time()
-    print "Time for mindistout part 7: ",t7-t6
+    #print "Time for mindistout part 7: ",t7-t6
 
     structure_dict = getStructureDict(s_ids,db,cursor)
 
     t8 = time.time()
-    print "Time for mindistout part 8: ",t8-t7
+    #print "Time for mindistout part 8: ",t8-t7
     t9 = time.time()
 
     gene_structure_map = {}
@@ -3304,7 +3307,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
         results = select(db,cursor,rows,table,between_rows=between_rows)
 
         t9 = time.time()
-        print "Time for mindistout part 9: ",t9-t8
+        #print "Time for mindistout part 9: ",t9-t8
 
         for row in results:
             g_id = row[0]
@@ -3318,7 +3321,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
             gene_structure_map[g_id][s_id] = (seq_id,cov)
 
     t10 = time.time()
-    print "Time for mindistout part 10: ",t10-t9
+    #print "Time for mindistout part 10: ",t10-t9
 
     if templ_qual_separation: #TODO
         options_map = {"":total_results,".bioassembly":residue_dict_ba,".seqid90":residue_dict_seq,".seqid90.bioassembly":residue_dict_seq_ba}
@@ -3331,11 +3334,11 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
         residue_dict = options_map[option]
         min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=ligand_filter,n_of_processes=processes)
         t11 = time.time()
-        print "Time for mindistout part 11: ",t11-t10
+        #print "Time for mindistout part 11: ",t11-t10
 
         class_dict,structure_classification_map = createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map)
         t12 = time.time()
-        print "Time for mindistout part 12: ",t12-t11
+        #print "Time for mindistout part 12: ",t12-t11
 
         if intertable:
             inter_dict = createInterDict(mutation_inter_dict)
@@ -3351,7 +3354,7 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
         writeStatFile(stat_file,mutation_dict,class_dict,tag_map)
 
     t13 = time.time()
-    print "Time for mindistout part 13: ",t13-t12
+    #print "Time for mindistout part 13: ",t13-t12
 
     return class_files,interfiles
 
@@ -3620,7 +3623,7 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
     inqueue = manager.Queue()
     outqueue = manager.Queue()
 
-    print 'Amount of positions going into createStructureDicts: ',len(m_r_map)
+    #print 'Amount of positions going into createStructureDicts: ',len(m_r_map)
 
     package_size = 1000
     package = []
@@ -3938,7 +3941,7 @@ def getWeightedClass(weighted_sc,conf_sc,weighted_c,conf_c,weighted_d,conf_d,wei
 def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map):
     distance_threshold = long_distance_threshold
     class_dict = {}
-    print 'Amount of positions going into createClassDict: ',len(mutation_surface_dict)
+    #print 'Amount of positions going into createClassDict: ',len(mutation_surface_dict)
     t0 = 0.0
     t1= 0.0
     t2 = 0.0
@@ -4196,10 +4199,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                         weighted_raw,weighted_cent,weighted_norm)
         t4 += time.time()
 
-    print 'createClassDict part 1: ',t1-t0
-    print 'createClassDict part 2: ',t2-t1
-    print 'createClassDict part 3: ',t3-t2
-    print 'createClassDict part 4: ',t4-t3
+    #print 'createClassDict part 1: ',t1-t0
+    #print 'createClassDict part 2: ',t2-t1
+    #print 'createClassDict part 3: ',t3-t2
+    #print 'createClassDict part 4: ',t4-t3
 
     t41 = time.time()
     for m in mutation_dict:
@@ -4218,7 +4221,7 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
             class_dict[m] = mut_class,conf,weighted_sc,conf_sc,best_res,None,0,None,0,None,0,None,0,None,0,None,0,None,0,0.,None,None,None
     t5 = time.time()
 
-    print 'createClassDict part 5: ',t5-t41
+    #print 'createClassDict part 5: ',t5-t41
 
     return class_dict,structure_classification_map
 
@@ -4564,7 +4567,7 @@ def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password
     res_ids = set()
 
     t3 = time.time()
-    print "Time for prodAnoOut part 3: ",t3-t2
+    #print "Time for prodAnoOut part 3: ",t3-t2
 
     if not len(tag_map) == 0:
         
@@ -4671,7 +4674,7 @@ def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password
     #(gene_name,species,sp_id,gpan,aachange,pdb_id,residue,chain,ligtext,sub_lig_dist,lig_sub_dist,sub_chain_dists,chain_type,chain_sub_dist,str(chains),str(rel_sur_acc),sec_str_ass,mut_class,str(chemical_distance),str(blosum_value),tag)
 
     startline = "\t".join(("Gene",'Species',"SP ID","REFSEQS","Position","PDB","Residue_id","Chain","Sequence Identity","Coverage","Ligands(Name,Residue Nr)","Sub-Lig-Dists","Min Sub-Lig-Dist","Sub Chain Distances","Min Sub-Chain-Dist","Chain Type","Relative Surface Access","Secondary Structure Assignment","Class","Chemical Distance","Blosum62 Value","Tag"))
-    print len(lines)
+    #print len(lines)
     lines2 = [startline]
     for line in lines:
         try:
@@ -4872,8 +4875,8 @@ def updateGeneScores(session_id,db,cursor):
     
     t2 = time.time()
 
-    print "Time for calculating Gene Scores: ",t1-t0
-    print "Time for updating Gene Scores into Database: ",t2-t1
+    #print "Time for calculating Gene Scores: ",t1-t0
+    #print "Time for updating Gene Scores into Database: ",t2-t1
 
 def computeGeneScores(gene_mut_map,min_m,max_m,mut_ids,db,cursor):
     t0 = time.time()
@@ -5480,7 +5483,7 @@ def proteinStructureCoverage(session_id,db,cursor):
                 gr_95.add(g_id)
             gr_35.add(g_id)
 
-    print len(gene_ids)
+    #print len(gene_ids)
 
     no_str = set()
     for g_id in gene_ids:
