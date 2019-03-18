@@ -1,6 +1,5 @@
 #!/bin/bash
-# Description: StructMAn docker container setup script, that will setup a structman container with a default folder structure, file permissions, selinux context and a compose file.
-# NOTE: You have to be a sudo user/superuser/root to execute this script as it will change the selinux context
+# Description: StructMAn docker container setup script, that will setup a structman container with a default folder structure and a compose file.
 # Author: Sanjay kumar Srikakulam (sanjaysrikakulam@gmail.com)
 # Changelog:
 # 13-07-2018 Init
@@ -48,11 +47,6 @@ fi
 if [[ -d "$path" ]] ; then
     mkdir -p $path/$directory_name/{mysql_lib,mysql_logs,structman/{input_data,results,mysql_custom_conf.d}}
 fi
-
-# Setup the default selinux context exclusively for the above created sub-directories
-chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/mysql_lib"
-chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/mysql_logs"
-chcon -R system_u:object_r:container_share_t:s0 "$path/$directory_name/structman"
 
 # Creates a default docker-compose file
 echo "version: '2'
