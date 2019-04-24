@@ -60,7 +60,6 @@ configure_mysql() {
     if [[ ! -f /etc/mysql/my.cnf ]]; then
         echo -e "# Include the configuration files from these directories
 !includedir /etc/mysql/conf.d/
-!includedir /etc/mysql/mysql_custom_conf.d/
 !includedir /etc/mysql/mysql.conf.d/" > /etc/mysql/my.cnf
     fi
 
@@ -81,8 +80,6 @@ bind-address = 0.0.0.0
 user = mysql
 socket = /var/run/mysqld/mysqld.sock
 pid-file = /var/run/mysqld/mysqld.pid
-#general_log_file = /var/log/mysql/query.log
-#slow_query_log_file = /var/log/mysql/slow.log
 log-error = /var/log/mysql/error.log
 basedir = /usr
 lc-messages-dir = /usr/share/mysql

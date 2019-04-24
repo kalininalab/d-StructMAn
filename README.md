@@ -28,7 +28,7 @@ The recommended way to get this StructMAn docker image is to pull the prebuilt i
 # docker pull docker.io/sanjaysrikakulam/structman:latest
 ```
 
-## To use/run this image in a container
+## To use/run this image
 
 Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) to create base setup and configuration for your StructMAn to run succesfully with docker-compose
 
@@ -50,8 +50,7 @@ Where:
 └── mysql_logs
 └── structman
     ├── input_data
-    ├── results
-    └── mysql_custom_conf.d
+    └── results
 ```
 ## Directory setup
 
@@ -61,7 +60,6 @@ Where:
 - **structman:** This is where we organize all the files, so that we can keep them under one roof
 - **input_data:** A user has to upload their input files into this directory
 - **reuslts:** StructMAn by default will write all the generated output to this directory
-- **mysql_custom_conf.d:** Before starting the container, a user can add any additional MySQL server configuration, if it wasn't already implemented/enabled
 - **NOTE 1: All these volumes are bind mounted and for more information on [bind mounts](https://docs.docker.com/storage/bind-mounts/)**
 - **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
 

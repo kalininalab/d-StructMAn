@@ -31,11 +31,7 @@ while getopts ":p:d:c:" i; do
         esac
 done
 
-if [[ "$path" == "" ]] ; then
-        usage
-fi
-
-if [[ "$directory_name" == "" ]] ; then
+if [[ "$path" == "" || "$directory_name" == "" ]] ; then
         usage
 fi
 
@@ -45,7 +41,7 @@ fi
 
 # Creates the default folder structure
 if [[ -d "$path" ]] ; then
-    mkdir -p $path/$directory_name/{mysql_lib,mysql_logs,structman/{input_data,results,mysql_custom_conf.d}}
+    mkdir -p $path/$directory_name/{mysql_lib,mysql_logs,structman/{input_data,results}}
 fi
 
 # Creates a default docker-compose file
@@ -64,7 +60,6 @@ services:
         volumes:
             - ./structman/input_data/:/structman/input_data/:Z
             - ./structman/results/:/structman/results/:Z
-            - ./structman/mysql_custom_conf.d/:/etc/mysql/mysql_custom_conf.d/:Z
             - ./mysql_lib/:/var/lib/mysql/:Z
             - ./mysql_logs/:/var/log/mysql/:Z
         environment:
