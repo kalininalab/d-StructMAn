@@ -11,7 +11,14 @@
 
 # Requirements
 
-* Install docker and docker-compose
+* Install docker and docker-compose (https://docs.docker.com/install/)
+
+*NOTE: Enable/install epel repo if by default it is not available in your system*
+
+*Example CentOS (execute as root user(denoted by #))*
+```bash
+# yum install epel-release
+```
 
 *Example CentOS (execute as root user(denoted by #))*
 ```bash
