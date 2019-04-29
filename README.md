@@ -25,7 +25,11 @@
 # yum install docker
 # yum install docker-compose
 ```
-*NOTE: Replace "yum" with the respective package manager of your operating system*
+**NOTE 1: Replace "yum" with the respective package manager of your operating system**
+
+**NOTE 2: After installing docker, start and enable docker by doing systemctl start docker and systemctl enable docker (This is the case for CentOS only, check the docker documentation if your OS requires you to do so)**
+
+
 
 # To get this image
 
