@@ -41,7 +41,7 @@ The recommended way to get this StructMAn docker image is to pull the prebuilt i
 
 ## To use/run this image
 
-Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) to create base setup and configuration for your StructMAn to run succesfully with docker-compose
+Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) by downloading the script to your local machine in order to create the base setup and configuration for your StructMAn to run succesfully using docker-compose client
 
 *Example CentOS (execute as root user(denoted by #))*
 ```bash
@@ -111,6 +111,26 @@ Where:
 *This command will run the application (StructMAn) inside the container from your localhost*
 
 **NOTE: By default StructMAn will look for the input here </structman/input_data/> and stores the output here </structman/results/>. These paths are located inside the docker container and these folders are bind mounted to your localhost**
+
+## To update the existing StructMAn docker image
+
+* If there is a new image of StructMAn available, one can easily update their container to use this latest image by doing the following
+
+
+ ```bash
+ - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
+ # docker-compose -f <docker-compose.yml> stop
+
+ - Remove the container that we stopped just now
+ # docker-compose -f <docker-compose.yml> rm -f
+
+ - Pull the latest image of StructMAn from Docker Hub Registry (The docker compose.yml file already contains the image location which is pointing to the docker hub's registry, so just a pull command will download the latest image from the registry)
+ # docker-compose -f <docker-compose.yml> pull
+
+ - Finally start the container in the detach mode
+ # docker-compose -f <docker-compose.yml> up -d
+```
+
 
 ## Useful docker commands
 
