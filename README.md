@@ -119,17 +119,49 @@ Where:
 
  ```bash
  - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
+ 
  # docker-compose -f <docker-compose.yml> stop
 
  - Remove the container that we stopped just now
+ 
  # docker-compose -f <docker-compose.yml> rm -f
 
  - Pull the latest image of StructMAn from Docker Hub Registry (The docker compose.yml file already contains the image location which is pointing to the docker hub's registry, so just a pull command will download the latest image from the registry)
+ 
  # docker-compose -f <docker-compose.yml> pull
 
  - Finally start the container in the detach mode
+ 
  # docker-compose -f <docker-compose.yml> up -d
 ```
+
+## To reset StructMAn database/ To have a clean StructMAn container 
+
+* Once you encounter some issues with the database/container while executing structman.py with some input or you simple want a clean setup of the container, you can do the following
+
+```bash
+ - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
+ 
+ # docker-compose -f <docker-compose.yml> stop
+
+ - Remove the container that we stopped just now
+ 
+ # docker-compose -f <docker-compose.yml> rm -f
+
+ - Remove all the files located under mysql_lib directory (Remember that this directory was created with the help of the utility script and that this direcotry is bind mounted into the container. Removing everything inside this folder will reset the database and reinitializes the mysql server setup)
+ 
+ # rm -r <path_to_the_mysql_lib_directory> 
+
+ - Finally start the container in the detach mode
+ 
+ # docker-compose -f <docker-compose.yml> up -d
+```
+
+## To have more than one StructMAn container
+
+* If you want to have more than one StructMAn container
+
+1) Use the utility script like mentioned above in [To use/run this image](https://github.com/sanjaysrikakulam/structman#to-userun-this-image) section to create the new directory structure for your n'th instance of the StructMAn by exclusively changig the -c  and -d option to some other name than the ones you used for your previous instances
 
 
 ## Useful docker commands
