@@ -110,6 +110,8 @@ Where:
 ```
 *This command will run the application (StructMAn) inside the container from your localhost*
 
+**Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
+
 **NOTE: By default StructMAn will look for the input here </structman/input_data/> and stores the output here </structman/results/>. These paths are located inside the docker container and these folders are bind mounted to your localhost**
 
 ## To update the existing StructMAn docker image
