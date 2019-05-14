@@ -161,7 +161,7 @@ Use the following command to run StructMAn, make sure you have some input file l
 
 * If you want to have more than one StructMAn container
 
-1) Use the utility script like mentioned above in [To use/run this image](https://github.com/sanjaysrikakulam/structman#to-userun-this-image) section to create the new directory structure for your n'th instance of the StructMAn by exclusively changig the -c  and -d option to some other name than the ones you used for your previous instances
+1) Use the utility script like mentioned above in [To use/run this image](https://github.com/sanjaysrikakulam/structman#to-userun-this-image) section to create the new directory structure for your n'th instance of the StructMAn by exclusively changig the -p and -c option to some other value than the ones you used for your previous instances
 
 
 ## Useful docker commands
