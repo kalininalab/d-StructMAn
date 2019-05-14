@@ -9,21 +9,17 @@ usage() {
         echo "Usage: $0 <OPTIONS>"
         echo "Required Parameters:"
         echo "-p <path>                 Provide a path to create the container"
-        echo "-d <directory_name>       Provide a name for the container directory"
         echo "Optional Parameters:"
         echo "-c <container_name>       Provide a name for the container"
         echo "Example:"
-        echo "./setup_docker_container.sh -p <> -d <> -c <>"
+        echo "./setup_structman_docker_container.sh -p <path/to/create/the/container> -c <container_name>"
         exit 1
 }
 
-while getopts ":p:d:c:" i; do
+while getopts ":p:c:" i; do
         case "${i}" in
         p)
                 path=$OPTARG
-        ;;
-        d)
-                directory_name=$OPTARG
         ;;
         c)
                 container_name=$OPTARG
@@ -31,18 +27,17 @@ while getopts ":p:d:c:" i; do
         esac
 done
 
-if [[ "$path" == "" || "$directory_name" == "" ]] ; then
+if [[ "$path" == "" ]] ; then
         usage
 fi
 
 if [[ "$container_name" == "" ]] ; then
-        container_name="StructMAn"
+        container_name="structman"
 fi
 
 # Creates the default folder structure
-if [[ -d "$path" ]] ; then
-    mkdir -p $path/$directory_name/{mysql_lib,mysql_logs,structman/{input_data,results}}
-fi
+mkdir -p $path/{mysql_lib,mysql_logs,structman/{input_data,results}}
+
 
 # Creates a default docker-compose file
 echo "version: '2'
@@ -64,4 +59,4 @@ services:
             - ./mysql_logs/:/var/log/mysql/:Z
         environment:
             MYSQL_STRUCTMAN_USER_NAME: \"structman\"
-            MYSQL_STRUCTMAN_USER_PASSWORD: \"structman_rocks\" " > $path/$directory_name/docker-compose.yml
+            MYSQL_STRUCTMAN_USER_PASSWORD: \"structman_rocks\" " > $path/docker-compose.yml
