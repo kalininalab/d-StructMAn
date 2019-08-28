@@ -4,16 +4,18 @@
 
 > The Structural Mutation Annotation (StructMAn) software provides the annotation of non-synonymous single-nucleotide polymorphisms (nsSNPs) in the context of the structural neighbourhood of the resulting amino acid variations in the protein. Its rationale is that if a mutation is located on an interaction interface between the protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction.
 
-# Why docker container for StructMAn
+# Why containers for StructMAn
 
-* A docker container will help a user to setup their own local installation of StructMAn 
+* A container will help a user to setup their own local installation of StructMAn
 * Alternatively, you can also use the webserver version of [StructMAn](http://structman.mpi-inf.mpg.de/)
 
-# Requirements
+# Docker version of StructMAn
+
+## Requirements
 
 **NOTE: All the example code/commands here are based on CentOS 7 (everything is executed as root user(denoted by #))**
 
-* Install docker and docker-compose (https://docs.docker.com/install/)
+* Install [docker](https://docs.docker.com/install/) and docker-compose
 
 *NOTE: Enable/install epel repo if by default it is not available in your system (for CentOS it is not available by default)*
 
@@ -34,7 +36,7 @@
 # systemctl enable docker
 ```
 
-# To get this image
+## To get this image
 
 The recommended way to get this StructMAn docker image is to pull the prebuilt image from the [Docker Hub Registry](https://hub.docker.com/r/sanjaysrikakulam/structman/) by using the "docker pull" command
 
@@ -96,7 +98,7 @@ Where:
 
 # docker-compose up -d
 ```
-# How to access the StructMAn tool running in the container
+## How to access the StructMAn tool running in the container
 * To list the running docker containers
  
  ```bash
@@ -163,8 +165,46 @@ Use the following command to run StructMAn, make sure you have some input file l
 
 1) Use the utility script like mentioned above in [To use/run this image](https://github.com/sanjaysrikakulam/structman#to-userun-this-image) section to create the new directory structure for your n'th instance of the StructMAn by exclusively changig the -p and -c option to some other value than the ones you used for your previous instances
 
+# Podman version of StructMAn (for users with no root access)
 
-## Useful docker commands
+## Requirements
+
+**NOTE: All the example code/commands here are based on Fedora 30**
+
+* Install [podman](https://github.com/containers/libpod/blob/master/install.md) **only for this step you require to be root
+
+```bash
+# dnf install podman
+```
+**NOTE: Replace "dnf install" with the respective command of your operating system to install**
+
+## To get this image
+
+Simply pull the image, just like with docker
+
+```bash
+$ podman pull "docker.io/sanjaysrikakulam/structman:latest"
+```
+
+## To use/run this image
+
+Like in docker version we need same directory setup, so simply execute the following in your current working directory to create the setup
+
+```bash
+$ path="$(pwd)"             # change this path to anywhere you like
+$ container_name="structman"
+$ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results}}
+```
+**To run this image**
+
+```bash
+$ podman run -d -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
+```
+**That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
+
+**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/libpod/blob/master/commands.md)
+
+## Useful commands
 
 * To start a container
 
