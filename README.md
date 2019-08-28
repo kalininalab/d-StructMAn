@@ -1,10 +1,10 @@
 # StructMAn
 
-# What is StructMAn?
+## What is StructMAn?
 
 > The Structural Mutation Annotation (StructMAn) software provides the annotation of non-synonymous single-nucleotide polymorphisms (nsSNPs) in the context of the structural neighbourhood of the resulting amino acid variations in the protein. Its rationale is that if a mutation is located on an interaction interface between the protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction.
 
-# Why containers for StructMAn
+## Why containers for StructMAn
 
 * A container will help a user to setup their own local installation of StructMAn
 * Alternatively, you can also use the webserver version of [StructMAn](http://structman.mpi-inf.mpg.de/)
@@ -171,7 +171,7 @@ Use the following command to run StructMAn, make sure you have some input file l
 
 **NOTE: All the example code/commands here are based on Fedora 30**
 
-* Install [podman](https://github.com/containers/libpod/blob/master/install.md) **only for this step you require to be root
+* Install [podman](https://github.com/containers/libpod/blob/master/install.md) **only for this step you require to be root**
 
 ```bash
 # dnf install podman
@@ -202,9 +202,25 @@ $ podman run -d -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/v
 ```
 **That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
 
-**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/libpod/blob/master/commands.md)
+**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/libpod/blob/master/commands.md)**
 
-## Useful commands
+## How to access the StructMAn tool running in the container
+* To list the running podman containers
+ 
+ ```bash
+ # podman ps
+```
+Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
+
+ ```bash
+ # podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
+```
+
+**Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
+
+**NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
+
+# Useful commands
 
 * To start a container
 
