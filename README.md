@@ -208,12 +208,12 @@ $ podman run -d -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/v
 * To list the running podman containers
  
  ```bash
- # podman ps
+ $ podman ps
 ```
 Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
 
  ```bash
- # podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
+ $ podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
 ```
 
 **Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
