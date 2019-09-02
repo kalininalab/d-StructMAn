@@ -15,6 +15,7 @@ LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
 # Install and update the required dependencies for StructMAn
 RUN apt-get update \
 && DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server \
+wget \
 curl \
 vim \
 less \
@@ -29,7 +30,7 @@ rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
 RUN pip install numpy biopython matplotlib multiprocess
-RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz; export PATH=/opt/mmseqs/bin/:$PATH
+RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz; echo 'export PATH=$PATH:/opt/mmseqs/bin/"' >> ~/.profile
 
 # Adding the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
