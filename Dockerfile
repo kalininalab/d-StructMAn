@@ -29,6 +29,7 @@ rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
 RUN pip install numpy biopython matplotlib multiprocess
+RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz; export PATH=/opt/mmseqs/bin/:$PATH
 
 # Adding the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
