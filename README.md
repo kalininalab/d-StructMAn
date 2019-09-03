@@ -2,7 +2,7 @@
 
 ## What is StructMAn?
 
-> The Structural Mutation Annotation (StructMAn) software provides the annotation of non-synonymous single-nucleotide polymorphisms (nsSNPs) in the context of the structural neighbourhood of the resulting amino acid variations in the protein. Its rationale is that if a mutation is located on an interaction interface between the protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction.
+> The Structural Mutation Annotation (StructMAn) software provides annotation of non-synonymous single-nucleotide variants (nsSNVs) in the context of the structural properties of the resulting amino acid changes in the corresponding proteins. Its rationale is that if a mutation is located on an interaction interface between a protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction, and mutations location in the protein core are likely to influence its stability. StructMAn was first published in [Nucl Acids Res, 2016](https://academic.oup.com/nar/article-abstract/44/W1/W463/2499349) where we showed that such structural annotation correlate well with established tools for predicting damaging effect of missense mutations. Later we have [applied StructMAn to a large collection of disease-associated and neutral mutations](https://www.nature.com/articles/oncsis201779) and discovered distinct trends of their spatial distribution.
 
 ## Why containers for StructMAn
 
