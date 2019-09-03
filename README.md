@@ -221,6 +221,12 @@ Use the following command to run StructMAn, make sure you have some input file l
 
 **NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
 
+## How to site container tools
+
+If you find these tools useful, please cite:
+
+```Gress A, Srikakulam SK, Keller S, Kalinina OV. Container-based tools for structural annotation of genetic variants. submitted.```
+
 # Useful commands
 
 * To start a container
