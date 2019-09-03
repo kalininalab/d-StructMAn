@@ -7,6 +7,7 @@
 ## Why containers for StructMAn
 
 * A container will help a user to setup their own local installation of StructMAn
+* Here we present [docker](https://www.docker.com/) and [podman](https://podman.io/) versions of containers for StructMAn
 * Alternatively, you can also use the webserver version of [StructMAn](http://structman.mpi-inf.mpg.de/)
 
 # Docker version of StructMAn
@@ -180,7 +181,7 @@ Use the following command to run StructMAn, make sure you have some input file l
 
 ## To get this image
 
-Simply pull the image, just like with docker
+Pull the image, just like with docker
 
 ```bash
 $ podman pull "docker.io/sanjaysrikakulam/structman:latest"
@@ -188,7 +189,7 @@ $ podman pull "docker.io/sanjaysrikakulam/structman:latest"
 
 ## To use/run this image
 
-Like in docker version we need same directory setup, so simply execute the following in your current working directory to create the setup
+Like in the docker version we need same directory setup, so execute the following in your current working directory to create the setup
 
 ```bash
 $ path="$(pwd)"             # change this path to anywhere you like
