@@ -1,7 +1,7 @@
 import database
 import os
 import subprocess
-import MySQLdb
+import pymysql as MySQLdb
 import time
 
 #Needs either a ligand_db or it creates one, but then it needs contact to the database
@@ -17,7 +17,7 @@ def findRelatives(infile,session_id,cutoff,ligand_db="",db=None,cursor=None):
         database.createLigandDB(outname,session_id,db,cursor)
         ligand_db = outname
 
-    p = subprocess.Popen(["babel",infile,ligand_db,"-ofpt"],stdout=subprocess.PIPE)
+    p = subprocess.Popen(["babel",infile,ligand_db,"-ofpt"],stdout=subprocess.PIPE,universal_newlines=True)
     page = p.communicate()
     #print "Babel output:\n%s" % str(page)
     lines = page[0].split("\n")
@@ -52,7 +52,7 @@ def ligandAnalyzer(infile,session_id,db_name,host,user,pw,ligand_db="",cutoff=0.
     else:
         chosen_ones = findRelatives(infile,session_id,cutoff,ligand_db=ligand_db)
     if len(chosen_ones) == 0:
-        print "No relatives found"
+        print("No relatives found")
         return {}
     #print chosen_ones
 
@@ -63,8 +63,8 @@ def ligandAnalyzer(infile,session_id,db_name,host,user,pw,ligand_db="",cutoff=0.
 
     t2 = time.time()
 
-    print "Time for ligandAnalyzer Part1: ",t1-t0
-    print "Time for ligandAnalyzer Part2: ",t2-t1
+    print("Time for ligandAnalyzer Part1: ",t1-t0)
+    print("Time for ligandAnalyzer Part2: ",t2-t1)
 
     return anno_dict
 
@@ -88,7 +88,7 @@ def writeReport(anno_dict,outfile,db_name,host,user,pw):
     db.close()
     if len(outlines) == 1:
         outlines.append("Sorry,\tdid\tnot\tfound\ta similar\tligand")
-    print len(outlines)
+    print(len(outlines))
     f = open(outfile,"w")
     f.write("\n".join(outlines))
     f.close()

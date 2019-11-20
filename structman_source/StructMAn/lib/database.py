@@ -1,25 +1,68 @@
 #TODO replace all sql query, similiar to first big select in mindistout
-import MySQLdb
+import pymysql as MySQLdb
 import pdbParser as pdb
 import sys
 import os
 import time
 import templateFiltering
+import rin
 from operator import itemgetter
-from multiprocessing import Process, Queue, Manager, Lock
+import multiprocessing
 from Bio.PDB import *
 from Bio.SubsMat import MatrixInfo
+import numpy as np
+import re
 
 short_distance_threshold = 5.0
 long_distance_threshold = 8.0
 surface_threshold = 0.16
 
-ions = set(["LI","NA","K","MG","CA","RB","CS","BE","SR","BA","SC","TI","V","CR","MN","FE","CO","NI","CU","ZN","F","CL","SI","AL","Y",
-        "ZR","NB","MO","TC","RU","PD","AG","CD","IN","SN","GA","AS","SB","TE","I","BR","AT","PT","AU","HG","TL","PB"])
+# PDB Three-letter-codes (spaces stripped)
+# Generated from http://ligand-expo.rcsb.org/dictionaries/Components-smiles-oe.smi
+# Using: grep -P "^\[?(Li|Be|Na|Mg|Al|K|Ca|Sc|Ti|V|Cr|Mn|Fe|Co|Ni|Cu|Zn|Ga|Rb|Sr|Y|Zr|Nb|Mo|Tc|Ru|Rh|Pd|Ag|Cd|In|Sn|Cs|Ba|La|Ce|Pr|Nd|Pm|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu|Hf|Ta|W|Re|Os|Ir|Pt|Au|Hg|Tl|Pb|Bi|Po|Fr|Ra|Ac|Th|Pa|U|Np|Pu|Am|Cm|Bk|Cf|Es|Fm|Md|No|Lr|Rf|Db|Sg|Bh|Hs|Cn)[+-]?[0-9]*\]?\t" Components-smiles-oe.smi
+# Does not include metalloids
+metal_atoms = set(['0BE','3CO','3NI','4MO','4PU','4TI','6MO','AG','AL',
+                    'AM','AU','AU3','BA','BS3','CA','CD','CE','CF',
+                    'CO','CR','CS','CU','CU1','CU3','DY','ER3','EU','EU3',
+                    'FE','FE2','GA','GD','GD3','HG','HO','HO3','IN','IR','IR3','K',
+                    'LA','LI','LU','MG','MN','MN3','MO','NA','NI','OS','OS4',
+                    'PB','PD','PR','PT','PT4','RB','RE','RH','RH3','RU','SM','SR',
+                    'TA0','TB','TH','TL','U1','V','W','Y1','YB','YB2','YT3','ZCM',
+                    'ZN','ZN2','ZR'])
+
+# PDB Three-letter-codes (spaces stripped)
+# Generated from http://ligand-expo.rcsb.org/dictionaries/Components-smiles-oe.smi
+# Using: grep -P "^\[?(As|Si|F|I|Cl|Sb|Te|At|Br)[+-][0-9]*\]?\t" Components-smiles-oe.smi
+# Includes (unused/obsolete) -group entries (ending in O) in addition to ions
+ion_atoms = set(['BR', 'BRO', 'CL', 'CLO', 'F', 'FLO', 'IDO', 'IOD', 'SB'])
 
 chem_dist_matrix =  {'A': {'A': 0.0, 'C': 0.996, 'E': 0.544, 'D': 0.637, 'G': 0.663, 'F': 0.663, 'I': 0.626, 'H': 0.711, 'K': 0.768, 'M': 0.616, 'L': 0.435, 'N': 0.708, 'Q': 0.641, 'P': 0.949, 'S': 0.634, 'R': 0.977, 'T': 0.657, 'W': 0.985, 'V': 0.646, 'Y': 0.973}, 'C': {'A': 0.996, 'C': 0.0, 'E': 1.051, 'D': 0.804, 'G': 0.901, 'F': 0.859, 'I': 0.856, 'H': 0.595, 'K': 1.153, 'M': 0.651, 'L': 1.093, 'N': 0.687, 'Q': 0.753, 'P': 1.184, 'S': 0.744, 'R': 1.028, 'T': 0.737, 'W': 0.97, 'V': 0.82, 'Y': 0.835}, 'E': {'A': 0.544, 'C': 1.051, 'E': 0.0, 'D': 0.416, 'G': 0.923, 'F': 0.743, 'I': 0.892, 'H': 0.545, 'K': 0.647, 'M': 0.578, 'L': 0.724, 'N': 0.647, 'Q': 0.532, 'P': 0.994, 'S': 0.811, 'R': 0.897, 'T': 0.844, 'W': 0.882, 'V': 0.96, 'Y': 0.973}, 'D': {'A': 0.637, 'C': 0.804, 'E': 0.416, 'D': 0.0, 'G': 0.66, 'F': 0.68, 'I': 0.835, 'H': 0.361, 'K': 0.648, 'M': 0.58, 'L': 0.803, 'N': 0.291, 'Q': 0.385, 'P': 0.747, 'S': 0.555, 'R': 0.793, 'T': 0.64, 'W': 0.76, 'V': 0.886, 'Y': 0.744}, 'G': {'A': 0.663, 'C': 0.901, 'E': 0.923, 'D': 0.66, 'G': 0.0, 'F': 0.813, 'I': 0.814, 'H': 0.82, 'K': 0.974, 'M': 0.902, 'L': 0.827, 'N': 0.576, 'Q': 0.78, 'P': 0.629, 'S': 0.452, 'R': 1.081, 'T': 0.601, 'W': 1.017, 'V': 0.812, 'Y': 0.875}, 'F': {'A': 0.663, 'C': 0.859, 'E': 0.743, 'D': 0.68, 'G': 0.813, 'F': 0.0, 'I': 0.414, 'H': 0.53, 'K': 0.775, 'M': 0.442, 'L': 0.439, 'N': 0.656, 'Q': 0.607, 'P': 0.732, 'S': 0.723, 'R': 0.871, 'T': 0.666, 'W': 0.379, 'V': 0.625, 'Y': 0.509}, 'I': {'A': 0.626, 'C': 0.856, 'E': 0.892, 'D': 0.835, 'G': 0.814, 'F': 0.414, 'I': 0.0, 'H': 0.673, 'K': 0.741, 'M': 0.602, 'L': 0.382, 'N': 0.717, 'Q': 0.611, 'P': 0.9, 'S': 0.602, 'R': 0.754, 'T': 0.469, 'W': 0.733, 'V': 0.239, 'Y': 0.578}, 'H': {'A': 0.711, 'C': 0.595, 'E': 0.545, 'D': 0.361, 'G': 0.82, 'F': 0.53, 'I': 0.673, 'H': 0.0, 'K': 0.669, 'M': 0.346, 'L': 0.758, 'N': 0.365, 'Q': 0.299, 'P': 0.883, 'S': 0.598, 'R': 0.684, 'T': 0.586, 'W': 0.602, 'V': 0.736, 'Y': 0.579}, 'K': {'A': 0.768, 'C': 1.153, 'E': 0.647, 'D': 0.648, 'G': 0.974, 'F': 0.775, 'I': 0.741, 'H': 0.669, 'K': 0.0, 'M': 0.844, 'L': 0.702, 'N': 0.604, 'Q': 0.412, 'P': 0.883, 'S': 0.656, 'R': 0.383, 'T': 0.605, 'W': 0.879, 'V': 0.777, 'Y': 0.71}, 'M': {'A': 0.616, 'C': 0.651, 'E': 0.578, 'D': 0.58, 'G': 0.902, 'F': 0.442, 'I': 0.602, 'H': 0.346, 'K': 0.844, 'M': 0.0, 'L': 0.639, 'N': 0.639, 'Q': 0.534, 'P': 1.024, 'S': 0.762, 'R': 0.903, 'T': 0.725, 'W': 0.637, 'V': 0.698, 'Y': 0.745}, 'L': {'A': 0.435, 'C': 1.093, 'E': 0.724, 'D': 0.803, 'G': 0.827, 'F': 0.439, 'I': 0.382, 'H': 0.758, 'K': 0.702, 'M': 0.639, 'L': 0.0, 'N': 0.8, 'Q': 0.682, 'P': 0.867, 'S': 0.729, 'R': 0.894, 'T': 0.665, 'W': 0.778, 'V': 0.53, 'Y': 0.786}, 'N': {'A': 0.708, 'C': 0.687, 'E': 0.647, 'D': 0.291, 'G': 0.576, 'F': 0.656, 'I': 0.717, 'H': 0.365, 'K': 0.604, 'M': 0.639, 'L': 0.8, 'N': 0.0, 'Q': 0.304, 'P': 0.675, 'S': 0.339, 'R': 0.635, 'T': 0.418, 'W': 0.744, 'V': 0.735, 'Y': 0.555}, 'Q': {'A': 0.641, 'C': 0.753, 'E': 0.532, 'D': 0.385, 'G': 0.78, 'F': 0.607, 'I': 0.611, 'H': 0.299, 'K': 0.412, 'M': 0.534, 'L': 0.682, 'N': 0.304, 'Q': 0.0, 'P': 0.849, 'S': 0.446, 'R': 0.447, 'T': 0.413, 'W': 0.737, 'V': 0.628, 'Y': 0.57}, 'P': {'A': 0.949, 'C': 1.184, 'E': 0.994, 'D': 0.747, 'G': 0.629, 'F': 0.732, 'I': 0.9, 'H': 0.883, 'K': 0.883, 'M': 1.024, 'L': 0.867, 'N': 0.675, 'Q': 0.849, 'P': 0.0, 'S': 0.734, 'R': 1.034, 'T': 0.805, 'W': 0.734, 'V': 1.021, 'Y': 0.676}, 'S': {'A': 0.634, 'C': 0.744, 'E': 0.811, 'D': 0.555, 'G': 0.452, 'F': 0.723, 'I': 0.602, 'H': 0.598, 'K': 0.656, 'M': 0.762, 'L': 0.729, 'N': 0.339, 'Q': 0.446, 'P': 0.734, 'S': 0.0, 'R': 0.662, 'T': 0.189, 'W': 0.924, 'V': 0.539, 'Y': 0.639}, 'R': {'A': 0.977, 'C': 1.028, 'E': 0.897, 'D': 0.793, 'G': 1.081, 'F': 0.871, 'I': 0.754, 'H': 0.684, 'K': 0.383, 'M': 0.903, 'L': 0.894, 'N': 0.635, 'Q': 0.447, 'P': 1.034, 'S': 0.662, 'R': 0.0, 'T': 0.555, 'W': 0.939, 'V': 0.735, 'Y': 0.626}, 'T': {'A': 0.657, 'C': 0.737, 'E': 0.844, 'D': 0.64, 'G': 0.601, 'F': 0.666, 'I': 0.469, 'H': 0.586, 'K': 0.605, 'M': 0.725, 'L': 0.665, 'N': 0.418, 'Q': 0.413, 'P': 0.805, 'S': 0.189, 'R': 0.555, 'T': 0.0, 'W': 0.883, 'V': 0.389, 'Y': 0.56}, 'W': {'A': 0.985, 'C': 0.97, 'E': 0.882, 'D': 0.76, 'G': 1.017, 'F': 0.379, 'I': 0.733, 'H': 0.602, 'K': 0.879, 'M': 0.637, 'L': 0.778, 'N': 0.744, 'Q': 0.737, 'P': 0.734, 'S': 0.924, 'R': 0.939, 'T': 0.883, 'W': 0.0, 'V': 0.932, 'Y': 0.474}, 'V': {'A': 0.646, 'C': 0.82, 'E': 0.96, 'D': 0.886, 'G': 0.812, 'F': 0.625, 'I': 0.239, 'H': 0.736, 'K': 0.777, 'M': 0.698, 'L': 0.53, 'N': 0.735, 'Q': 0.628, 'P': 1.021, 'S': 0.539, 'R': 0.735, 'T': 0.389, 'W': 0.932, 'V': 0.0, 'Y': 0.695}, 'Y': {'A': 0.973, 'C': 0.835, 'E': 0.973, 'D': 0.744, 'G': 0.875, 'F': 0.509, 'I': 0.578, 'H': 0.579, 'K': 0.71, 'M': 0.745, 'L': 0.786, 'N': 0.555, 'Q': 0.57, 'P': 0.676, 'S': 0.639, 'R': 0.626, 'T': 0.56, 'W': 0.474, 'V': 0.695, 'Y': 0.0}}
 
-def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={}):
+MobiDB_map = {'D_PA':'Polyampholite','D_WC':'Weak polyampholie','D_NPE':'D_NPE','D_PPE':'D_PPE'}
+
+def binningSelect(keys,rows,table,db,cursor):
+    #Use this for huge selects, the first entry of rows has to be the key by which the entries are selected
+    key_name = rows[0]
+    singletons,bins = binning(keys)
+
+    if len(singletons) > 0:
+        in_rows = {key_name:singletons}
+        total_results = list(select(db,cursor,rows,table,in_rows=in_rows))
+    else:
+        total_results = []
+
+    for ids,min_id,max_id in bins:
+        between_rows = {key_name:(min_id,max_id)}
+
+        results = select(db,cursor,rows,table,between_rows=between_rows)
+        for row in results:
+            if not row[0] in ids:
+                continue
+            total_results.append(row)
+
+    return total_results
+
+def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={},null_columns=set(),n_trials=5):
     if len(rows) == 0:
         row_str = '*'
     else:
@@ -36,6 +79,9 @@ def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={}):
             params.append(equals_rows[equals_row])
             where_parts.append(equals_row + ' = %s')
 
+        for null_column in null_columns:
+            where_parts.append(null_column + ' IS NULL')
+
         for in_row in in_rows:
             for param in in_rows[in_row]:
                 params.append(param)
@@ -51,14 +97,108 @@ def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={}):
 
     statement = 'SELECT %s FROM %s%s' % (row_str,table,where_str)
 
-    try:
-        cursor.execute(statement,params)
-        results = cursor.fetchall()
-        db.commit()
-    except:
+    n = 0
+    while n < n_trials: #Repeat the querry if fails for n_trials times
+        try:
+            cursor.execute(statement,params)
+            results = cursor.fetchall()
+            db.commit()
+            break
+        except:
+            n+=1
+    if n == n_trials:
         [e,f,g] = sys.exc_info()
-        raise NameError('Invalid Select: %s,\n%s' % (statement,f))
+        raise NameError('Invalid Select: %s,\nParam size:%s\n%s' % (statement[:500],str(len(params)),f))
     return results
+
+def insert(db,cursor,table,columns,values,value_threshold=10000,n_trials=5):
+    params = []
+
+    columns_str = ','.join(columns)
+
+    parts = []
+    n=0
+    value_strs = []
+
+    if len(values) == 0:
+        return
+
+    for value_list in values:
+        for value in value_list:
+            params.append(value)
+        value_str_part = '(%s)' % ','.join(['%s']*len(value_list))
+        value_strs.append(value_str_part)
+        n+=1
+        if n == value_threshold:
+            n = 0
+            value_str = ','.join(value_strs)
+            parts.append((value_str,params))
+            value_strs = []
+            params = []
+    value_str = ','.join(value_strs)
+    parts.append((value_str,params))
+
+    for value_str,params in parts:
+        statement = 'INSERT IGNORE INTO %s (%s) VALUES %s' % (table,columns_str,value_str)
+
+        n = 0
+        while n < n_trials: #Repeat the querry if fails for n_trials times
+            try:
+                cursor.execute(statement,params)
+                db.commit()
+                break
+            except:
+                [e,f,g] = sys.exc_info()
+                n+=1
+        if n == n_trials:
+            raise NameError('Invalid Insert: %s,\n%s\n%s' % (statement[:500],e,f))
+    return
+
+def update(db,cursor,table,columns,values,value_threshold=10000):
+    #Updating with an insert statement (see: https://stackoverflow.com/questions/20255138/sql-update-multiple-records-in-one-query)
+    params = []
+
+    column_str = ','.join(columns)
+
+    update_str_parts = []
+    for column in columns:
+        update_str_parts.append('%s=VALUES(%s)' % (column,column))
+
+    update_str = ','.join(update_str_parts)
+
+    parts = []
+    n=0
+    value_strs = []
+
+    if len(values) == 0:
+        return
+
+    for value_list in values:
+
+        for value in value_list:
+            params.append(value)
+        value_str_part = '(%s)' % ','.join(['%s']*len(value_list))
+        value_strs.append(value_str_part)
+        n+=1
+        if n == value_threshold:
+            n = 0
+            value_str = ','.join(value_strs)
+            parts.append((value_str,params))
+            value_strs = []
+            params = []
+            min_primary_value = None
+            max_primary_value = None
+    value_str = ','.join(value_strs)
+    parts.append((value_str,params))
+
+    for value_str,params in parts:
+        statement = 'INSERT IGNORE INTO %s (%s) VALUES %s ON DUPLICATE KEY UPDATE %s' % (table,column_str,value_str,update_str)
+        try:
+            cursor.execute(statement,params)
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError('Invalid Update: %s,\n%s' % (statement[:500],f))
 
 def getGeneScoreDict(gene_id_list,session_id,db,cursor,includeSequence=False):
     t0 = time.time()
@@ -83,16 +223,14 @@ def getGeneScoreDict(gene_id_list,session_id,db,cursor,includeSequence=False):
         if g_id in gene_id_list:
             score_dict[g_id] = row[1]
     t1 = time.time()
+
     if not includeSequence:
-        sql = "SELECT Gene_Id,Uniprot_Ac,Genbank_Protein_Accession_Number,Uniprot_Id,Error_Code,Error,Species FROM Gene WHERE Gene_Id <= %s AND Gene_Id >= %s" % (str(max_g),str(min_g))
+        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error','Species']
     else:
-        sql = "SELECT Gene_Id,Uniprot_Ac,Genbank_Protein_Accession_Number,Uniprot_Id,Error_Code,Error,Species,Sequence FROM Gene WHERE Gene_Id <= %s AND Gene_Id >= %s" % (str(max_g),str(min_g))
-    try:
-        cursor.execute(sql)
-        results = cursor.fetchall()
-        db.commit()
-    except:
-        raise NameError("NameError in getGeneScoreDict: %s" % sql)
+        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error','Species','Sequence']
+    table = 'Gene'
+    results = binningSelect(gene_id_list,rows,table,db,cursor)
+    
     gene_score_dict = {}
     for row in results:
         g_id = row[0]
@@ -198,13 +336,13 @@ def geneCheck(genes_aac_list,species_map,session_id,db,cursor):
         if size > 0:
             bound = 50000
             if size > bound:
-                m = size/bound
+                m = size//bound
                 rest = size%bound
                 if rest == 0:
-                    part_size = size/m
+                    part_size = size//m
                 else:
                     m += 1
-                    part_size = size/m
+                    part_size = size//m
                 parts = []
                 for i in range(0,m-1):
                     parts.append(value_strs[(i*part_size):((i+1)*part_size)])
@@ -253,7 +391,7 @@ def geneCheck(genes_aac_list,species_map,session_id,db,cursor):
     for gene in stored_genes:
         value_strs.append("('%s','%s')" % (str(stored_genes[gene]),str(session_id)))
 
-    #print value_strs
+    #print(value_strs)
 
     sql = ("""INSERT IGNORE INTO RS_Gene_Session(
                 Gene, Session)
@@ -291,7 +429,7 @@ def getLastAutoInc(db,cursor):
             auto_id = row[0]
         db.commit()
     except:
-        print "NameError in getLastAutoInc"
+        print("NameError in getLastAutoInc")
         db.rollback()
     return auto_id
 
@@ -437,65 +575,30 @@ def getAAChange(mutation_id,db,cursor):
     return ""
 
 #called by serializedPipeline
-def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_gene_ids,database_session,tag_map,db,cursor,MS_db):
+def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_gene_ids,database_session,tag_map,db,cursor,config,residue_id_backmap):
     #structure of stored_genes: {Uniprot-Id:gene_id}
     #structure of new_genes: {Uniprot-Id:gene_id}
+    verbose = config.verbose
+
     gene_mut_map_new = {}
     stored_gene_new_pos = {}
     stored_gene_stored_pos = {}
     gene_mut_map_twins = {}
     t0 = time.time()
 
-    #print(gene_aaclist_map)
-    #print stored_genes
-    #print stored_gene_ids
-
-    #stored_gene_ids = set([x[0] for x in stored_genes.values()])
     stored_mutation_map = {}
-    update_map = {}
-    max_g_id = None
-    min_g_id = None
-    binsize = 10000
-    bins = set([])
+    
     if len(stored_gene_ids) > 0:
+        rows = ['Gene','Amino_Acid_Change','Mutation_Id']
+        table = 'Mutation'
 
-        for g_id in stored_gene_ids:
-            bin_number = g_id//binsize
-            bins.add(bin_number)
+        results = binningSelect(stored_gene_ids,rows,table,db,cursor)
 
-            if max_g_id == None or int(g_id) > max_g_id:
-                max_g_id = int(g_id)
-            if min_g_id == None or int(g_id) < min_g_id:
-                min_g_id = int(g_id)
-
-        min_max_tuples = []
-        if max_g_id - min_g_id > binsize:
-            for bin_number in bins:
-                min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-        else:
-            min_max_tuples = [(min_g_id,max_g_id)]
-
-
-        total_results = []
-        for (run_min_g_id,run_max_g_id) in min_max_tuples:
-
-            sql = "SELECT Amino_Acid_Change,Gene,Mutation_Id FROM Mutation WHERE Gene BETWEEN %s and %s" % (str(run_min_g_id),str(run_max_g_id))
-
-            try:
-                cursor.execute(sql)
-                results = cursor.fetchall()
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
-            total_results += results
-
-
-        for row in total_results:
-            gene_id = row[1]
+        for row in results:
+            gene_id = row[0]
             if not gene_id in stored_gene_ids:
                 continue
-            aacs = row[0].split(",")
+            aacs = row[1].split(",")
             aacbase = aacs[0]
             pos = aacbase[1:]
             mutation_id = row[2]
@@ -506,16 +609,12 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
             else:
                 stored_mutation_map[gene_id].add(pos)
 
-
-    #print(stored_mutation_map[1])
     t1 = time.time()
     for gene in gene_aaclist_map:
-        #print gene
         aaclist = gene_aaclist_map[gene][2]
 
         if gene in stored_genes:
             gene_id = stored_genes[gene]
-            #print gene_id
             for aac in aaclist:
                 aacbase = aac[:-1]
                 pos = aac[1:-1]
@@ -543,110 +642,61 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
                     gene_mut_map_new[gene] = set()
                 gene_mut_map_new[gene].add(aacbase)
 
-    #print(gene_mut_map_new)
-
     t2 = time.time()
 
-    value_strs = []
+    values = []
     for gene in gene_mut_map_new:
         gene_id = new_genes[gene]
         for aacbase in gene_mut_map_new[gene]:
-
-            value_strs.append("('%s','%s')" % (str(gene_id),aacbase))
+            if gene in residue_id_backmap:
+                values.append((gene_id,aacbase,residue_id_backmap[gene][int(aacbase[1:])]))
+            else:
+                values.append((gene_id,aacbase,None))
 
     for gene in stored_gene_new_pos:
         gene_id = stored_genes[gene]
         for aacbase in stored_gene_new_pos[gene]:
-
-            value_strs.append("('%s','%s')" % (str(gene_id),aacbase))
+            if gene in residue_id_backmap:
+                values.append((gene_id,aacbase,residue_id_backmap[gene][int(aacbase[1:])]))
+            else:
+                values.append((gene_id,aacbase,None))
 
     t3 = time.time()
-    #print(len(value_strs))
-    if len(value_strs) > 0:
 
-        size = len(value_strs)
-        if size > 0:
-            bound = 50000
-            if size > bound:
-                m = size/bound
-                rest = size%bound
-                if rest == 0:
-                    part_size = size/m
-                else:
-                    m += 1
-                    part_size = size/m
-                parts = []
-                for i in range(0,m-1):
-                    parts.append(value_strs[(i*part_size):((i+1)*part_size)])
-                parts.append(value_strs[(m-1)*part_size:])
-            else:
-                parts = [value_strs]
-            for part in parts:
+    if len(values) > 0:
+        columns = ['Gene','Amino_Acid_Change','Residue_Id']
+        insert(db,cursor,'Mutation',columns,values,value_threshold=50000)
 
-                sql = "INSERT IGNORE INTO Mutation(Gene,Amino_Acid_Change) VALUES %s" % ','.join(part)
-                try:
-                    cursor.execute(sql)
-                    db.commit()
-                except:
-                    [e,f,g] = sys.exc_info()
-                    raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
     t4 = time.time()
-    value_strs = []
 
     t5 = time.time()
 
     t6 = time.time()
 
-    for g_id in new_gene_ids: #Note: the max and min values are indeed the ones from the beginning of the method!
-        bin_number = g_id//binsize
-        bins.add(bin_number)
+    update_map = {}
 
-        if max_g_id == None or int(g_id) > max_g_id:
-            max_g_id = int(g_id)
-        if min_g_id == None or int(g_id) < min_g_id:
-            min_g_id = int(g_id)
+    rows = ['Gene','Amino_Acid_Change','Mutation_Id']
+    table = 'Mutation'
 
-    min_max_tuples = []
-    if max_g_id - min_g_id > binsize:
-        for bin_number in bins:
-            min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-    else:
-        min_max_tuples = [(min_g_id,max_g_id)]
+    fused_gene_ids = new_gene_ids | stored_gene_ids
 
-
-    total_results = []
-    for (run_min_g_id,run_max_g_id) in min_max_tuples:
-
-        sql = "SELECT Amino_Acid_Change,Mutation_Id,Gene FROM Mutation WHERE Gene BETWEEN %s and %s" % (str(run_min_g_id),str(run_max_g_id))
-
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
-        total_results += results
+    results = binningSelect(fused_gene_ids,rows,table,db,cursor)
 
     t7 = time.time()
 
-
-    update_map = {}
-    for row in total_results:
-        gene_id = row[2]
-        if not (gene_id in stored_gene_ids or gene_id in new_gene_ids):
+    for row in results:
+        gene_id = row[0]
+        if not (gene_id in fused_gene_ids):
             #print gene_id
             continue
-        aacbase = row[0]
+        aacbase = row[1]
         pos = aacbase[1:]
 
-        mutation_id = row[1]
+        mutation_id = row[2]
         if not gene_id in update_map:
             update_map[gene_id] = {pos:mutation_id}
         else:
             update_map[gene_id][pos] = mutation_id
-
-    #print update_map
 
     t8 = time.time()
 
@@ -656,16 +706,13 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
     stored_gene_stored_pos_id = {}
     tag_update_map = {}
 
-    #print gene_aaclist_map
-
     for gene in gene_aaclist_map:
         aaclist = gene_aaclist_map[gene][2]
         if gene in stored_genes:
             gene_id = stored_genes[gene]
         else:
             gene_id = new_genes[gene]       
-        #print(gene)
-        #print(gene_id)
+
         for aac in aaclist:
             aac_base = aac[:-1]
             pos = aac_base[1:]
@@ -679,6 +726,8 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
             if gene in tag_map:
                 if aac in tag_map[gene]:
                     tag_update_map[(mut_id,aa2)] = tag_map[gene][aac]
+                else:
+                    tag_update_map[(mut_id,aa2)] = None
             else:
                 tag_update_map[(mut_id,aa2)] = None
             if gene in gene_mut_map_new and aac_base in gene_mut_map_new[gene]:
@@ -699,171 +748,113 @@ def mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_ge
 
     t9 = time.time()
 
-    value_strs = []
+    values = []
 
-    #print mut_new_aa_map
     for mut_id in mut_new_aa_map:
         for new_aa in mut_new_aa_map[mut_id]:
             if tag_update_map[(mut_id,new_aa)] == None:
-                value_strs.append("('%s','%s','%s',NULL)" % (str(database_session),str(mut_id),new_aa))
+                values.append((database_session,mut_id,new_aa,'NULL'))
             else:
-                value_strs.append("('%s','%s','%s','%s')" % (str(database_session),str(mut_id),new_aa,tag_update_map[(mut_id,new_aa)]))
+                values.append((database_session,mut_id,new_aa,tag_update_map[(mut_id,new_aa)]))
 
-    #print value_strs
+    t10 = time.time()
 
-    if len(value_strs) > 50000:
-        process = Process(target = backgroundInsertMS,args=(value_strs,MS_db))
+    if verbose:
+        print("Time for mutationCheck Part 1: %s" % (str(t1-t0)))
+        print("Time for mutationCheck Part 2: %s" % (str(t2-t1)))
+        print("Time for mutationCheck Part 3: %s" % (str(t3-t2)))
+        print("Time for mutationCheck Part 4: %s" % (str(t4-t3)))
+        print("Time for mutationCheck Part 5: %s" % (str(t5-t4)))
+        print("Time for mutationCheck Part 6: %s" % (str(t6-t5)))
+        print("Time for mutationCheck Part 7: %s" % (str(t7-t6)))
+        print("Time for mutationCheck Part 8: %s" % (str(t8-t7)))
+        print("Time for mutationCheck Part 9: %s" % (str(t9-t8)))
+        print("Time for mutationCheck Part 10: %s" % (str(t10-t9)))
+
+    if len(values) > 10000:
+        process = multiprocessing.Process(target = backgroundInsertMS,args=(values,config))
         try:
             process.start()
         except:
-            process = None
-        t10 = time.time()
-
-        '''
-        print "Time for mutationCheck Part 1: %s" % (str(t1-t0))
-        print "Time for mutationCheck Part 2: %s" % (str(t2-t1))
-        print "Time for mutationCheck Part 3: %s" % (str(t3-t2))
-        print "Time for mutationCheck Part 4: %s" % (str(t4-t3))
-        print "Time for mutationCheck Part 5: %s" % (str(t5-t4))
-        print "Time for mutationCheck Part 6: %s" % (str(t6-t5))
-        print "Time for mutationCheck Part 7: %s" % (str(t7-t6))
-        print "Time for mutationCheck Part 8: %s" % (str(t8-t7))
-        print "Time for mutationCheck Part 9: %s" % (str(t9-t8))
-        print "Time for mutationCheck Part 10: %s" % (str(t10-t9))
-        '''
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in mutationCheck: %s" % (f))
+        
+        t11 = time.time()
+        if verbose:
+            print("Time for mutationCheck Part 11: %s" % (str(t11-t10)))
         return gene_mut_map_new_id,stored_gene_new_pos_id,process
     else:
-        sql = "INSERT IGNORE INTO RS_Mutation_Session(Session,Mutation,New_AA,Tag) VALUES %s" % ','.join(value_strs)
-        try:
-            #print sql
-            cursor.execute(sql)
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+        insert(db,cursor,'RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,value_threshold=1000)
+        t11 = time.time()
+        if verbose:
+            print("Time for mutationCheck Part 11: %s" % (str(t11-t10)))
         return gene_mut_map_new_id,stored_gene_new_pos_id,None
 
-def backgroundInsertMS(value_strs,db):
+def backgroundInsertMS(values,config):
+    db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
     cursor = db.cursor()
-    size = len(value_strs)
-    if size > 0:
-        bound = 1000
-        if size > bound:
-            m = size/bound
-            rest = size%bound
-            if rest == 0:
-                part_size = size/m
-            else:
-                m += 1
-                part_size = size/m
-            parts = []
-            for i in range(0,m-1):
-                parts.append(value_strs[(i*part_size):((i+1)*part_size)])
-            parts.append(value_strs[(m-1)*part_size:])
-        else:
-            parts = [value_strs]
-
-        for part in parts:
-
-            sql = "INSERT IGNORE INTO RS_Mutation_Session(Session,Mutation,New_AA,Tag) VALUES %s" % ','.join(part)
-            try:
-                #print sql
-                cursor.execute(sql)
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+    insert(db,cursor,'RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,value_threshold=1000)
+    db.close()
     return
 
 #called by serializedPipeline
-def addIupred(iupred_map,gene_mut_map_new,stored_gene_new_pos,db):
-    process = Process(target = backgroundIU,args=(iupred_map,gene_mut_map_new,stored_gene_new_pos,db))
+def addIupred(iupred_map,gene_mut_map_new,stored_gene_new_pos,config):
+    process = multiprocessing.Process(target = backgroundIU,args=(iupred_map,gene_mut_map_new,stored_gene_new_pos,config))
     process.start()
     return process
 
-def backgroundIU(iupred_map,gene_mut_map_new,stored_gene_new_pos,db):
+def backgroundIU(iupred_map,gene_mut_map_new,stored_gene_new_pos,config):
     #structure of gene_mut_map_new: {Uniprot_Ac:(gene_id,{AAC_Base:mutation_id})}
-    #structure of iupred_map: {Uniprot_Ac:([glob_ranges],{Position:(aa1,iupred_score)})}
+    #structure of iupred_map: {Uniprot_Ac:([regions],{Position:(aa1,iupred_score)})}
 
-
-    
-    cursor = db.cursor()
-
-
-    binsize = 10000
+    binsize = 5000
     bins = set()
     max_mut_id = 0
     min_mut_id = None
-
     value_strs = {}
     value_strs_glob = {}
-    for u_ac in gene_mut_map_new:
-        if not u_ac in iupred_map:
-            print 'Warning: Did not find %s in the iupred map' % u_ac
-            continue
-        glob_ranges = iupred_map[u_ac][0]
-        for aac_base in gene_mut_map_new[u_ac][1]:
-            m_id = gene_mut_map_new[u_ac][1][aac_base]
-            if not aac_base[1:] in iupred_map[u_ac][1]:
+
+    def addToValues(g_m_map,max_mut_id,min_mut_id,bins):
+        for u_ac in g_m_map:
+            if not u_ac in iupred_map:
+                print('Warning: Did not find %s in the iupred map' % u_ac)
                 continue
-            glob = False
-            for [a,b] in glob_ranges:
-                if int(aac_base[1:]) > int(a) and int(aac_base[1:]) < int(b):
-                    glob = True
-            aa1,iupred_score = iupred_map[u_ac][1][aac_base[1:]]
-            #if aa1 != aac_base[0] and aac_base[0] != '?':
-                #print('Iupred amino acid does not match aac_base for gene: %s and aac_base: %s' % (u_ac,aac_base))
+            regions = iupred_map[u_ac][0]
+            method = iupred_map[u_ac][2]
+            for aac_base in g_m_map[u_ac][1]:
+                m_id = g_m_map[u_ac][1][aac_base]
+                aac_pos = int(aac_base[1:])
+                if not aac_pos in iupred_map[u_ac][1]:
+                    continue
+                if method == 'MobiDB3.0'or method == 'mobidb-lite':
+                    pos_region_type = 'globular'
+                else:
+                    pos_region_type = 'disorder'
+                for [a,b,region_type] in regions:
+                    if aac_pos > int(a) and aac_pos < int(b):
+                        pos_region_type = region_type
+                aa1,iupred_score = iupred_map[u_ac][1][aac_pos]
 
-            bin_number = m_id//binsize
-            bins.add(bin_number)
-            if m_id > max_mut_id:
-                max_mut_id = m_id
-            if min_mut_id == None or m_id < min_mut_id:
-                min_mut_id = m_id
-            if not bin_number in value_strs:
-                value_strs[bin_number] = []
-            if not bin_number in value_strs_glob:
-                value_strs_glob[bin_number] = []
+                bin_number = m_id//binsize
+                bins.add(bin_number)
+                if m_id > max_mut_id:
+                    max_mut_id = m_id
+                if min_mut_id == None or m_id < min_mut_id:
+                    min_mut_id = m_id
+                if not bin_number in value_strs:
+                    value_strs[bin_number] = []
+                if not bin_number in value_strs_glob:
+                    value_strs_glob[bin_number] = []
+                value_strs[bin_number].append("WHEN '%s' THEN '%s'" % (str(m_id),str(iupred_score)))
 
-            value_strs[bin_number].append("WHEN '%s' THEN '%s'" % (str(m_id),str(iupred_score)))
+                value_strs_glob[bin_number].append("WHEN '%s' THEN '%s'" % (str(m_id),pos_region_type))
+        return max_mut_id,min_mut_id,bins
 
-            if glob:
-                value_strs_glob[bin_number].append("WHEN '%s' THEN '1'" % (str(m_id)))
-            else:
-                value_strs_glob[bin_number].append("WHEN '%s' THEN '0'" % (str(m_id)))
+    db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
+    cursor = db.cursor()
 
-    for u_ac in stored_gene_new_pos:
-        glob_ranges = iupred_map[u_ac][0]
-        for aac_base in stored_gene_new_pos[u_ac][1]:
-            m_id = stored_gene_new_pos[u_ac][1][aac_base]
-            if not aac_base[1:] in iupred_map[u_ac][1]:
-                continue
-            glob = False
-            for [a,b] in glob_ranges:
-                if int(aac_base[1:]) > int(a) and int(aac_base[1:]) < int(b):
-                    glob = True
-            aa1,iupred_score = iupred_map[u_ac][1][aac_base[1:]]
-            #if aa1 != aac_base[0] and aac_base[0] != '?':
-            #    print('Iupred amino acid does not match aac_base for gene: %s and aac_base: %s' % (u_ac,aac_base))
-
-
-            bin_number = m_id//binsize
-            bins.add(bin_number)
-            if m_id > max_mut_id:
-                max_mut_id = m_id
-            if min_mut_id == None or m_id < min_mut_id:
-                min_mut_id = m_id
-            if not bin_number in value_strs:
-                value_strs[bin_number] = []
-            if not bin_number in value_strs_glob:
-                value_strs_glob[bin_number] = []
-            value_strs[bin_number].append("WHEN '%s' THEN '%s'" % (str(m_id),str(iupred_score)))
-
-            if glob:
-                value_strs_glob[bin_number].append("WHEN '%s' THEN '1'" % (str(m_id)))
-            else:
-                value_strs_glob[bin_number].append("WHEN '%s' THEN '0'" % (str(m_id)))
-
+    max_mut_id,min_mut_id,bins = addToValues(gene_mut_map_new,max_mut_id,min_mut_id,bins)
+    max_mut_id,min_mut_id,bins = addToValues(stored_gene_new_pos,max_mut_id,min_mut_id,bins)
 
     if not len(value_strs) == 0:
         min_max_tuples = []
@@ -892,6 +883,7 @@ def backgroundIU(iupred_map,gene_mut_map_new,stored_gene_new_pos,db):
             except:
                 [e,f,g] = sys.exc_info()
                 raise NameError("Error in addIupred: %s,%s" % (sql,f))
+    db.close()
     return
 
 #called by serializedPipeline
@@ -1007,7 +999,7 @@ def getStructureDict(s_ids,db,cursor):
             oligos = row[4]
             chains = row[5]
             if s_id in structure_ligand_dict:
-                ligands = structure_ligand_dict[s_id].values()
+                ligands = list(structure_ligand_dict[s_id].values())
             else:
                 ligands = []
             """
@@ -1038,7 +1030,7 @@ def getStructureDict(s_ids,db,cursor):
             oligos = row[4]
             chains = row[5]
             if s_id in structure_ligand_dict:
-                ligands = structure_ligand_dict[s_id].values()
+                ligands = list(structure_ligand_dict[s_id].values())
             else:
                 ligands = []
             """
@@ -1126,37 +1118,17 @@ def getMutationDict(mutation_id_list,db,cursor):
     if len(mutation_id_list) == 0:
         return {}
 
-    binsize = 10000
-    bins = set()
-    min_m = min(mutation_id_list)
-    max_m = max(mutation_id_list)
+    rows = ['Mutation_Id','Amino_Acid_Change','Gene','IUPRED','IUPRED_Glob','Residue_Id']
+    table = 'Mutation'
+    results = binningSelect(mutation_id_list,rows,table,db,cursor)
 
-    for m_id in mutation_id_list:
 
-        bin_number = m_id//binsize
-        bins.add(bin_number)
-
-    min_max_tuples = []
-    if max_m - min_m > binsize:
-        for bin_number in bins:
-            min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-    else:
-        min_max_tuples = [(min_m,max_m)]
     mutation_dict= {}
-    for (min_m,max_m) in min_max_tuples:
 
-        sql = "SELECT Mutation_Id,Amino_Acid_Change,Gene,IUPRED,IUPRED_Glob FROM Mutation WHERE Mutation_Id BETWEEN %s AND %s" % (str(min_m),str(max_m))
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("NameError in getMutationDict: %s" % sql)
-        
-        for row in results:
-            mut_id = row[0]
-            if mut_id in mutation_id_list:
-                mutation_dict[mut_id] = (row[1],row[2],row[3],row[4])
+    for row in results:
+        mut_id = row[0]
+        if mut_id in mutation_id_list:
+            mutation_dict[mut_id] = (row[1],row[2],row[3],row[4],row[5])
     return mutation_dict
 
 #called by serializedPipeline
@@ -1168,7 +1140,7 @@ def updateSession(session_id,time,db,cursor):
         # Commit your changes in the database
         db.commit()
     except:
-        print("Couldn't update Session '%s'") % (str(session_id))
+        print(("Couldn't update Session '%s'") % (str(session_id)))
         # Rollback in case there is any NameError
         db.rollback()
 
@@ -1351,7 +1323,7 @@ def addGeneInfos(gene_info_map,db,cursor):
             [e,f,g] = sys.exc_info()
             raise NameError("Error in addGeneInfos: %s,%s" % (sql,f))
 
-    gene_id_strs = [str(x) for x in gene_info_map.keys()]
+    gene_id_strs = [str(x) for x in list(gene_info_map.keys())]
 
 
     if len(seq_value_strs) > 0:
@@ -1389,7 +1361,7 @@ def getSequences(stored_genes,sequence_map,db,cursor):
             gene_id_sequence_map[gene_id] = row[1]
 
     for gene_id in gene_id_sequence_map:
-        sequence_map[gene_id_gene_map[gene_id]] = gene_id_sequence_map[gene_id]
+        sequence_map[gene_id_gene_map[gene_id]] = gene_id_sequence_map[gene_id],'Stored','Stored'
 
     return sequence_map
 
@@ -1404,7 +1376,7 @@ def addErrorCodeToGene(gene_error_map,db,cursor):
         value_strs_c.append("WHEN %s THEN %d" % (str(gene_id),error_id))
         value_strs_e.append("WHEN %s THEN '%s'" % (str(gene_id),error[error_id]))
     if len(value_strs_c) > 0:
-        gene_id_string = ','.join([str(x) for x in gene_error_map.keys()])
+        gene_id_string = ','.join([str(x) for x in list(gene_error_map.keys())])
         sql = "UPDATE IGNORE Gene SET Error_Code = CASE Gene_Id %s ELSE Error_Code END , ERROR = CASE Gene_Id %s ELSE Error END WHERE Gene_Id IN (%s)" % (" ".join(value_strs_c)," ".join(value_strs_e),gene_id_string)
         try:
             cursor.execute(sql)
@@ -1420,13 +1392,13 @@ def backgroundInsertAS(value_strings,max_m,min_m,db,anno_anno_calculation):
     if size > 0:
         bound = 2000
         if size > bound:
-            m = size/bound
+            m = size//bound
             rest = size%bound
             if rest == 0:
-                part_size = size/m
+                part_size = size//m
             else:
                 m += 1
-                part_size = size/m
+                part_size = size//m
             parts = []
             for i in range(0,m-1):
                 parts.append(value_strings[(i*part_size):((i+1)*part_size)])
@@ -1475,13 +1447,13 @@ def backgroundInsertAS(value_strings,max_m,min_m,db,anno_anno_calculation):
         if size > 0:
             bound = 2000
             if size > bound:
-                m = size/bound
+                m = size//bound
                 rest = size%bound
                 if rest == 0:
-                    part_size = size/m
+                    part_size = size//m
                 else:
                     m += 1
-                    part_size = size/m
+                    part_size = size//m
                 parts = []
                 for i in range(0,m-1):
                     parts.append(anno_anno_value_strs[(i*part_size):((i+1)*part_size)])
@@ -1531,35 +1503,204 @@ def insertMultipleAnnotationSession(session_id,pseudo_template_map,gene_mut_map_
     if not anno_session_mapping:
         return stored_annotations,None
 
-    proc = Process(target=backgroundInsertAS, args=(value_strings,max_m,min_m,AS_db,anno_anno_calculation))
+    proc = multiprocessing.Process(target=backgroundInsertAS, args=(value_strings,max_m,min_m,AS_db,anno_anno_calculation))
     proc.start()
 
     return stored_annotations,proc
 
 #called by serializedPipeline
-def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,structure_id_map):
+def insertComplexes(complex_profiles,pdb_ids,db,cursor):
+    value_strs = []
+    for pdb in complex_profiles:
+        ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = complex_profiles[pdb]
 
-    if len(structurelist) == 0:
-        return {},{}
-    stored_structures = {}
+        lig_str_parts = []
+        for chain,res in ligand_profiles:
+            deg,score = ligand_profiles[(chain,res)]
+            lig_str_parts.append('%s_%s:%s_%s' % (chain,res,str(deg),str(score)))
+        lig_str = ','.join(lig_str_parts)
+        
+        metal_str_parts = []
+        for chain,res in metal_profiles:
+            deg,score = metal_profiles[(chain,res)]
+            metal_str_parts.append('%s_%s:%s_%s' % (chain,res,str(deg),str(score)))
+        metal_str = ','.join(metal_str_parts)
 
-    sql = "SELECT Structure_Id,PDB,Chain FROM Structure"
-    try:
-        cursor.execute(sql)
-        results = cursor.fetchall()
-        db.commit()
-    except:
-        [e,f,g] = sys.exc_info()
-        raise NameError("Error in insertTemplates: %s\n%s" % (sql,f))
+        ion_str_parts = []
+        for chain,res in ion_profiles:
+            deg,score = ion_profiles[(chain,res)]
+            ion_str_parts.append('%s_%s:%s_%s' % (chain,res,str(deg),str(score)))
+        ion_str = ','.join(ion_str_parts)
+
+        cc_str_parts = []
+        for chain_a,chain_b in chain_chain_profiles:
+            deg,score = chain_chain_profiles[(chain_a,chain_b)]
+            cc_str_parts.append('%s_%s:%s_%s' % (chain_a,chain_b,str(deg),str(score)))
+        cc_str = ','.join(cc_str_parts)
+
+        value_strs.append("('%s','%s','%s','%s','%s')" % (pdb,lig_str,metal_str,ion_str,cc_str))
+
+    if len(value_strs) > 0:
+        value_strs_list = []
+        i = 0
+        part_size = 5000
+        while i*part_size < len(value_strs):
+            a = i*part_size
+            b = min(((i+1)*part_size,len(value_strs)))
+            i += 1
+            sql = "INSERT IGNORE INTO Complex(PDB,Ligand_Profile,Metal_Profile,Ion_Profile,Chain_Chain_Profile) VALUES %s" % ','.join(value_strs[a:b])
+            try:
+                cursor.execute(sql)
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in insertComplexes: %s" % (f))
+
+    rows = ['PDB','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile']
+    table = 'Complex'
+    if len(pdb_ids) > 0:
+        results = select(db,cursor,rows,table,in_rows={'PDB':pdb_ids})
+    else:
+        results = []
+
     for row in results:
+        pdb_id = row[0]
+        if pdb_id in complex_profiles:
+            continue
+        lig_str = row[1]
+        metal_str = row[2]
+        ion_str = row[3]
+        cc_str = row[4]
+        lig_profile = {}
+        if lig_str != '':
+            for lig_str_parts in lig_str.split(','):
+                part1,part2 = lig_str_parts.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+                deg = int(deg)
+                score = float(score)
+                lig_profile[(chain,res)] = (deg,score)
+
+        metal_profile = {}
+        if metal_str != '':
+            for metal_str_parts in metal_str.split(','):
+                part1,part2 = metal_str_parts.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+                deg = int(deg)
+                score = float(score)
+                metal_profile[(chain,res)] = (deg,score)
+
+        ion_profile = {}
+        if ion_str != '':
+            for ion_str_parts in ion_str.split(','):
+                part1,part2 = ion_str_parts.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+                deg = int(deg)
+                score = float(score)
+                ion_profile[(chain,res)] = (deg,score)
+
+        cc_profile = {}
+        if cc_str != '':
+            for cc_str_parts in cc_str.split(','):
+                part1,part2 = cc_str_parts.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+                deg = int(deg)
+                score = float(score)
+                cc_profile[(chain,res)] = (deg,score)
+
+        complex_profiles[pdb_id] = lig_profile,metal_profile,ion_profile,cc_profile
+
+    return complex_profiles
+
+def getComplexMap(db,cursor,pdb_ids=None):
+    table = 'Complex'
+    rows = ['PDB','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile']
+
+    results = select(db,cursor,rows,table)
+
+    complex_map = {}
+    for row in results:
+        pdb_id = row[0]
+        if pdb_ids != None:
+            if not pdb_id in pdb_ids:
+                continue
+        lig_profile_str = row[1]
+        metal_profile_str = row[2]
+        ion_profile_str = row[3]
+        cc_profile_str = row[4]
+
+        lig_profile = {}
+        if lig_profile_str != '':
+            for lig_profile_part in lig_profile_str.split(','):
+                part1,part2 = lig_profile_part.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+
+                lig_profile[(chain,res)] = int(deg),float(score)
+    
+        metal_profile = {}
+
+        if metal_profile_str != '':
+            for metal_profile_part in metal_profile_str.split(','):
+                part1,part2 = metal_profile_part.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+
+                metal_profile[(chain,res)] = int(deg),float(score)
+
+        ion_profile = {}
+
+        if ion_profile_str != '':
+            for ion_profile_part in ion_profile_str.split(','):
+                part1,part2 = ion_profile_part.split(':')
+                chain,res = part1.split('_')
+                deg,score = part2.split('_')
+
+                ion_profile[(chain,res)] = int(deg),float(score)
+
+        cc_profile = {}
+
+        if cc_profile_str != '':
+            for cc_profile_part in cc_profile_str.split(','):
+                part1,part2 = cc_profile_part.split(':')
+                chain,chain_b = part1.split('_')
+                deg,score = part2.split('_')
+
+                cc_profile[(chain,chain_b)] = int(deg),float(score)
+
+        complex_map[pdb_id] = (lig_profile,metal_profile,ion_profile,cc_profile)
+
+    return complex_map
+
+
+#called by serializedPipeline
+def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,structure_id_map):
+    #structure_id_map contains only the structures of stored alignments, which means only for inputs, where the target protein and the template structure where already stored
+    #   afterwards, it contains all structure_ids of all mapped structures
+    #structurelist contains all other structures, which means there could be stored structures amoing them
+    stored_structures = {}
+    structure_dict = {}
+    table = 'Structure'
+    rows = ['Structure_Id','PDB','Chain','Resolution','Homooligomer','Chains']
+    results = select(db,cursor,rows,table)
+    
+    for row in results:
+        s_id = row[0]
         pdb_id = row[1]
         chain = row[2]
-        if not (pdb_id,chain) in structurelist:
-            continue
-        s_id = row[0]
-        stored_structures[(pdb_id,chain)] = s_id
-        del structurelist[(pdb_id,chain)]
-    
+        resolution = row[3]
+        oligos = row[4]
+        chains = row[5]
+        stored_structures[(pdb_id,chain)] = s_id #all structures, mapped or not go into this dictionary, this is important for not reinserting residues from interacting structures
+        if (pdb_id,chain) in structurelist:
+            structure_dict[s_id] = [pdb_id,chain,resolution,None,oligos,chains]
+            structure_id_map[(pdb_id,chain)] = s_id
+            del structurelist[(pdb_id,chain)]
+        elif (pdb_id,chain) in structure_id_map:
+            structure_dict[s_id] = [pdb_id,chain,resolution,None,oligos,chains]
 
     t0 = time.time()
     #structure of structurelist: {(pdb_id,chain): (resolution,oligo_counter,interaction_partner)}
@@ -1605,23 +1746,23 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
     t2 = time.time()
 
     if len(structurelist) > 0:
-        sql = "SELECT Structure_Id,PDB,Chain FROM Structure"
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in insertTemplates: %s\n%s" % (sql,f))
+        table = 'Structure'
+        rows = ['Structure_Id','PDB','Chain','Resolution','Homooligomer','Chains']
+        results = select(db,cursor,rows,table)
 
         for row in results:
+            s_id = row[0]
             pdb_id = row[1]
             chain = row[2]
+            resolution = row[3]
+            oligos = row[4]
+            chains = row[5]
+
             if not (pdb_id,chain) in structurelist:
                 continue
-            s_id = row[0]
 
             structure_id_map[(pdb_id,chain)] = s_id
+            structure_dict[s_id] = [pdb_id,chain,resolution,None,oligos,chains]
 
     t3 = time.time()
     stored_ligands = {}        
@@ -1646,12 +1787,11 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
     new_ligands = set()
 
     ligand_db = pdb.parseLigandDB(smiles_path,inchi_path)
-    #print ligand_db
 
-    #print ligand_db
     t5 = time.time()
 
-    #print ligand_map
+    update_ligands = []
+
     for (pdb_id,chain)in ligand_map:
         iaps = ligand_map[(pdb_id,chain)]
         for iap in iaps:
@@ -1671,8 +1811,11 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
                         inchi = "InChI=1S/%s" % smiles
                     else:
                         (smiles,inchi) = pdb.getSI(pdb_id,name,res,chain,pdb_path)
+                        update_ligands.append((name,smiles,inchi))
                     value_strs.append("('%s','%s','%s')" % (name,smiles,inchi))
 
+    if len(update_ligands) > 0:
+        pdb.updateLigandDB(update_ligands,smiles_path,inchi_path)
 
     t6 = time.time()
 
@@ -1753,7 +1896,7 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,str
     print "insertTemplates part 9: ",t9-t8
     print "insertTemplates part 10: ",t10-t9
     """
-    return structure_id_map,stored_structures
+    return structure_id_map,stored_structures,structure_dict
 
 #called by serializedPipeline
 def insertInteractingChains(interacting_structure_dict,db,cursor,smiles_path,inchi_path,pdb_path):
@@ -2002,27 +2145,33 @@ def insertAlignments(alignment_list,structure_id_map,stored_structures,db,cursor
                 raise NameError("Error in insertAlignments: %s" % (f))
 
 #called by serializedPipeline
-def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structure_ids):
-    #structure of template_mutation_map: {pdb_id:[sub_info_map,{template_id:{aac_base:mutation_id}},template]}
-    #structure of anno_anno_dict: {(smaller template_id,bigger template_id,aac_base of first template,aac_base of second template):(min_dist,atompair)}
-    #print template_annotation_map
-    #print template_mutation_map
-    value_strs = []
+def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structure_ids,stored_structures):
+    #stored_structures: contains the s-ids from all structures, which are already stored in the database
+    #   [structure]: {(pdb-id,chain):s_id}
+    #structure_id_map: contains the s-ids from all mapped structures
 
-    #print annotation_map
+    values = []
+
     if len(annotation_map) == 0:
-        return {}
+        return {},{}
     
-
     structure_ids = set()
+    target_structure_ids = set()
 
     for (pdb,chain) in structure_id_map:
         structure_ids.add(structure_id_map[(pdb,chain)])
+        if (pdb,chain) in stored_structures: #all residues belonging to stored structures must be filtered from the residue_dict; the dict gets updated later by 'stored_residue_dict' in serializedPipeline
+            continue
+        target_structure_ids.add(structure_id_map[(pdb,chain)])
 
     for (pdb,chain) in interacting_structure_ids:
         structure_ids.add(interacting_structure_ids[(pdb,chain)])
 
     for (pdb,chain) in annotation_map:
+
+        if (pdb,chain) in stored_structures: #all residues belonging to stored structures must not inserted twice
+            continue
+
         anno_map,residue_residue_map = annotation_map[(pdb,chain)]
         if (pdb,chain) in structure_id_map:
             s_id = structure_id_map[(pdb,chain)]
@@ -2030,17 +2179,12 @@ def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structu
             s_id = interacting_structure_ids[(pdb,chain)]
         
         for res_id in anno_map:
-            (one_letter,lig_dists,chain_dists,rsa,ssa,homomer_map,profile,centrality_scores) = anno_map[res_id]
-
-            if profile == None:
-                profile_str = "NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL"
-            else:
-                profile_str = "'%s','%1.4f','%s','%1.4f','%s','%1.4f','%s','%1.4f','%s','%1.4f'" % (profile['ligand'][0],profile['ligand'][1],profile['interchain'][0],profile['interchain'][1],profile['neighbor'][0],profile['neighbor'][1],profile['short'][0],profile['short'][1],profile['long'][0],profile['long'][1])
+            (one_letter,lig_dists,chain_dists,rsa,ssa,homomer_map,profile_str,centrality_scores,avg_b_factor,modres) = anno_map[res_id]
 
             if centrality_scores[0] == None:
-                centrality_score_str = 'NULL,NULL,NULL'
+                centrality_score_str = None
             else:
-                centrality_score_str = ','.join([str(x) for x in centrality_scores])
+                centrality_score_str = ';'.join([str(x)[:40] for x in centrality_scores])
 
             lig_dist_strings = []
             dists = []
@@ -2072,97 +2216,43 @@ def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structu
             if len(chain_dists) == 0:
                 chain_dist_string = "-"
             res_id = res_id.replace("'","\\'")
-            if rsa == None:
-                rsa_str = "NULL"
-            else:
-                rsa_str = "'%1.2f'" % float(rsa)
-            if ssa == None:
-                ssa = "NULL"
-            else:
-                ssa = "'%s'" % ssa
+            
+            rsa = float(rsa)
+
             homo_strs = []
             for homo_chain in homomer_map:
                 min_d = homomer_map[homo_chain]
                 homo_strs.append('%s:%1.2f' % (homo_chain,min_d))
             homo_str = ','.join(homo_strs)
 
-            value_strs.append("('%s','%s','%s','%s','%s',%s,%s,'%s',%s,%s)" % (str(s_id),res_id,one_letter,lig_dist_string,chain_dist_string,rsa_str,ssa,homo_str,profile_str,centrality_score_str))
+            values.append([s_id,res_id,one_letter,lig_dist_string,chain_dist_string,rsa,ssa,homo_str,profile_str,centrality_score_str,avg_b_factor,modres])
 
+    columns = ['Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment',
+                'Homomer_Distances','Interaction_Profile','Centralities','B_Factor','Modres']
 
-    size = len(value_strs)
-    #print size
-    if size > 0:
-        bound = 1000
-        if size > bound:
-            m = size/bound
-            rest = size%bound
-            if rest == 0:
-                part_size = size/m
-            else:
-                m += 1
-                part_size = size/m
-            parts = []
-            for i in range(0,m-1):
-                parts.append(value_strs[(i*part_size):((i+1)*part_size)])
-            parts.append(value_strs[(m-1)*part_size:])
-        else:
-            parts = [value_strs]
-        for part in parts:
-            sql = """INSERT IGNORE INTO Residue
-            (Structure,
-            Number,
-            Amino_Acid,
-            Sub_Lig_Dist,
-            Sub_Chain_Distances,
-            Relative_Surface_Access,
-            Secondary_Structure_Assignment,
-            Homomer_Distances,
-            Ligand_Interaction_Degree,
-            Ligand_Interaction_Score,
-            Chain_Interaction_Degree,
-            Chain_Interaction_Score,
-            Short_Interaction_Degree,
-            Short_Interaction_Score,
-            Medium_Interaction_Degree,
-            Medium_Interaction_Score,
-            Long_Interaction_Degree,
-            Long_Interaction_Score,
-            Raw_Centrality,
-            Centrality,
-            Norm_Centrality
-            ) VALUES %s""" % ','.join(part)
-            try:
-                cursor.execute(sql)
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in insertResidues: %s" % (f))
+    insert(db,cursor,'Residue',columns,values,value_threshold=500)
 
-    min_s = min(structure_ids)
-    max_s = max(structure_ids)
-
-    #print min_s
-    #print max_s
-
+    residue_dict = {}
     structure_residue_map = {}
     if len(annotation_map) > 0:
-        sql = "SELECT Residue_Id,Structure,Number FROM Residue WHERE Structure BETWEEN %s AND %s" % (min_s,max_s)
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in insertResidues: %s\n%s" % (sql,f))
+        rows = ['Structure','Residue_Id','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment','Homomer_Distances','Interaction_Profile','Centralities','Modres']
+        table = 'Residue'
+
+        results = binningSelect(structure_ids,rows,table,db,cursor)
+        
         for row in results:
-            s_id = row[1]
+            s_id = row[0]
+            r_id = row[1]
+            
             if not s_id in structure_ids:
                 continue
-            r_id = row[0]
             res_nr = row[2]
             if not s_id in structure_residue_map:
                 structure_residue_map[s_id] = {}
             structure_residue_map[s_id][res_nr] = r_id
+            if not s_id in target_structure_ids:
+                continue
+            residue_dict[r_id] = (s_id,) + row[2:]
 
     residue_residue_values = []
     for (pdb,chain) in annotation_map:
@@ -2189,13 +2279,13 @@ def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structu
     if size > 0:
         bound = 500000
         if size > bound:
-            m = size/bound
+            m = size//bound
             rest = size%bound
             if rest == 0:
-                part_size = size/m
+                part_size = size//m
             else:
                 m += 1
-                part_size = size/m
+                part_size = size//m
             parts = []
             for i in range(0,m-1):
                 parts.append(residue_residue_values[(i*part_size):((i+1)*part_size)])
@@ -2211,119 +2301,100 @@ def insertResidues(annotation_map,db,cursor,structure_id_map,interacting_structu
                 [e,f,g] = sys.exc_info()
                 raise NameError("Error in insertAnnotations: %s" % (f))
 
-    return structure_residue_map
+    return structure_residue_map,residue_dict
 
+
+def processAlignmentData(alignment):
+    lines = alignment.split("\n")
+    nextline = False
+    target_start = False
+    template_start = False
+    target_lines = []
+    template_lines = []
+    target_name = ""
+    for line in lines:
+        if len(line) > 0:
+            if line[0] == ">":
+                ids = line.split(";")
+                if target_name == "":
+                    target_name = ids[1]
+                    target_name = target_name.replace(" ","")
+                    target_name = target_name.replace("\n","")
+                nextline = True
+            elif nextline:
+                if not target_start:
+                    target_start = True
+                else:
+                    target_start = False
+                    template_start = True
+                    words = line.split(":")
+                    startres = words[2]
+                    endres = words[4]
+                    chain = words[3]
+                nextline = False
+            elif line[0] == "\n":
+                template_start = False
+            elif target_start:
+                target_lines.append(line)
+            elif template_start:
+                template_lines.append(line)
+
+    target_seq = "".join(target_lines)
+    target_seq = target_seq.replace("*","")
+    template_seq = "".join(template_lines)
+    template_seq = template_seq.replace("*","")
+    return target_seq,template_seq
 
 #called by serializedPipeline
-def getAlignments(stored_genes,db,cursor):
-    #structure of stored_genes: {Uniprot-Id:gene_id}
-    t0 = time.time()
+def getAlignments(stored_genes,db,cursor,verbose=False):
+    if verbose:
+        t0 = time.time()
 
-    gene_ids = set()
-    min_g = None
-    max_g = None
-    for u_ac in stored_genes:
-        g_id = int(stored_genes[u_ac])
-        if min_g == None or g_id < min_g:
-            min_g = g_id
-        if max_g == None or g_id > max_g:
-            max_g = g_id
-        gene_ids.add(g_id)
+    rows = ['Gene','Structure','Sequence_Identity','Coverage,Alignment']
+    table = 'Alignment'
+    results = binningSelect(stored_genes,rows,table,db,cursor)
 
-    #print gene_ids
+    if verbose:
+        t1 = time.time()
+        print("Time for part 1 in getAlignments: %s" % (str(t1-t0)))
 
     gene_structure_alignment_map = {}
     structure_ids = set()
-    max_diff = 20000
-    if len(gene_ids) > 0:
-        total_max = max_g
-        while max_g - min_g > max_diff:            
-            max_g = max_g - max_diff
- 
-        all_done = False
-        while not all_done:
-            sql = "SELECT Gene,Structure,Sequence_Identity,Coverage,Alignment FROM Alignment WHERE Gene BETWEEN %s AND %s" % (str(min_g),str(max_g))
-            try:
-                cursor.execute(sql)
-                results = cursor.fetchall()
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in getAlignments: %s,\n%s" % (sql,f))
 
-            #print "Time for Select Alignments from Database: %s" % (str(t2-t))
-            
-            if max_g == total_max:
-                all_done = True
-            else:
-                min_g = max_g + 1
-                max_g = min(max_g + max_diff,total_max)
+    for row in results:
+        #print row
+        gene_id = row[0]
+        if not gene_id in stored_genes:
+            continue
+        structure_id =row[1]
+        seq_id = row[2]
+        coverage = row[3]
+        alignment = row[4]
 
-            for row in results:
-                #print row
-                gene_id = row[0]
-                if not gene_id in gene_ids:
-                    continue
-                structure_id =row[1]
-                seq_id = row[2]
-                coverage = row[3]
-                alignment = row[4]
+        structure_ids.add(structure_id)
 
-                structure_ids.add(structure_id)
+        target_seq,template_seq = processAlignmentData(alignment)
 
-                lines = alignment.split("\n")
-                #print(lines)
-                nextline = False
-                target_start = False
-                template_start = False
-                target_lines = []
-                template_lines = []
-                target_name = ""
-                for line in lines:
-                    if len(line) > 0:
-                        if line[0] == ">":
-                            ids = line.split(";")
-                            if target_name == "":
-                                target_name = ids[1]
-                                target_name = target_name.replace(" ","")
-                                target_name = target_name.replace("\n","")
-                            nextline = True
-                        elif nextline:
-                            if not target_start:
-                                target_start = True
-                            else:
-                                target_start = False
-                                template_start = True
-                                words = line.split(":")
-                                startres = words[2]
-                                endres = words[4]
-                                chain = words[3]
-                            nextline = False
-                        elif line[0] == "\n":
-                            template_start = False
-                        elif target_start:
-                            target_lines.append(line)
-                        elif template_start:
-                            template_lines.append(line)
+        if not gene_id in gene_structure_alignment_map:
+            gene_structure_alignment_map[gene_id] = {}
 
-                target_seq = "".join(target_lines)
-                target_seq = target_seq.replace("*","")
-                template_seq = "".join(template_lines)
-                template_seq = template_seq.replace("*","")
+        gene_structure_alignment_map[gene_id][structure_id] = (target_seq,template_seq,coverage,seq_id)
 
-                if not gene_id in gene_structure_alignment_map:
-                    gene_structure_alignment_map[gene_id] = {}
-                #print gene_id,structure_id
-                gene_structure_alignment_map[gene_id][structure_id] = (target_seq,template_seq,coverage,seq_id)
+    if verbose:
+        t2 = time.time()
+        print("Time for part 2 in getAlignments: %s" % (str(t2-t1)))
 
-    structure_map = getStructure_map(structure_ids,db,cursor)
+    structure_map,id_structure_map = getStructure_map(structure_ids,db,cursor)
 
-    t1 = time.time()
-    #print "Time for part 1 in getAlignments: %s" % (str(t1-t0))
-    return gene_structure_alignment_map,structure_map
+    if verbose:
+        t3 = time.time()
+        print("Time for part 3 in getAlignments: %s" % (str(t3-t2)))
+
+    return gene_structure_alignment_map,structure_map,id_structure_map
 
 def getStructure_map(structure_ids,db,cursor):
     structure_map = {}
+    id_structure_map = {}
     if len(structure_ids) > 0:
         min_s = min(structure_ids)
         max_s = max(structure_ids)
@@ -2343,7 +2414,8 @@ def getStructure_map(structure_ids,db,cursor):
             pdb_id = row[1]
             chain = row[2]
             structure_map[(pdb_id,chain)] = s_id
-    return structure_map
+            id_structure_map[s_id] = (pdb_id,chain)
+    return structure_map,id_structure_map
 
 
 def getSeqIds(s_ids,g_ids,db,cursor):
@@ -2380,91 +2452,202 @@ def getSeqIds(s_ids,g_ids,db,cursor):
 
     return seq_id_map
 
-
 #called by serializedPipeline
-def insertNewMappings(gene_mut_map_new,gene_template_alignment_map,structure_residue_map,structure_id_map,db,cursor):
-    #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
-    #structure of gene_template_alignment_map: {Uniprot_Id:{(PDB_Id,chain):sub_infos}}
-    #structute of structure_residue_map: {s_id:{res_nr:r_id}}
+def insertClassifications(db,cursor,residue_dict,structure_dict,gene_structure_map,m_r_map,config,complexMap):
+    if config.verbose:
+        t0 = time.time()
+    mutation_dict = getMutationDict(m_r_map,db,cursor)
 
-    value_strs = []
-    """
-    for u_ac in structure_map:
-        structures = structure_map[gene]
-        for (pdb_id,chain) in structures:
-            if not (pdb_id,chain) in structure_id_map:
-                continue
-            structure = structures[(pdb_id,chain)]
-            s_id = structure_id_map[(pdb_id,chain)]
-    """
+    if config.verbose:
+        t1 = time.time()
+        print('insertClassifications part 1: %s' % (t1-t0))
 
-    #print gene_template_alignment_map
+    print(len(residue_dict),len(structure_dict),len(gene_structure_map),len(m_r_map),len(mutation_dict))
 
-    #print structure_id_map
+    min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=config.ligand_filter,n_of_processes=config.proc_n)
 
-    for u_ac in gene_template_alignment_map:
-        #print u_ac
-        for (pdb_id,chain) in gene_template_alignment_map[u_ac]:
-            #print pdb_id,chain
-            if not (pdb_id,chain) in structure_id_map:
-                continue
-            s_id = structure_id_map[(pdb_id,chain)]
-            g_id = gene_mut_map_new[u_ac][0]
-            #print s_id
-            sub_infos = gene_template_alignment_map[u_ac][(pdb_id,chain)]
-            for aacbase in sub_infos:
+    if config.verbose:
+        t2 = time.time()
+        print('insertClassifications part 2: %s' % (t2-t1))
 
-                res_nr,t_aa = sub_infos[aacbase]
-                if res_nr == None:
-                    continue
-                m_id = gene_mut_map_new[u_ac][1][aacbase]
-                r_id = structure_residue_map[s_id][res_nr]
-                value_strs.append("('%s','%s','%s','%s')" % (str(m_id),str(r_id),str(s_id),str(g_id)))
+    class_dict,structure_classification_map,interaction_dict = createClassDict(min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map,complexMap,config.verbose)
 
-    size = len(value_strs)
-    if size > 0:
-        bound = 500000
-        if size > bound:
-            m = size/bound
-            rest = size%bound
-            if rest == 0:
-                part_size = size/m
+    if config.verbose:
+        t3 = time.time()
+        print('insertClassifications part 3: %s' % (t3-t2))
+
+    table = 'Mutation'
+    rows = ['Mutation_Id','Amino_Acid_Change','Gene','Location','Class','RIN_Class','Simple_Class','RIN_Simple_Class','Interactions','Confidence','Secondary_Structure','Recommended_Structure','Max_Seq_Structure','Mapped_Structures','RIN_Profile','Modres_Score','Modres_Propensity']
+    values = createClassValues(class_dict,mutation_sec_dict,mutation_dict,interaction_dict,mutation_inter_dict,n_of_processes=config.proc_n)
+
+    if config.verbose:
+        t4 = time.time()
+        print('insertClassifications part 4: %s' % (t4-t3))
+
+    update(db,cursor,table,rows,values)
+
+    if config.verbose:
+        t5 = time.time()
+        print('insertClassifications part 5: %s' % (t5-t4))
+
+def paraClassValues(inqueue,outqueue,lock,class_dict,mutation_sec_dict,mutation_dict,interaction_dict,mutation_inter_dict):
+    with lock:
+        inqueue.put(None)
+
+    outs = []
+    outs_package_size = 100000
+    n = 0
+
+    while True:
+        with lock:
+            m_ids = inqueue.get()
+        if m_ids == None:
+            break
+        for m in m_ids:
+            n += 1
+            if m in mutation_sec_dict:
+                mv_sec_ass = majority_vote(mutation_sec_dict[m])
             else:
-                m += 1
-                part_size = size/m
-            parts = []
-            for i in range(0,m-1):
-                parts.append(value_strs[(i*part_size):((i+1)*part_size)])
-            parts.append(value_strs[(m-1)*part_size:])
-        else:
-            parts = [value_strs]
-        for part in parts:
-            sql = "INSERT IGNORE INTO RS_Mutation_Residue(Mutation,Residue,Structure,Gene) VALUES %s" % ','.join(part)
-            #strange sql error occurs here sometimes: (1030, 'Got error -1 from storage engine')
-            #workaround solution try several times
-            n = 0
-            while n < 10:
-                try:
-                    cursor.execute(sql)
-                    db.commit()
-                    break
-                except:
-                    n +=1
-                
-            if n == 10:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in insertMapping,\n%s" % (f))
+                mv_sec_ass = None
+
+            (Class,conf,weighted_sc,conf_sc,best_res,max_seq_res,amount_of_structures,
+            weighted_c,conf_c,
+            weighted_d,conf_d,
+            weighted_r,conf_r,
+            weighted_l,conf_l,
+            weighted_m,conf_m,
+            weighted_i,conf_i,
+            weighted_h,conf_h,
+            max_seq_id,
+            weighted_raw,weighted_cent,weighted_norm,
+            weighted_lig_degree,weighted_lig_score,
+            weighted_metal_degree,weighted_metal_score,
+            weighted_ion_degree,weighted_ion_score,
+            weighted_prot_degree,weighted_prot_score,
+            weighted_rna_degree,weighted_rna_score,
+            weighted_dna_degree,weighted_dna_score,
+            weighted_modres,modres_prop) = class_dict[m]
+            simple_class = simplifyClass(Class,weighted_sc)
+
+            if best_res != None:
+                [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs] = best_res
+
+                recommended_structure = '%s:%s %s:%s;%s;%s;%s' % (pdb_id,chain,res_nr,res_aa,str(seq_id),str(cov),str(resolution))
+            else:
+                resolution = '-'
+                cov = '-'
+                seq_id = '-'
+                recommended_structure = '-'
+
+            if max_seq_res != None:
+                [max_seq_r_id,max_seq_qual,max_seq_res_aa,max_seq_res_nr,max_seq_pdb_id,max_seq_chain,max_seq_resolution,max_seq_cov,max_seq_seq_id,max_seq_rsa,max_min_lig,max_min_metal,max_min_ion,max_iacs] = max_seq_res
+
+                max_seq_structure = '%s:%s %s:%s;%s;%s;%s' % (max_seq_pdb_id,max_seq_chain,max_seq_res_nr,max_seq_res_aa,str(max_seq_seq_id),str(max_seq_cov),str(max_seq_resolution))
+            else:
+                max_seq_resolution = '-'
+                max_seq_cov = '-'
+                max_seq_seq_id = '-'
+                max_seq_structure = '-'
+
+            (aachange,gene_id) = mutation_dict[m][:2]
+
+            if m in interaction_dict:
+                interaction_str = str(interaction_dict[m])
+            else:
+                interaction_str = None
+
+            if m in mutation_inter_dict:
+                profiles = []
+                for profile_str,qual in mutation_inter_dict[m]:
+                    profile = rin.Interaction_profile(profile_str=profile_str)
+                    profiles.append((qual,profile))
+                average_profile = rin.calculateAverageProfile(profiles)
+                avg_profile_str = average_profile.encode()
+                raw_rin_class,raw_rin_simple_class = average_profile.getClass()
+
+                if raw_rin_class == 'No interaction':
+                    rin_class = weighted_sc
+                else:
+                    rin_class = raw_rin_class
+
+                if raw_rin_simple_class == 'No interaction':
+                    rin_simple_class = weighted_sc
+                else:
+                    rin_simple_class = raw_rin_simple_class
+            else:
+                avg_profile_str = None
+                rin_class = None
+                rin_simple_class = None
+
+            out = [m,aachange,gene_id,weighted_sc,Class,rin_class,simple_class,rin_simple_class,interaction_str,conf,mv_sec_ass,recommended_structure,max_seq_structure,amount_of_structures,avg_profile_str,weighted_modres,modres_prop]
+            outs.append(out)
+            if n == outs_package_size:
+                with lock:
+                    outqueue.put(outs)
+                outs = []
+                n = 0
+    if outs != []:
+        with lock:
+            outqueue.put(outs)
+
+def createClassValues(class_dict,mutation_sec_dict,mutation_dict,interaction_dict,mutation_inter_dict,n_of_processes=1):
+    manager = multiprocessing.Manager()
+    lock = manager.Lock()
+
+    inqueue = manager.Queue()
+    outqueue = manager.Queue()
+
+    package_size = 100
+    package = []
+
+    i = 0
+    n = 0
+
+    for m in class_dict:
+        i += 1
+        package.append(m)
+
+        if i == package_size:
+            inqueue.put(package)
+            package = []
+            i = 0
+            n += 1
+
+    if package != []:
+        inqueue.put(package)
+        n += 1
+
+    processes = {}
+    for i in range(1,min(n+1,n_of_processes + 1)):
+        p = multiprocessing.Process(target=paraClassValues, args=(inqueue,outqueue,lock,class_dict,mutation_sec_dict,mutation_dict,interaction_dict,mutation_inter_dict))
+        processes[i] = p
+        p.start()
+    for i in processes:
+        processes[i].join()
+
+    with lock:
+        outqueue.put(None)
+
+    values = []
+    while True:
+        outs = outqueue.get()
+        if outs == None:
+            break
+        for out in outs:
+            values.append(out)
+    return values
 
 #called by serializedPipeline
-def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,gene_template_alignment_map,gene_mut_map_new,db,cursor):
+def getStoredResidues(mappings,new_gene_stored_structure_mappings,stored_structures,gene_template_alignment_map,gene_mut_map_new,db,cursor,verbose = False):
     #gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
     t0 = time.time()
     structure_res_map = {}
-    #print mappings
+
     for (m_id,s_id,res_nr,g_id) in mappings:
         if not s_id in structure_res_map:
             structure_res_map[s_id] = {}
         structure_res_map[s_id][res_nr] = None
+        
 
     for (m_id,(pdb_id,chain),res_nr,gene_id) in new_gene_stored_structure_mappings:
         if not (pdb_id,chain) in stored_structures:
@@ -2473,9 +2656,6 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
         if not s_id in structure_res_map:
             structure_res_map[s_id] = {}
         structure_res_map[s_id][res_nr] = None
-
-    #print gene_template_alignment_map
-    #print stored_structures
 
     for u_ac in gene_template_alignment_map:
         for (pdb_id,chain) in gene_template_alignment_map[u_ac]:
@@ -2488,62 +2668,34 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
             for aacbase in sub_infos:
                 m_id = gene_mut_map_new[u_ac][1][aacbase]
                 res_nr = sub_infos[aacbase][0]
+                if res_nr == None:
+                    continue
                 structure_res_map[s_id][res_nr] = None
 
     t1 = time.time()
-
+    residue_dict = {}
     if len(structure_res_map) > 0:
-        binsize = 100000
-        bins = set()
-        min_s = min(structure_res_map.keys())
-        max_s = max(structure_res_map.keys())
 
-        for s_id in structure_res_map:
-
-            bin_number = s_id//binsize
-            bins.add(bin_number)
-
-        min_max_tuples = []
-        if max_s - min_s > binsize:
-            for bin_number in bins:
-                min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-        else:
-            min_max_tuples = [(min_s,max_s)]
-
-        t1 = time.time()
-        #print "Time for insertMapping Part 1: %s" % str(t1-t0)
-        for (min_s,max_s) in min_max_tuples:
+        rows = ['Structure','Residue_Id','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment','Homomer_Distances','Interaction_Profile','Centralities','Modres']
+        table = 'Residue'
+        results = binningSelect(structure_res_map.keys(),rows,table,db,cursor)
         
-            sql = "SELECT Residue_Id,Structure,Number FROM Residue WHERE Structure BETWEEN %s AND %s" % (str(min_s),str(max_s))
-            #strange sql error occurs here sometimes: (1030, 'Got error -1 from storage engine')
-            #workaround solution try several times
-            n = 0
-            while n < 10:
-                try:
-                    cursor.execute(sql)
-                    results = cursor.fetchall()
-                    db.commit()
-                    break
-                except:
-                    n +=1
-                
-            if n == 10:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in insertMapping,\n%s" % (f))
+        for row in results:
+            s_id = row[0]
+            if not s_id in structure_res_map:
+                continue
+            res_nr = row[2]
+            if not res_nr in structure_res_map[s_id]:
+                continue
+            r_id = row[1]
+            structure_res_map[s_id][res_nr] = r_id
+            residue_dict[r_id] = (s_id,) + row[2:]
+    if verbose:
+        t2 = time.time()
+        print("Time for insertMapping Part 2: %s" % str(t2-t1))
 
-            for row in results:
-                s_id = row[1]
-                if not s_id in structure_res_map:
-                    continue
-                res_nr = row[2]
-                if not res_nr in structure_res_map[s_id]:
-                    continue
-                r_id = row[0]
-                structure_res_map[s_id][res_nr] = r_id
-
-    t2 = time.time()
-    #print "Time for insertMapping Part 2: %s" % str(t2-t1)
-
+    
+    m_r_map = {}
     value_strs = []
     for (m_id,s_id,res_nr,g_id) in mappings:
         if res_nr == None:
@@ -2551,60 +2703,24 @@ def insertMapping(mappings,new_gene_stored_structure_mappings,stored_structures,
         r_id = structure_res_map[s_id][res_nr]
         if r_id == None:
             continue
-        value_strs.append("('%s','%s','%s','%s')" % (str(m_id),str(r_id),str(s_id),str(g_id)))
-
+        if not m_id in m_r_map:
+            m_r_map[m_id] = set()
+        m_r_map[m_id].add(r_id)
 
     for (m_id,(pdb_id,chain),res_nr,g_id) in new_gene_stored_structure_mappings:
         if not (pdb_id,chain) in stored_structures:
             continue
         s_id = stored_structures[(pdb_id,chain)]
-        if res_nr == None:
+        if res_nr == None: #This could happen in the past, when the position is mapped to a gap in the alignment
             continue
         r_id = structure_res_map[s_id][res_nr]
         if r_id == None:
             continue
-        value_strs.append("('%s','%s','%s','%s')" % (str(m_id),str(r_id),str(s_id),str(g_id)))
+        if not m_id in m_r_map:
+            m_r_map[m_id] = set()
+        m_r_map[m_id].add(r_id)
 
-    #print value_strs
-
-    size = len(value_strs)
-    if size > 0:
-        bound = 500000
-        if size > bound:
-            m = size/bound
-            rest = size%bound
-            if rest == 0:
-                part_size = size/m
-            else:
-                m += 1
-                part_size = size/m
-            parts = []
-            for i in range(0,m-1):
-                parts.append(value_strs[(i*part_size):((i+1)*part_size)])
-            parts.append(value_strs[(m-1)*part_size:])
-        else:
-            parts = [value_strs]
-        for part in parts:
-            sql = "INSERT IGNORE INTO RS_Mutation_Residue(Mutation,Residue,Structure,Gene) VALUES %s" % ','.join(part)
-            #strange sql error occurs here sometimes: (1030, 'Got error -1 from storage engine')
-            #workaround solution try several times
-            n = 0
-            while n < 10:
-                try:
-                    cursor.execute(sql)
-                    db.commit()
-                    break
-                except:
-                    [e,f,g] = sys.exc_info()
-                    print f
-                    n +=1
-                
-            if n == 10:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in insertMapping,\n%s" % (f))
-
-    t3 = time.time()
-    #print "Time for insertMapping Part 3: %s" % str(t3-t2)
+    return m_r_map,residue_dict
 
 def checkLigand(name,db,cursor):
     sql = "SELECT Ligand_Id FROM Ligand WHERE Name = '%s'" % name
@@ -2797,11 +2913,11 @@ def getClassWT(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc,surface_t_id,c
 
     except:
         mut_class = "Error"
-        print "Error in class definition"
-        print lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc
-        print sys.exc_info()
+        print("Error in class definition")
+        print(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc)
+        print(sys.exc_info())
     if mut_class == "":
-        print lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc
+        print(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc)
         
     return mut_class,t_id
 
@@ -2863,30 +2979,30 @@ def getClass(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc):
 
     except:
         mut_class = "Error"
-        print "Error in class definition"
-        print lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc
-        print sys.exc_info()
+        print("Error in class definition")
+        print(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc)
+        print(sys.exc_info())
     if mut_class == "":
-        print lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc
+        print(lig_sub_dist,chain_sub_dist,chain_type,rel_sur_acc)
         
     return mut_class
 
 def majority_vote(secs):
-    class_dict = {'helix':0.0,'sheet':0.0,'disorder':0.0}
-    sec_class = {'H':'helix','B':'disorder','E':'sheet','G':'helix','I':'helix','T':'disorder','S':'disorder'}
+    class_dict = {}
     for (sec,qual) in secs:
-        if sec in sec_class:
-            class_dict[sec_class[sec]] += qual
-
-    if class_dict['disorder'] >= class_dict['helix']:
-        if class_dict['disorder'] >= class_dict['sheet']:
-            return 'disorder'
+        if not sec in class_dict:
+            class_dict[sec] = qual
         else:
-            return 'sheet'
-    elif class_dict['helix'] >= class_dict['sheet']:
-        return 'helix'
-    else:
-        return 'sheet'   
+            class_dict[sec] += qual
+
+    max_sec = None
+    max_qual = 0.0
+    for sec in class_dict:
+        qual = class_dict[sec]
+        if qual > max_qual:
+            max_qual = qual
+            max_sec = sec
+    return max_sec
 
 def getChemicalDistance(aac):
     #print aac
@@ -3016,7 +3132,7 @@ def getLigandAnnotation(chosen_ones,session_id,distance_threshold,db,cursor):
         
         template_mutation_map[row[1]][row[0]] = None
 
-    print "TESTPRINT: ",len(template_mutation_map)
+    print("TESTPRINT: ",len(template_mutation_map))
 
     min_t_id = min(template_ids)
     max_t_id = max(template_ids)
@@ -3096,17 +3212,157 @@ def getLigandAnnotation(chosen_ones,session_id,distance_threshold,db,cursor):
             anno_dict[lig] =  (chosen_ones[lig],filtered_annotation_ids)
     return anno_dict
 
+def split(id_set,min_id,max_id):
+    #print 'split ',min_id,max_id
+    if len(id_set) == 0:
+        return []
+    if len(id_set) == 1:
+        return [(id_set,min_id,max_id)]
+    if len(id_set) == 2:
+        #print id_set
+        return [(set([min_id]),min_id,min_id),(set([max_id]),max_id,max_id)]
+    split_id = (min_id+max_id)//2
+    l = set()
+    min_l = min_id
+    max_l = min_id
+    r = set()
+    min_r = max_id
+    max_r = max_id
+    for i in id_set:
+        if i < split_id:
+            l.add(i)
+            if i > max_l:
+                max_l = i
+        else:
+            r.add(i)
+            if i < min_r:
+                min_r = i
+    #print 'after split ',min_l,max_l,min_r,max_r
+    return [(l,min_l,max_l),(r,min_r,max_r)]
+
+def binning(id_set,tablesize=None,binsize=500000,density=0.5):
+    if tablesize == 0:
+        return set(),[]
+
+    if tablesize != None:
+        if tablesize > 0:
+            factor = 1
+            density = float(len(id_set))/(float(tablesize)*factor)
+        else:
+            density = 0.
+    else:
+        factor = 1
+
+    bins = {}
+    for i in id_set:
+        bin_number = i//binsize
+        #print bin_number
+        if not bin_number in bins:
+            bins[bin_number] = set()
+        bins[bin_number].add(i)
+    sorted_bins = []
+    for bin_number in sorted(bins.keys()):
+        id_set = bins[bin_number]
+        sorted_bins.append((id_set,min(id_set),max(id_set)))
+
+    '''
+    size_distribution = {}
+    for (id_set,min_id,max_id) in sorted_bins:
+        s = len(id_set)
+        if not s in size_distribution:
+            size_distribution[s] = 1
+        else:
+            size_distribution[s] += 1
+    for s in sorted(size_distribution.keys()):
+        print 'For size ',s,' got number of bins: ',size_distribution[s]
+    '''
+
+    dense_enough = False
+    while not dense_enough:
+        dense_enough = True
+        split_bins = []
+        for (id_set,min_id,max_id) in sorted_bins:
+            if len(id_set) < ((max_id - min_id)*density):
+                for (iset,mi,ma) in split(id_set,min_id,max_id):
+                    split_bins.append((iset,mi,ma))
+                    dense_enough = False
+            else:
+                split_bins.append((id_set,min_id,max_id))
+
+        sorted_bins = split_bins
+
+    '''
+    size_distribution = {}
+    for (id_set,min_id,max_id) in sorted_bins:
+        s = len(id_set)
+        if not s in size_distribution:
+            size_distribution[s] = 1
+        else:
+            size_distribution[s] += 1
+    for s in sorted(size_distribution.keys()):
+        print 'For size ',s,' got number of bins: ',size_distribution[s]
+    '''
+
+    fusion_done = False
+    while not fusion_done:
+        fusion_done = True
+        fused_bins = []
+        last_bin_fused = False
+        for pos,(id_set,min_id,max_id) in enumerate(sorted_bins):
+            if pos == 0 or last_bin_fused:
+                last_bin_fused = False
+                if pos == (len(sorted_bins) -1):
+                    fused_bins.append((id_set,min_id,max_id))
+                continue
+            pre_id_set,pre_min_id,pre_max_id = sorted_bins[pos-1]
+            if ((len(id_set)+len(pre_id_set))) > ((max_id - pre_min_id)*density*2*factor):
+
+                fused_bins.append(((pre_id_set | id_set),pre_min_id,max_id))
+                last_bin_fused = True
+                fusion_done = False
+            else:
+                fused_bins.append((pre_id_set,pre_min_id,pre_max_id))
+                last_bin_fused = False
+                if pos == (len(sorted_bins) -1):
+                    fused_bins.append((id_set,min_id,max_id))
+
+        sorted_bins = fused_bins
+
+    '''
+    size_distribution = {}
+    for (id_set,min_id,max_id) in sorted_bins:
+        s = len(id_set)
+        if not s in size_distribution:
+            size_distribution[s] = 1
+        else:
+            size_distribution[s] += 1
+    for s in sorted(size_distribution.keys()):
+        print 'For size ',s,' got number of bins: ',size_distribution[s]
+    '''
+
+    print('sorted bins size: ',len(sorted_bins))
+    singletons = set()
+    non_singleton_bins = []
+    for (id_set,min_id,max_id) in sorted_bins:
+        if min_id == max_id:
+            singletons.add(min_id)
+        else:
+            non_singleton_bins.append((id_set,min_id,max_id))
+    return singletons,non_singleton_bins
+    
+
 #called by output
-def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,intertable=False,templ_qual_separation=False,overwrite=False,processes=1):
+def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,intertable=False,templ_qual_separation=False,overwrite=False,processes=1,verbose=False):
     outfile = '%s/%s' % (outfolder,session_name)
-    t0 = time.time()
+    if verbose:
+        t0 = time.time()
 
     if os.path.isfile("%s.classification.tsv" % outfile):
-        print "A classification file already exists:\n%s.classification.tsv\n" % outfile
+        print("A classification file already exists:\n%s.classification.tsv\n" % outfile)
         if overwrite:
-            print "Overwrite flag is active, classification gets recalculated and old files will be overwritten."
+            print("Overwrite flag is active, classification gets recalculated and old files will be overwritten.")
         else:
-            print "The classification gets skipped, if you wish to reclassify, use the --overwrite flag."
+            print("The classification gets skipped, if you wish to reclassify, use the --overwrite flag.")
             files = os.listdir(outfolder)
             class_files = []
             for fname in files:
@@ -3123,16 +3379,18 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
             ligand_filter.add(line.replace('\n','').replace(' ',''))
     global chem_dist_matrix
 
-    t1 = time.time()
-    #print "Time for mindistout part 1: ",t1-t0
+    if verbose:
+        t1 = time.time()
+        print("Time for mindistout part 1: ",t1-t0)
 
     table = 'RS_Mutation_Session'
     rows = ['Mutation','New_AA','Tag']
     eq_rows = {'Session':session_id}
     results = select(db,cursor,rows,table,equals_rows=eq_rows)
 
-    t2 = time.time()
-    #print "Time for mindistout part 2: ",t2-t1
+    if verbose:
+        t2 = time.time()
+        print("Time for mindistout part 2: ",t2-t1)
 
     new_aa_map = {}
     tag_map = {}
@@ -3140,223 +3398,483 @@ def minDistOut(outfolder,session_name,session_id,db,cursor,ligand_filter=None,in
         new_aa_map[row[0]] = row[1]
         tag_map[row[0]] = row[2]
 
+    mutation_dict = getMutationDict(set(tag_map.keys()),db,cursor)
+    gene_id_list = set()
+    for m in mutation_dict:
+        gene_id_list.add(mutation_dict[m][1])
+
+    gene_score_dict = getGeneScoreDict(gene_id_list,session_id,db,cursor)
+    #print gene_score_dict
 
     table = 'RS_Gene_Session'
     rows = ['Gene']
     eq_rows = {'Session':session_id}
     results = select(db,cursor,rows,table,equals_rows=eq_rows)
 
+    gene_trunksize = 10000
+
     gene_ids = []
+    gene_id_trunks = []
+    n = 0
     for row in results:
         gene_ids.append(row[0])
+        n+=1
+        if n == gene_trunksize:
+            gene_id_trunks.append(gene_ids[:])
+            gene_ids = []
+            n = 0
+    if n != 0:
+        gene_id_trunks.append(gene_ids[:])
 
-    binsize = 500000
-    
-    
-    bin_threshs = []
+    class_files = []
+    interfiles = []
 
-    m_r_map = {}
-    res_bins = set()
-    res_ids = set()
+    option = ''
+    class_file = "%s.classification%s.tsv" % (outfile,option)
+    class_files.append(class_file)
+    if overwrite and os.path.isfile(class_file):
+        os.remove(class_file)
 
-    t3 = time.time()
-    #print "Time for mindistout part 3: ",t3-t2
+    if intertable:
+        interfile = "%s.interaction_profiles%s.tsv" % (outfile,option)
+        interfiles.append(interfile)
+        if overwrite and os.path.isfile(interfile):
+            os.remove(interfile)
 
-    if not len(tag_map) == 0:
-        #part 3.1
-        if len(gene_ids) > 0:
-            rows = ['Mutation','Residue']
-            table = 'RS_Mutation_Residue'
-            in_rows = {'Gene':gene_ids}
-            results = select(db,cursor,rows,table,in_rows=in_rows)
+    stat_file = "%s.statistics%s.tsv" % (outfile,option)
+    if overwrite and os.path.isfile(stat_file):
+        os.remove(stat_file)
 
-            #between_rows = {'Gene':(min(gene_ids),max(gene_ids))}
-            #results = select(db,cursor,rows,table,between_rows=between_rows)
-        else:
-            results = ()
+    total_class_dict = {}
 
-        t31 = time.time()
-        #print 'Time for mindistout part 3.1: ',t31-t3
+    trunk_number = 0
+    for gene_ids in gene_id_trunks:
 
-        if not results == ():
-            #minimal_bin_distance = len(results)/5000
-            #print minimal_bin_distance
-            for row in results:
-                m_id = row[0]
-                if not m_id in tag_map:
-                    continue
-                r_id = row[1]
+        binsize = 500000
+        bin_threshs = []
 
-                bin_number = r_id//binsize
-                res_bins.add(bin_number)
+        m_r_map = {}
+        res_bins = {}
+        res_ids = set()
 
-                '''
-                if len(bin_threshs) == 0:
-                    bin_threshs.append([r_id,r_id])
-                else:
-                    for pos,[t0,t1] in enumerate(bin_threshs):
-                        if r_id < t0:
-                            if t0 - r_id > minimal_bin_distance:
-                                bin_threshs.insert(pos,[r_id,r_id])
-                                break
-                            else:
-                                bin_threshs[pos][0] = r_id
-                                break
-                        elif r_id < t1:
-                            break
-                        elif r_id - t1 > minimal_bin_distance:
-                            if pos+1 == len(bin_threshs):
-                                bin_threshs.append([r_id,r_id])
-                                break
-                            else:
-                                continue
-                        elif pos+1 == len(bin_threshs):
-                            bin_threshs[pos][1] = r_id
-                            break
-                        elif r_id + minimal_bin_distance > bin_threshs[pos+1][0]:
-                            bin_threshs[pos][1] = bin_threshs[pos+1][1]
-                            del bin_threshs[pos+1]
-                            break
-                        else:
-                            bin_threshs[pos][1] = r_id
-                            break
-                '''
+        if verbose:
+            t3 = time.time()
+            print("Time for mindistout part 3: ",t3-t2)
 
-                res_ids.add(r_id)
-                if not m_id in m_r_map:
-                    m_r_map[m_id] = set()
-                m_r_map[m_id].add(r_id)
+        if not len(tag_map) == 0:
+            #part 3.1
+            if len(gene_ids) > 0:
+                rows = ['Mutation','Residue']
+                table = 'RS_Mutation_Residue'
+                in_rows = {'Gene':gene_ids}
+                results = select(db,cursor,rows,table,in_rows=in_rows)
 
-        #print bin_threshs,len(bin_threshs)
-    else:
-        t31 = time.time()
+                #between_rows = {'Gene':(min(gene_ids),max(gene_ids))}
+                #results = select(db,cursor,rows,table,between_rows=between_rows)
+            else:
+                results = ()
 
-    t4 = time.time()
-    #print "Time for mindistout part 4: ",t4-t31
-
-    residue_dict = {}
-    s_ids = set()
-
-    #print(res_ids)
-
-    #'''
-    #part 5
-    #print res_bins
-    if not len(res_ids) == 0:
-        max_r = max(res_ids)
-        min_r = min(res_ids)
-
-        min_max_tuples = []
-        if max_r - min_r > binsize:
-            for bin_number in res_bins:
-                min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-        else:
-            min_max_tuples = [(min_r,max_r)]
-
-        
-        for (min_r,max_r) in min_max_tuples:
-        #for [min_r,max_r] in bin_threshs:
-            rows = ['Residue_Id','Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment','Homomer_Distances','Ligand_Interaction_Degree',
-                            'Ligand_Interaction_Score','Chain_Interaction_Degree','Chain_Interaction_Score','Short_Interaction_Degree','Short_Interaction_Score','Medium_Interaction_Degree','Medium_Interaction_Score',
-                            'Long_Interaction_Degree','Long_Interaction_Score','Raw_Centrality','Centrality','Norm_Centrality']
-            table = 'Residue'
-            between_rows = {'Residue_Id':(min_r,max_r)}
-            results = select(db,cursor,rows,table,between_rows=between_rows)
+            if verbose:
+                t31 = time.time()
+                print('Time for mindistout part 3.1: ',t31-t3)
 
             if not results == ():
+                #minimal_bin_distance = len(results)/5000
+                #print minimal_bin_distance
                 for row in results:
-                    r_id = row[0]
-                    if not r_id in res_ids:
+                    m_id = row[0]
+                    if not m_id in tag_map:
                         continue
-                    s_id = row[1]
-                    s_ids.add(s_id)
-                    residue_dict[r_id] = row[1:]
-    #'''
-    t5 = time.time()
-    #print "Time for mindistout part 5: ",t5-t4
+                    r_id = row[1]
+                    bin_number = r_id//binsize
+                    #print bin_number
+                    if not bin_number in res_bins:
+                        res_bins[bin_number] = set()
+                    res_bins[bin_number].add(r_id)
+
+                    '''
+                    if len(bin_threshs) == 0:
+                        bin_threshs.append([r_id,r_id])
+                    else:
+                        for pos,[t0,t1] in enumerate(bin_threshs):
+                            if r_id < t0:
+                                if t0 - r_id > minimal_bin_distance:
+                                    bin_threshs.insert(pos,[r_id,r_id])
+                                    break
+                                else:
+                                    bin_threshs[pos][0] = r_id
+                                    break
+                            elif r_id < t1:
+                                break
+                            elif r_id - t1 > minimal_bin_distance:
+                                if pos+1 == len(bin_threshs):
+                                    bin_threshs.append([r_id,r_id])
+                                    break
+                                else:
+                                    continue
+                            elif pos+1 == len(bin_threshs):
+                                bin_threshs[pos][1] = r_id
+                                break
+                            elif r_id + minimal_bin_distance > bin_threshs[pos+1][0]:
+                                bin_threshs[pos][1] = bin_threshs[pos+1][1]
+                                del bin_threshs[pos+1]
+                                break
+                            else:
+                                bin_threshs[pos][1] = r_id
+                                break
+                    '''
+
+                    res_ids.add(r_id)
+                    if not m_id in m_r_map:
+                        m_r_map[m_id] = set()
+                    m_r_map[m_id].add(r_id)
+
+            #print bin_threshs,len(bin_threshs)
+        else:
+            if verbose:
+                t31 = time.time()
+
+        sql = 'SELECT COUNT(*) FROM Residue'
+        try:
+            cursor.execute(sql)
+            results = cursor.fetchall()
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in mindistout: %s,\n%s" % (sql,f))
+            db.rollback()
+
+        tablesize = results[0][0]
+
+        singletons,res_bins = binning(res_ids,tablesize=tablesize)
+
+        if verbose:
+            t4 = time.time()
+            print("Time for mindistout part 4: ",t4-t31)
+
+        residue_dict = {}
+        s_ids = set()
+
+        #print(res_ids)
+
+        #'''
+        #part 5
+        #print res_bins
+        if not len(res_ids) == 0:
+            '''
+            max_r = max(res_ids)
+            min_r = min(res_ids)
+
+            min_max_tuples = []
+            if max_r - min_r > binsize:
+                for bin_number in res_bins:
+                    min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize,res_bins[bin_number]))
+            else:
+                min_max_tuples = [(min_r,max_r,res_ids)]
+
+            
+            for (min_r,max_r) in min_max_tuples:
+            #for [min_r,max_r] in bin_threshs:
+            '''
+            #for bin_number in res_bins:
+            #    res_ids = res_bins[bin_number]
+            #    max_r = max(res_ids)
+            #    min_r = min(res_ids)
+            if verbose:
+                t50 = time.time()
+            rows = ['Residue_Id','Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment','Homomer_Distances',
+                                 'Interaction_Profile','Centralities']
+            table = 'Residue'
+            if len(singletons) > 0:
+                in_rows = {'Residue_Id':singletons}
+                results = select(db,cursor,rows,table,in_rows=in_rows)
+                #if verbose:
+                #    t51 = time.time()
+                #    print 'Select residue singletons in total: ',len(singletons),'; Time: ', t51-t50
+
+                if not results == ():
+                    for row in results:
+                        r_id = row[0]
+                        if not r_id in res_ids:
+                            continue
+                        s_id = row[1]
+                        s_ids.add(s_id)
+                        residue_dict[r_id] = row[1:]
+
+            for res_ids,min_r,max_r in res_bins:
+
+                if verbose:
+                    t51 = time.time()
+                between_rows = {'Residue_Id':(min_r,max_r)}
+
+                results = select(db,cursor,rows,table,between_rows=between_rows)
+
+                #if verbose:
+                #    t52 = time.time()
+                #    print 'Select residue from ',min_r,' to ',max_r,'; in total: ',len(res_ids),'; Time: ', t52-t51
+
+                if not results == ():
+                    for row in results:
+                        r_id = row[0]
+                        if not r_id in res_ids:
+                            continue
+                        s_id = row[1]
+                        s_ids.add(s_id)
+                        residue_dict[r_id] = row[1:]
+
+                #if verbose:
+                #    t53 = time.time()
+                #    print 'After Select residue Time: ', t53-t52
+        #'''
+        if verbose:
+            t5 = time.time()
+            print("Time for mindistout part 5: ",t5-t4)
+
+        if verbose:
+            t6 = time.time()
+            print("Time for mindistout part 6: ",t6-t5)
+
+        if verbose:
+            t7 = time.time()
+            print("Time for mindistout part 7: ",t7-t6)
+
+        structure_dict = getStructureDict(s_ids,db,cursor)
+
+        pdb_ids = set()
+        for s_id in structure_dict:
+            pdb_id = structure_dict[s_id][0]
+            pdb_ids.add(pdb_id)
+
+        complexMap = getComplexMap(db,cursor,pdb_ids=pdb_ids)
+        if verbose:
+            t8 = time.time()
+            print("Time for mindistout part 8: ",t8-t7)
+            t9 = time.time()
+
+        gene_structure_map = {}
+
+        if len(gene_id_list) > 0:
+            rows = ['Gene','Structure','Sequence_Identity','Coverage']
+            table = 'Alignment'
+            between_rows = {'Gene':(min(gene_id_list),max(gene_id_list))}
+            results = select(db,cursor,rows,table,between_rows=between_rows)
+
+            t9 = time.time()
+            #print "Time for mindistout part 9: ",t9-t8
+
+            for row in results:
+                g_id = row[0]
+                if not g_id in gene_id_list:
+                    continue
+                s_id = row[1]
+                seq_id = row[2]
+                cov = row[3]
+                if not g_id in gene_structure_map:
+                    gene_structure_map[g_id] = {}
+                gene_structure_map[g_id][s_id] = (seq_id,cov)
+
+        if verbose:
+            t10 = time.time()
+            print("Time for mindistout part 10: ",t10-t9)
+
+        #if templ_qual_separation: #TODO
+        #    options_map = {"":total_results,".bioassembly":residue_dict_ba,".seqid90":residue_dict_seq,".seqid90.bioassembly":residue_dict_seq_ba}
+        #else:
+        #    options_map = {"":residue_dict}
+
+        
+
+        #limit amount of processes in order to limit memory usage
+        processes = min((processes,10))
+
+        print('Amount of processes going into createStructureDicts: ',processes)
+
+        #for option in options_map:
+            #residue_dict = options_map[option]
+
+        
+        min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=ligand_filter,n_of_processes=processes)
+        if verbose:
+            t11 = time.time()
+            print("Time for mindistout part 11: ",t11-t10)
+
+        class_dict,structure_classification_map,interaction_dict = createClassDict(min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map,complexMap,verbose)
+        total_class_dict.update(class_dict)
+        if verbose:
+            t12 = time.time()
+            print("Time for mindistout part 12: ",t12-t11)
+
+        if intertable:
+            inter_dict = createInterDict(mutation_inter_dict)
+
+        if trunk_number > 0:
+            header=False
+        else:
+            header=True
+        trunk_number+=1
+
+        writeClassFile(class_file,mutation_surface_dict,mutation_sec_dict,mutation_dict,gene_score_dict,class_dict,tag_map,header=header)
+        try:
+            if intertable:
+                writeInterFile(interfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,tag_map,class_dict,header=header)
+        except:
+            print('Error in writing the intertable')
+        
+    writeStatFile(stat_file,mutation_dict,total_class_dict,tag_map)
+
+    return class_files,interfiles
+
+#called by output.py
+def classificationOutput(outfolder,session_name,session_id,db,cursor,ligand_filter=None,overwrite=False,verbose=False):
+    outfile = '%s/%s' % (outfolder,session_name)
+    if verbose:
+        t0 = time.time()
+
+    if os.path.isfile("%s.classification.tsv" % outfile):
+        print("A classification file already exists:\n%s.classification.tsv\n" % outfile)
+        if overwrite:
+            print("Overwrite flag is active, classification gets recalculated and old files will be overwritten.")
+        else:
+            print("The classification gets skipped, if you wish to reclassify, use the --overwrite flag.")
+            files = os.listdir(outfolder)
+            class_files = []
+            for fname in files:
+                if fname.count('.classification') > 0:
+                    class_files.append('%s/%s' % (outfolder,fname))
+            return class_files,[]
+
+    if ligand_filter != None:
+        f = open(ligand_filter,'r')
+        lines = f.readlines()
+        f.close()
+        ligand_filter = set()
+        for line in lines:
+            ligand_filter.add(line.replace('\n','').replace(' ',''))
+
+    if verbose:
+        t1 = time.time()
+        print("Time for classificationOutput part 1: ",t1-t0)
+
+    table = 'RS_Mutation_Session'
+    rows = ['Mutation','New_AA','Tag']
+    eq_rows = {'Session':session_id}
+    results = select(db,cursor,rows,table,equals_rows=eq_rows)
+
+    if verbose:
+        t2 = time.time()
+        print("Time for classificationOutput part 2: ",t2-t1)
+
+    new_aa_map = {}
+    tag_map = {}
+    for row in results:
+        new_aa_map[row[0]] = row[1]
+        tag_map[row[0]] = row[2]
 
     mutation_dict = getMutationDict(set(tag_map.keys()),db,cursor)
     gene_id_list = set()
     for m in mutation_dict:
         gene_id_list.add(mutation_dict[m][1])
 
-    #print gene_id_list
-
-    t6 = time.time()
-    #print "Time for mindistout part 6: ",t6-t5
-
-    #print gene_id_list
     gene_score_dict = getGeneScoreDict(gene_id_list,session_id,db,cursor)
-    #print gene_score_dict
-
-    t7 = time.time()
-    #print "Time for mindistout part 7: ",t7-t6
-
-    structure_dict = getStructureDict(s_ids,db,cursor)
-
-    t8 = time.time()
-    #print "Time for mindistout part 8: ",t8-t7
-    t9 = time.time()
-
-    gene_structure_map = {}
-
-    if len(gene_id_list) > 0:
-        rows = ['Gene','Structure','Sequence_Identity','Coverage']
-        table = 'Alignment'
-        between_rows = {'Gene':(min(gene_id_list),max(gene_id_list))}
-        results = select(db,cursor,rows,table,between_rows=between_rows)
-
-        t9 = time.time()
-        #print "Time for mindistout part 9: ",t9-t8
-
-        for row in results:
-            g_id = row[0]
-            if not g_id in gene_id_list:
-                continue
-            s_id = row[1]
-            seq_id = row[2]
-            cov = row[3]
-            if not g_id in gene_structure_map:
-                gene_structure_map[g_id] = {}
-            gene_structure_map[g_id][s_id] = (seq_id,cov)
-
-    t10 = time.time()
-    #print "Time for mindistout part 10: ",t10-t9
-
-    if templ_qual_separation: #TODO
-        options_map = {"":total_results,".bioassembly":residue_dict_ba,".seqid90":residue_dict_seq,".seqid90.bioassembly":residue_dict_seq_ba}
-    else:
-        options_map = {"":residue_dict}
 
     class_files = []
-    interfiles = []
-    for option in options_map:
-        residue_dict = options_map[option]
-        min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict = createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=ligand_filter,n_of_processes=processes)
-        t11 = time.time()
-        #print "Time for mindistout part 11: ",t11-t10
 
-        class_dict,structure_classification_map = createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map)
-        t12 = time.time()
-        #print "Time for mindistout part 12: ",t12-t11
+    class_file = "%s.classification.tsv" % (outfile)
+    class_files.append(class_file)
+    if overwrite and os.path.isfile(class_file):
+        os.remove(class_file)
 
-        if intertable:
-            inter_dict = createInterDict(mutation_inter_dict)
+    stat_file = "%s.statistics.tsv" % (outfile)
+    if overwrite and os.path.isfile(stat_file):
+        os.remove(stat_file)
 
-        class_file = "%s.classification%s.tsv" % (outfile,option)
-        class_files.append(class_file)
-        writeClassFile(class_file,mutation_surface_dict,mutation_sec_dict,mutation_dict,gene_score_dict,class_dict,new_aa_map,tag_map,structure_classification_map)
-        if intertable:
-            interfile = "%s.interaction_profiles%s.tsv" % (outfile,option)
-            interfiles.append(interfile)
-            writeInterFile(interfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,tag_map,class_dict)
-        stat_file = "%s.statistics%s.tsv" % (outfile,option)
-        writeStatFile(stat_file,mutation_dict,class_dict,tag_map)
+    if verbose:
+        t3 = time.time()
+        print("Time for classificationOutput part 3: ",t3-t2)
 
-    t13 = time.time()
-    #print "Time for mindistout part 13: ",t13-t12
+    rows = ['Mutation_Id','Amino_Acid_Change','Gene','Location','Class','Simple_Class','RIN_Class','RIN_Simple_Class','Interactions','Confidence','Secondary_Structure','Recommended_Structure','Max_Seq_Structure','Mapped_Structures','IUPRED_Glob']
+    table = 'Mutation'
+    results = binningSelect(mutation_dict.keys(),rows,table,db,cursor)
 
-    return class_files,interfiles
+    if verbose:
+        t4 = time.time()
+        print("Time for classificationOutput part 4: ",t4-t3)
+
+    startline = "Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tRIN Class\tRIN Simple Class\tIndividual Interactions\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
+
+    lines = [startline]
+
+    stat_dict = {}
+    for row in results:
+        m = row[0]
+        aac = row[1]
+        gene_id = row[2]
+        weighted_sc = row[3]
+        Class =row[4]
+        simple_class = row[5]
+        rin_class = row[6]
+        rin_simple_class = row[7]
+        interaction_str = row[8]
+        conf = row[9]
+        mv_sec_ass = row[10]
+        recommended_structure_str = row[11]
+        max_seq_structure_str = row[12]
+        amount_of_structures = row[13]
+        disorder_state = row[14]
+
+        input_res_id = mutation_dict[m][4]
+        if input_res_id == None:
+            input_res_id = ''
+
+        if recommended_structure_str != None and recommended_structure_str != '-':
+            recommended_structure,seq_id,cov,resolution = recommended_structure_str.split(';')
+        else:
+            resolution = '-'
+            cov = '-'
+            seq_id = '-'
+            recommended_structure = '-'
+
+        if disorder_state != None:
+            if Class == None and (disorder_state == 'disorder' or disorder_state[0] == 'D'):
+                Class = 'Disorder'
+                simple_class = 'Disorder'
+                rin_class = 'Disorder'
+                rin_simple_class = 'Disorder'
+
+        if max_seq_structure_str != None and max_seq_structure_str != '-':
+            max_seq_structure,max_seq_seq_id,max_seq_cov,max_seq_resolution = max_seq_structure_str.split(';')
+            stat_dict[m] = (Class,float(max_seq_seq_id))
+        else:
+            max_seq_resolution = '-'
+            max_seq_cov = '-'
+            max_seq_seq_id = '-'
+            max_seq_structure = '-'
+
+            stat_dict[m] = (Class,0.)
+
+        (u_ac,gpan,u_id,error_code,error,species,gene_score) = gene_score_dict[gene_id]
+
+        input_pdb_id = ''
+        if len(u_ac) == 6 and u_ac[4] == ':':
+            input_pdb_id = u_ac
+            u_ac = ''
+
+        lines.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (u_ac,u_id,gpan,input_pdb_id,input_res_id,aac[0],aac[1:],species,tag_map[m],weighted_sc,Class,simple_class,rin_class,rin_simple_class,interaction_str,str(conf),mv_sec_ass,recommended_structure,seq_id,cov,resolution,max_seq_structure,max_seq_seq_id,max_seq_cov,max_seq_resolution,str(amount_of_structures)))
+    f = open(class_file,'a')
+    f.write("\n".join(lines))
+    f.close()
+
+    if verbose:
+        t5 = time.time()
+        print("Time for classificationOutput part 5: ",t5-t4)
+
+    writeStatFile(stat_file,mutation_dict,{},tag_map,stat_dict=stat_dict)
+
+    if verbose:
+        t6 = time.time()
+        print("Time for classificationOutput part 6: ",t6-t5)
+
+    return class_files
 
 #method for comparing/developing the new classifiction
 def diffSurfs(mutation_surface_dict,g_u_dict,mutation_dict,outfile):
@@ -3395,32 +3913,48 @@ def diffSurfs(mutation_surface_dict,g_u_dict,mutation_dict,outfile):
 def processClassData(sld,scd,chains,ligand_filter=None):
     min_ld = None
     min_md = None
+    min_id = None
     min_cd = None
     min_dd = None
     min_rd = None
 
     slds = sld.split(",")
-    ldists = []
-    mdists = []
+    ldists = {}
+    mdists = {}
+    idists = {}
     for ld in slds:
         ldi = ld.split(":")
         if len(ldi) > 1:
-            lig_name = ldi[0].split('_')[0]
+            lig_name,res,chain = ldi[0].split('_')
             if ligand_filter == None:
-                if lig_name in ions:
-                    mdists.append(float(ldi[1]))
+                if lig_name in metal_atoms:
+                    mdists[float(ldi[1])] = lig_name,res,chain
+                elif lig_name in ion_atoms:
+                    idists[float(ldi[1])] = lig_name,res,chain
                 else:
-                    ldists.append(float(ldi[1]))
+                    ldists[float(ldi[1])] = lig_name,res,chain
             elif not lig_name in ligand_filter:
-                if lig_name in ions:
-                    mdists.append(float(ldi[1]))
+                if lig_name in metal_atoms:
+                    mdists[float(ldi[1])] = lig_name,res,chain
+                elif lig_name in ion_atoms:
+                    idists[float(ldi[1])] = lig_name,res,chain
                 else:
-                    ldists.append(float(ldi[1]))
+                    ldists[float(ldi[1])] = lig_name,res,chain
+    min_lig = None
+    min_metal = None
+    min_ion = None
+
     if len(ldists) > 0:
-        min_ld = min(ldists)
+        min_ld = min(ldists.keys())
+        min_lig = ldists[min_ld]
 
     if len(mdists) > 0:
-        min_md = min(mdists)
+        min_md = min(mdists.keys())
+        min_metal = mdists[min_md]
+
+    if len(idists) > 0:
+        min_id = min(idists.keys())
+        min_ion = idists[min_id]
 
     chain_dict = {}
     for chain_tuple in chains.split(','):
@@ -3428,9 +3962,12 @@ def processClassData(sld,scd,chains,ligand_filter=None):
         chain_dict[ichain] = chaintype
 
     scds = scd.split(",")
-    cdists = []
-    ddists = []
-    rdists = []        
+    cdists = {}
+    ddists = {}
+    rdists = {}
+
+    iacs = {}
+
     for sd in scds:
         sdi = sd.split(":")
         if len(sdi) > 1:
@@ -3443,20 +3980,23 @@ def processClassData(sld,scd,chains,ligand_filter=None):
                 chaintype = chain_dict[ichain]
 
             if chaintype == "Protein" or chaintype == 'Peptide':
-                cdists.append(mc_d)
+                cdists[mc_d] = ichain
             elif chaintype == "RNA":
-                rdists.append(mc_d)
+                rdists[mc_d] = ichain
             elif chaintype == "DNA":
-                ddists.append(mc_d)
+                ddists[mc_d] = ichain
 
     if len(cdists) > 0:
-        min_cd = min(cdists)
+        min_cd = min(cdists.keys())
+        iacs['Protein'] = cdists[min_cd]
     if len(rdists) > 0:
-        min_rd = min(rdists)
+        min_rd = min(rdists.keys())
+        iacs['RNA'] = rdists[min_rd]
     if len(ddists) > 0:
-        min_dd = min(ddists)
+        min_dd = min(ddists.keys())
+        iacs['DNA'] = ddists[min_dd]
 
-    return min_ld,min_md,min_cd,min_rd,min_dd
+    return min_ld,min_md,min_id,min_cd,min_rd,min_dd,min_lig,min_metal,min_ion,iacs
 
 def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter):
     residue_calc = {}
@@ -3465,15 +4005,22 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
         inqueue.put(None)
 
     outs = []
+    outs_package_size = 100000
+    n = 0
 
     while True:
-        m_ids = inqueue.get()
+        with lock:
+            m_ids = inqueue.get()
         if m_ids == None:
             break
         for m_id in m_ids:
-            (aachange,gene_id,iupred_score,glob) = mutation_dict[m_id]
+            if not m_id in mutation_dict:
+                continue
+            (aachange,gene_id,iupred_score,glob,input_res_id) = mutation_dict[m_id]
 
             for r_id in m_r_map[m_id]:
+                n += 1
+
                 row = residue_dict[r_id]
                 s_id = row[0]
                 residue = row[1]
@@ -3481,9 +4028,17 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                 sld = row[3]
                 scd = row[4]
                 homomer_dists = row[7]
-                Raw_Centrality = row[18]
-                Centrality = row[19]
-                Norm_Centrality = row[20]
+                centralities = row[9]
+                modres= row[10]
+                if centralities != None and centralities != 'NULL':
+                    Raw_Centrality,Centrality,Norm_Centrality,Cleaned_Raw_Centrality,Cleaned_Centrality,Cleaned_Norm_Centrality = [float(x) for x in centralities.split(';')]
+                else:
+                    Raw_Centrality = None
+                    Centrality = None
+                    Norm_Centrality = None
+                    Cleaned_Raw_Centrality = None
+                    Cleaned_Centrality = None
+                    Cleaned_Norm_Centrality = None
                 structure = structure_dict[s_id]
                 
                 pdb_id = structure[0]
@@ -3493,8 +4048,11 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                 oligos = structure[4]
                 chains = structure[5]
 
+
                 if not s_id in gene_structure_map[gene_id]:
-                    print gene_id,s_id,r_id,m_id
+                    print('Warning in paraStructureDicts: ',gene_id,s_id,r_id,m_id)
+                    #This seems to happen, when there is a mutation-residue mapping in the db, but not the corresponding alignment between structure and protein
+                    continue
                 (seq_id,cov) = gene_structure_map[gene_id][s_id]
 
                 qual = templateFiltering.qualityScore(resolution,cov,seq_id)
@@ -3511,20 +4069,9 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                     except:
                         sec_str_ass = None
 
-                    #print row
-
-                    Ligand_Interaction_Degree = row[8]
-                    Ligand_Interaction_Score = row[9]
-                    Chain_Interaction_Degree = row[10]
-                    Chain_Interaction_Score = row[11]
-                    Short_Interaction_Degree = row[12]
-                    Short_Interaction_Score = row[13]
-                    Medium_Interaction_Degree = row[14]
-                    Medium_Interaction_Score = row[15]
-                    Long_Interaction_Degree = row[16]
-                    Long_Interaction_Score = row[17]
-
-                    min_ld,min_md,min_cd,min_rd,min_dd = processClassData(sld,scd,chains,ligand_filter=ligand_filter)
+                    profile_str = row[8]
+                    
+                    min_ld,min_md,min_id,min_cd,min_rd,min_dd,min_lig,min_metal,min_ion,iacs = processClassData(sld,scd,chains,ligand_filter=ligand_filter)
 
                     minimal_distances = []
                     if min_cd != None:
@@ -3537,6 +4084,8 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                         minimal_distances.append(min_ld)
                     if min_md != None:
                         minimal_distances.append(min_md)
+                    if min_id != None:
+                        minimal_distances.append(min_id)
 
                     if len(minimal_distances) == 0:
                         min_minimal_distances = 2.0
@@ -3552,30 +4101,23 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                             h_dists.append(h_dist)
                         homomer_dist = min(h_dists)
 
-                    residue_calc[r_id] = (min_minimal_distances,rel_sur_acc,sec_str_ass,homomer_dist,min_ld,min_md,min_cd,min_rd,min_dd,Ligand_Interaction_Degree,Ligand_Interaction_Score,Chain_Interaction_Degree,Chain_Interaction_Score,Short_Interaction_Degree, Short_Interaction_Score,Medium_Interaction_Degree,Medium_Interaction_Score,Long_Interaction_Degree,Long_Interaction_Score,Raw_Centrality,Centrality,Norm_Centrality)
+                    residue_calc[r_id] = (min_minimal_distances,rel_sur_acc,sec_str_ass,homomer_dist,min_ld,min_md,min_id,min_cd,min_rd,min_dd,
+                                        profile_str,Raw_Centrality,Centrality,Norm_Centrality,min_lig,min_metal,min_ion,iacs)
                     
 
                 else:
-                    (min_minimal_distances,rel_sur_acc,sec_str_ass,homomer_dist,min_ld,min_md,min_cd,min_rd,min_dd,Ligand_Interaction_Degree,Ligand_Interaction_Score,Chain_Interaction_Degree,Chain_Interaction_Score,Short_Interaction_Degree, Short_Interaction_Score,Medium_Interaction_Degree,Medium_Interaction_Score,Long_Interaction_Degree,Long_Interaction_Score,Raw_Centrality,Centrality,Norm_Centrality) = residue_calc[r_id]
+                    (min_minimal_distances,rel_sur_acc,sec_str_ass,homomer_dist,min_ld,min_md,min_id,min_cd,min_rd,min_dd,
+                                        profile_str,Raw_Centrality,Centrality,Norm_Centrality,min_lig,min_metal,min_ion,iacs) = residue_calc[r_id]
 
                 if rel_sur_acc > surface_threshold:
                     sc = "Surface"
                 else:
                     sc = "Core"
-                Class,conf = getWeightedClass(sc,1.0,min_cd,1.0,min_dd,1.0,min_rd,1.0,min_ld,1.0,min_md,1.0)
+                Class,conf = getWeightedClass(sc,1.0,min_cd,1.0,min_dd,1.0,min_rd,1.0,min_ld,1.0,min_md,1.0,min_id,1.0)
                 simpleClass =  simplifyClass(Class,sc)
 
                 out = (m_id,r_id,Class,simpleClass,qual,res_aa,residue,pdb_id,chain,resolution,cov,seq_id,
-                                Ligand_Interaction_Degree,
-                                Ligand_Interaction_Score,
-                                Chain_Interaction_Degree,
-                                Chain_Interaction_Score,
-                                Short_Interaction_Degree,
-                                Short_Interaction_Score,
-                                Medium_Interaction_Degree,
-                                Medium_Interaction_Score,
-                                Long_Interaction_Degree,
-                                Long_Interaction_Score,
+                                profile_str,
                                 Raw_Centrality,Centrality,Norm_Centrality,
                                 oligos,chains,
                                 rel_sur_acc,
@@ -3583,23 +4125,32 @@ def paraStructureDicts(inqueue,outqueue,lock,residue_dict,structure_dict,gene_st
                                 homomer_dist,
                                 min_ld,
                                 min_md,
+                                min_id,
                                 min_cd,
                                 min_rd,
                                 min_dd,
-                                min_minimal_distances
+                                min_minimal_distances,
+                                min_lig,min_metal,min_ion,iacs,modres
                         )
                 outs.append(out)
-
-    with lock:
-        outqueue.put(outs)
-                
+                if n == outs_package_size:
+                    with lock:
+                        outqueue.put(outs)
+                    outs = []
+                    n = 0
+    if outs != []:
+        with lock:
+            outqueue.put(outs)
+    
 
 def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter=None,n_of_processes=1):
-    manager = Manager()
+    #print('MP start Method: ',multiprocessing.get_start_method())
+    manager = multiprocessing.Manager()
     lock = manager.Lock()
 
     min_l_dict = {}
     min_m_dict = {}
+    min_i_dict = {}
     min_c_dict = {}
     min_r_dict = {}
     min_d_dict = {}
@@ -3625,10 +4176,12 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
 
     #print 'Amount of positions going into createStructureDicts: ',len(m_r_map)
 
-    package_size = 1000
+    package_size = 100
     package = []
 
     i = 0
+    n = 0
+
     for m_id in m_r_map:
         i += 1
         
@@ -3640,6 +4193,7 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
         centrality_dict[m_id] = []
         min_l_dict[m_id] = []
         min_m_dict[m_id] = []
+        min_i_dict[m_id] = []
         min_c_dict[m_id] = []
         min_r_dict[m_id] = []
         min_d_dict[m_id] = []
@@ -3649,19 +4203,23 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
             inqueue.put(package)
             package = []
             i = 0
+            n += 1
 
     if package != []:
         inqueue.put(package)
+        n += 1
+
+    print('Amount of packages: ',n)
 
     processes = {}
-    for i in range(1,n_of_processes + 1):
-        p = Process(target=paraStructureDicts, args=(inqueue,outqueue,lock,residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter))
+    for i in range(1,min(n+1,n_of_processes + 1)):
+        p = multiprocessing.Process(target=paraStructureDicts, args=(inqueue,outqueue,lock,residue_dict,structure_dict,gene_structure_map,m_r_map,mutation_dict,ligand_filter))
         processes[i] = p
         p.start()
     for i in processes:
         processes[i].join()
-
-    outqueue.put(None)
+    with lock:
+        outqueue.put(None)
 
     while True:
         outs = outqueue.get()
@@ -3669,16 +4227,7 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
             break
         for out in outs:
             (m_id,r_id,Class,simpleClass,qual,res_aa,residue,pdb_id,chain,resolution,cov,seq_id,
-                                Ligand_Interaction_Degree,
-                                Ligand_Interaction_Score,
-                                Chain_Interaction_Degree,
-                                Chain_Interaction_Score,
-                                Short_Interaction_Degree,
-                                Short_Interaction_Score,
-                                Medium_Interaction_Degree,
-                                Medium_Interaction_Score,
-                                Long_Interaction_Degree,
-                                Long_Interaction_Score,
+                                profile_str,
                                 Raw_Centrality,Centrality,Norm_Centrality,
                                 oligos,chains,
                                 rel_sur_acc,
@@ -3686,26 +4235,18 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
                                 homomer_dist,
                                 min_ld,
                                 min_md,
+                                min_id,
                                 min_cd,
                                 min_rd,
                                 min_dd,
-                                min_minimal_distances
+                                min_minimal_distances,
+                                min_lig,min_metal,min_ion,iacs,modres
                         ) = out
 
-            structure_classification_map[m_id][r_id] = (Class,simpleClass,qual,res_aa,residue,pdb_id,chain,resolution,cov,seq_id,rel_sur_acc)
-
-            mutation_inter_dict[m_id].append((Ligand_Interaction_Degree,
-                                        Ligand_Interaction_Score,
-                                        Chain_Interaction_Degree,
-                                        Chain_Interaction_Score,
-                                        Short_Interaction_Degree,
-                                        Short_Interaction_Score,
-                                        Medium_Interaction_Degree,
-                                        Medium_Interaction_Score,
-                                        Long_Interaction_Degree,
-                                        Long_Interaction_Score,
-                                        qual))
-            if Centrality != None:
+            structure_classification_map[m_id][r_id] = (Class,simpleClass,qual,res_aa,residue,pdb_id,chain,resolution,cov,seq_id,rel_sur_acc,min_lig,min_metal,min_ion,iacs,modres)
+            if profile_str != 'NULL':
+                mutation_inter_dict[m_id].append((profile_str,qual))
+            if Centrality != None and Centrality != 'NULL':
                 centrality_dict[m_id].append((Raw_Centrality,Centrality,Norm_Centrality,qual)) 
 
             if len(oligos) > mutation_oligo_chain_map[m_id][0]:
@@ -3724,6 +4265,8 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
                     min_l_dict[m_id].append((min_ld,qual))
                 if not min_md == None:
                     min_m_dict[m_id].append((min_md,qual))
+                if not min_id == None:
+                    min_i_dict[m_id].append((min_id,qual))
                 if not min_cd == None:
                     min_c_dict[m_id].append((min_cd,qual))
                 if not min_rd == None:
@@ -3737,44 +4280,85 @@ def createStructureDicts(residue_dict,structure_dict,gene_structure_map,m_r_map,
 
     #print mutation_surface_dict
 
-    return min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict
+    return min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,mutation_inter_dict,structure_classification_map,mutation_oligo_chain_map,centrality_dict
 
-def createInterDict(mutation_inter_dict):
+def createInterDict(mutation_inter_dict,chain_type='sc'):
 
     inter_dict = {}
 
     for m_id in mutation_inter_dict:
         profiles = mutation_inter_dict[m_id]
         total_qual = 0.0
-        average_profile = [0.0]*10
-        for profile in profiles:
-            if None in profile:
+        ion_qual = 0.0
+        metal_qual = 0.0
+        lig_qual = 0.0
+        chain_qual = 0.0
+        average_profile = [0.0]*14
+        for profile_str,qual in profiles:
+            if None in (profile_str,qual):
                 continue
-            (Ligand_Interaction_Degree,
-            Ligand_Interaction_Score,
-            Chain_Interaction_Degree,
-            Chain_Interaction_Score,
-            Short_Interaction_Degree,
-            Short_Interaction_Score,
-            Medium_Interaction_Degree,
-            Medium_Interaction_Score,
-            Long_Interaction_Degree,
-            Long_Interaction_Score,
-            qual) = profile
+            profile = rin.Interaction_profile(profile_str=profile_str)
             total_qual += qual
+            
+            Ion_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'ion')
+            Ion_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'ion')
+            Metal_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'metal')
+            Metal_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'metal')
+            Ligand_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'ligand')
+            Ligand_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'ligand')
+            Chain_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'interchain')
+            Chain_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'interchain')
+            Short_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'neighbor')
+            Short_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'neighbor')
+            Medium_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'short')
+            Medium_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'short')
+            Long_Interaction_Degree = profile.getChainSpecificCombiDegree(chain_type,'long')
+            Long_Interaction_Score = profile.getChainSpecificCombiScore(chain_type,'long')
 
-            average_profile[0] += Ligand_Interaction_Degree*qual
-            average_profile[1] += Ligand_Interaction_Score*qual
-            average_profile[2] += Chain_Interaction_Degree*qual
-            average_profile[3] += Chain_Interaction_Score*qual
-            average_profile[4] += Short_Interaction_Degree*qual
-            average_profile[5] += Short_Interaction_Score*qual
-            average_profile[6] += Medium_Interaction_Degree*qual
-            average_profile[7] += Medium_Interaction_Score*qual
-            average_profile[8] += Long_Interaction_Degree*qual
-            average_profile[9] += Long_Interaction_Score*qual
+            if Ligand_Interaction_Degree > 0:
+                lig_qual+= qual
+            if Metal_Interaction_Degree > 0:
+                metal_qual += qual
+            if Ion_Interaction_Degree > 0:
+                ion_qual += qual
+            if Chain_Interaction_Degree > 0:
+                chain_qual += qual
+
+            average_profile[0] += Ion_Interaction_Degree*qual
+            average_profile[1] += Ion_Interaction_Score*qual
+            average_profile[2] += Metal_Interaction_Degree*qual
+            average_profile[3] += Metal_Interaction_Score*qual
+            average_profile[4] += Ligand_Interaction_Degree*qual
+            average_profile[5] += Ligand_Interaction_Score*qual
+            average_profile[6] += Chain_Interaction_Degree*qual
+            average_profile[7] += Chain_Interaction_Score*qual
+            average_profile[8] += Short_Interaction_Degree*qual
+            average_profile[9] += Short_Interaction_Score*qual
+            average_profile[10] += Medium_Interaction_Degree*qual
+            average_profile[11] += Medium_Interaction_Score*qual
+            average_profile[12] += Long_Interaction_Degree*qual
+            average_profile[13] += Long_Interaction_Score*qual
+
         if total_qual > 0.0:
-            average_profile = [x/total_qual for x in average_profile]
+            average_profile[8] = average_profile[8]/total_qual
+            average_profile[9] = average_profile[9]/total_qual
+            average_profile[10] = average_profile[10]/total_qual
+            average_profile[11] = average_profile[11]/total_qual
+            average_profile[12] = average_profile[12]/total_qual
+            average_profile[13] = average_profile[13]/total_qual
+
+        if ion_qual > 0.0:
+            average_profile[0] = average_profile[0]/ion_qual
+            average_profile[1] = average_profile[1]/ion_qual
+        if metal_qual > 0.0:
+            average_profile[2] = average_profile[2]/metal_qual
+            average_profile[3] = average_profile[3]/metal_qual
+        if lig_qual > 0.0:
+            average_profile[4] = average_profile[4]/lig_qual
+            average_profile[5] = average_profile[5]/lig_qual
+        if chain_qual > 0.0:
+            average_profile[6] = average_profile[6]/chain_qual
+            average_profile[7] = average_profile[7]/chain_qual
         inter_dict[m_id] = average_profile
 
     return inter_dict
@@ -3784,174 +4368,113 @@ def median(l):
     n = len(l)
     l = sorted(l)
     if n % 2 == 0:
-        med = (l[(n/2)-1]+l[n/2])/2.0
+        med = (l[(n//2)-1]+l[n//2])/2.0
     else:
-        med = l[(n-1)/2]
+        med = l[(n-1)//2]
     return med
 
-def getWeightedClass(weighted_sc,conf_sc,weighted_c,conf_c,weighted_d,conf_d,weighted_r,conf_r,weighted_l,conf_l,weighted_m,conf_m):
+def getWeightedClass(weighted_sc,conf_sc,weighted_c,conf_c,weighted_d,conf_d,weighted_r,conf_r,weighted_l,conf_l,weighted_m,conf_m,weighted_i,conf_i):
     dt = short_distance_threshold
     edt = long_distance_threshold
-    if weighted_c == None:
-        weighted_c = edt+1.0
-    if weighted_d == None:
-        weighted_d = edt+1.0
-    if weighted_r == None:
-        weighted_r = edt+1.0
-    if weighted_l == None:
-        weighted_l = edt+1.0
-    if weighted_m == None:
-        weighted_m = edt+1.0
-    #Decide on contact macromolecule
-    if weighted_c < dt and weighted_d < dt and weighted_r < dt: #If there is an Protein,DNA and RNA present (artificial scenario)
-        if conf_c >= conf_d and conf_c >= conf_r:
-            contact_macro = "Protein"
-            conf_macro = conf_c
-        elif conf_d >= conf_r:
-            contact_macro = "DNA"
-            conf_macro = conf_d
-        else:
-            contact_macro = "RNA"
-            conf_macro = conf_r
-    elif weighted_c < dt and weighted_d < dt:
-        if conf_c >= conf_d:
-            contact_macro = "Protein"
-            conf_macro = conf_c
-        else:
-            contact_macro = "DNA"
-            conf_macro = conf_d
-    elif weighted_c < dt and weighted_r < dt:
-        if conf_c >= conf_r:
-            contact_macro = "Protein"
-            conf_macro = conf_c
-        else:
-            contact_macro = "RNA"
-            conf_macro = conf_r
-    elif weighted_d < dt and weighted_r < dt:
-        if conf_d >= conf_r:
-            contact_macro = "DNA"
-            conf_macro = conf_d
-        else:
-            contact_macro = "RNA"
-            conf_macro = conf_r
-    elif weighted_c < dt:
-        contact_macro = "Protein"
-        conf_macro = conf_c
-    elif weighted_d < dt:
-        contact_macro = "DNA"
-        conf_macro = conf_d
-    elif weighted_r < dt:
-        contact_macro = "RNA"
-        conf_macro = conf_r
 
-    elif weighted_c < edt and weighted_d < edt and weighted_r < edt:
-        if conf_c >= conf_d and conf_c >= conf_r:
-            contact_macro = "Protein far"
-            conf_macro = conf_c
-        elif conf_d >= conf_r:
-            contact_macro = "DNA far"
-            conf_macro = conf_d
-        else:
-            contact_macro = "RNA far"
-            conf_macro = conf_r
-    elif weighted_c < edt and weighted_d < edt:
-        if conf_c >= conf_d:
-            contact_macro = "Protein far"
-            conf_macro = conf_c
-        else:
-            contact_macro = "DNA far"
-            conf_macro = conf_d
-    elif weighted_c < edt and weighted_r < edt:
-        if conf_c >= conf_r:
-            contact_macro = "Protein far"
-            conf_macro = conf_c
-        else:
-            contact_macro = "RNA far"
-            conf_macro = conf_r
-    elif weighted_d < edt and weighted_r < edt:
-        if conf_d >= conf_r:
-            contact_macro = "DNA far"
-            conf_macro = conf_d
-        else:
-            contact_macro = "RNA far"
-            conf_macro = conf_r
-    elif weighted_c < edt:
-        contact_macro = "Protein far"
-        conf_macro = conf_c
-    elif weighted_d < edt:
-        contact_macro = "DNA far"
-        conf_macro = conf_d
-    elif weighted_r < edt:
-        contact_macro = "RNA far"
-        conf_macro = conf_r
+    contacts = []
+    confs = []
 
-    else:
-        contact_macro = None
-        conf_macro = None
+    # Determine the near macromolecule with the highest conf.
+    # If there is no near macromolecule, also consider far ones.
+    # In case of multiple maximum confs use the first one added to macros.
+    macros = []
+    macro_confs = []
+    macros_far = []
+    macro_confs_far = []
 
-    #Decide on contact low weight molecule
-    if weighted_l < dt and weighted_m < dt:
-        if conf_l >= conf_m:
-            contact_ligand = "Ligand"
-            conf_ligand = conf_l
+    if weighted_c and weighted_c < edt:
+        if weighted_c < dt:
+            macros.append('Protein')
+            macro_confs.append(conf_c)
+        macros_far.append('Protein far')
+        macro_confs_far.append(conf_c)
+
+    if weighted_d and weighted_d < edt:
+        if weighted_d < dt:
+            macros.append('DNA')
+            macro_confs.append(conf_d)
+        macros_far.append('DNA far')
+        macro_confs_far.append(conf_d)
+
+    if weighted_r and weighted_r < edt:
+        if weighted_r < dt:
+            macros.append('RNA')
+            macro_confs.append(conf_r)
+        macros_far.append('RNA far')
+        macro_confs_far.append(conf_r)
+
+    contact_macro = None
+    conf_macro = None
+
+    if len(macros) > 0:
+        best_macro_idx = np.min(np.argmax(macro_confs))
+        contacts.append(macros[best_macro_idx])
+        confs.append(macro_confs[best_macro_idx])
+    elif len(macros_far) > 0:
+        best_macro_idx = np.min(np.argmax(macro_confs_far))
+        contacts.append(macros_far[best_macro_idx])
+        confs.append(macro_confs_far[best_macro_idx])
+
+    # Additional interactions
+    if weighted_l and weighted_l < edt:
+        if weighted_l < dt:
+            contacts.append('Ligand')
         else:
-            contact_ligand = "Metal"
-            conf_ligand = conf_m
-    elif weighted_l < dt:
-        contact_ligand = "Ligand"
-        conf_ligand = conf_l
-    elif weighted_m < dt:
-        contact_ligand = "Metal"
-        conf_ligand = conf_m
+            contacts.append('Ligand far')
+        confs.append(conf_l)
 
-    elif weighted_l < edt and weighted_m < edt:
-        if conf_l >= conf_m:
-            contact_ligand = "Ligand far"
-            conf_ligand = conf_l
+    if weighted_m and weighted_m < edt:
+        if weighted_m < dt:
+            contacts.append('Metal')
         else:
-            contact_ligand = "Metal far"
-            conf_ligand = conf_m
-    elif weighted_l < edt:
-        contact_ligand = "Ligand far"
-        conf_ligand = conf_l
-    elif weighted_m < edt:
-        contact_ligand = "Metal far"
-        conf_ligand = conf_m
+            contacts.append('Metal far')
+        confs.append(conf_m)
 
-    else:
-        contact_ligand = None
-        conf_ligand = None
+    if weighted_i and weighted_i < edt:
+        if weighted_i < dt:
+            contacts.append('Ion')
+        else:
+            contacts.append('Ion far')
+        confs.append(conf_i)
 
-    #Classification Decision Tree
-    if contact_macro != None and contact_ligand != None:
-        clas = "Double Interaction: %s and %s" % (contact_macro,contact_ligand)
-        conf = (conf_ligand+conf_macro)/2.0
-    elif contact_macro != None:
-        clas = "%s Interaction" % contact_macro
-        conf = conf_macro
-    elif contact_ligand != None:
-        clas = "%s Interaction" % contact_ligand
-        conf = conf_ligand
-    else:
-        clas = weighted_sc
-        conf = conf_sc
+    if len(contacts) == 0:
+        return weighted_sc,conf_sc
+
+    clas = " and ".join(contacts)
+    if len(contacts) == 4:
+        clas = "Quadruple Interaction: " + clas
+    elif len(contacts) == 3:
+        clas = "Triple Interaction: " + clas
+    elif len(contacts) == 2:
+        clas = "Double Interaction: " + clas
+    elif len(contacts) == 1:
+        clas = clas + " Interaction"
+
+    conf = sum(confs) / len(confs)
 
     return clas,conf
 
-def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map):
+def createClassDict(min_l_dict,min_m_dict,min_i_dict,min_c_dict,min_r_dict,min_d_dict,min_homo_dict,mutation_surface_dict,mutation_sec_dict,centrality_dict,mutation_dict,structure_classification_map,complexMap,verbose):
     distance_threshold = long_distance_threshold
     class_dict = {}
-    #print 'Amount of positions going into createClassDict: ',len(mutation_surface_dict)
+
     t0 = 0.0
     t1= 0.0
     t2 = 0.0
     t3 = 0.0
     t4 = 0.0
+    interaction_dict = {}
     for m in mutation_surface_dict:
         if len(mutation_surface_dict[m]) == 0:
             continue
         t0 += time.time()
-        aac,g,iupred,glob = mutation_dict[m]
+        aac,g,iupred,glob,input_res_id = mutation_dict[m]
 
         DSC = 0.0 #decision sum core
         DSS = 0.0 #decision sum surface
@@ -3989,10 +4512,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_c = nom/denom
                 conf_c = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_c = 10.0
+                weighted_c = None
                 conf_c = 0.0
         else:
-            weighted_c = 10.0
+            weighted_c = None
             conf_c = 0.0
 
         if m in min_d_dict:
@@ -4010,10 +4533,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_d = nom/denom
                 conf_d = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_d = 10.0
+                weighted_d = None
                 conf_d = 0.0
         else:
-            weighted_d = 10.0
+            weighted_d = None
             conf_d = 0.0
 
         if m in min_r_dict:
@@ -4031,10 +4554,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_r = nom/denom
                 conf_r = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_r = 10.0
+                weighted_r = None
                 conf_r = 0.0
         else:
-            weighted_r = 10.0
+            weighted_r = None
             conf_r = 0.0
 
         if m in min_l_dict:
@@ -4052,10 +4575,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_l = nom/denom
                 conf_l = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_l = 10.0
+                weighted_l = None
                 conf_l = 0.0
         else:
-            weighted_l = 10.0
+            weighted_l = None
             conf_l = 0.0
 
         if m in min_m_dict:
@@ -4074,11 +4597,32 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_m = nom/denom
                 conf_m = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_m = 10.0
+                weighted_m = None
                 conf_m = 0.0
         else:
-            weighted_m = 10.0
+            weighted_m = None
             conf_m = 0.0
+
+        if m in min_i_dict:
+            nom = 0.0
+            denom = 0.0
+            n = 0.0
+            qs = []
+            for (min_i,qual) in min_i_dict[m]:
+                if min_i < distance_threshold:
+                    nom += min_i*qual
+                    denom += qual
+                    n += 1.0
+                    qs.append(qual)
+            if denom > 0.0:
+                weighted_i = nom/denom
+                conf_i = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
+            else:
+                weighted_i = None
+                conf_i = 0.0
+        else:
+            weighted_i = None
+            conf_i = 0.0
         
         if m in min_homo_dict:
             nom = 0.0
@@ -4094,10 +4638,10 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                 weighted_h = nom/denom
                 conf_h = (1.0-1.0/(n+1.0))*(max(qs)+median(qs))/2
             else:
-                weighted_h = -10.0
+                weighted_h = None
                 conf_h = 0.0
         else:
-            weighted_h = -10.0
+            weighted_h = None
             conf_h = 0.0
 
         if m in centrality_dict:
@@ -4128,9 +4672,11 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
         t2 += time.time()
 
 
-        mut_class,conf = getWeightedClass(weighted_sc,conf_sc,weighted_c,conf_c,weighted_d,conf_d,weighted_r,conf_r,weighted_l,conf_l,weighted_m,conf_m)
+        mut_class,conf = getWeightedClass(weighted_sc,conf_sc,weighted_c,conf_c,weighted_d,conf_d,weighted_r,conf_r,weighted_l,conf_l,weighted_m,conf_m,weighted_i,conf_i)
         
         simple_mut_class = simplifyClass(mut_class,weighted_sc)
+
+        fe_mut_class = excludeFarClasses(mut_class,weighted_sc) 
 
         t3 += time.time()
 
@@ -4141,52 +4687,201 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
         best_res = None
         best_res_iaa_isc = None
         best_res_isc = None
+        best_res_icc = None
         max_seq_res = None
         amount_of_structures = len(structure_classification_map[m])
         max_seq_id = 0.
+
+        total_lig_qual = 0.
+        total_lig_degree = 0
+        total_lig_score = 0.
+
+        total_metal_qual = 0.
+        total_metal_degree = 0
+        total_metal_score = 0.
+
+        total_ion_qual = 0.
+        total_ion_degree = 0
+        total_ion_score = 0.
+
+        total_prot_qual = 0.
+        total_prot_degree = 0
+        total_prot_score = 0.
+
+        total_rna_qual = 0.
+        total_rna_degree = 0
+        total_rna_score = 0.
+
+        total_dna_qual = 0.
+        total_dna_degree = 0
+        total_dna_score = 0.
+
+        interaction_dict[m] = {}
+        weighted_modres = 0.
+        modres_prop = 0.
         for r_id in structure_classification_map[m]:
-            residue_class,residue_simple_class,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa = structure_classification_map[m][r_id]
+            residue_class,residue_simple_class,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs,modres = structure_classification_map[m][r_id]
+
+            if modres:
+                weighted_modres += qual
+                modres_prop += 1.
+            else:
+                weighted_modres -= qual
+
+            ligand_profile,metal_profile,ion_profile,cc_profile = complexMap[pdb_id]
+
+            fe_res_class = excludeFarClasses(residue_class,residue_simple_class) 
+
+            if fe_res_class.count('Interaction') > 0:
+                if not fe_res_class in interaction_dict[m]:
+                    interaction_dict[m][fe_res_class] = (qual,pdb_id,chain,res_nr)
+                elif qual > interaction_dict[m][fe_res_class][0]:
+                    interaction_dict[m][fe_res_class] = (qual,pdb_id,chain,res_nr)
+
+            res_infos = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs]
             if seq_id > max_seq_id:
                 max_seq_id = seq_id
 
             if max_seq_res == None:
-                max_seq_res = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                max_seq_res = res_infos
             elif seq_id > max_seq_res[8]:
-                max_seq_res = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                max_seq_res = res_infos
 
-            if (mut_class == residue_class and simple_mut_class == residue_simple_class):
+            #if (mut_class == residue_class):# and simple_mut_class == residue_simple_class):
+            if fe_res_class == fe_mut_class:
                 if best_res == None:
-                    best_res = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                    best_res = res_infos
                 else:
-                    if qual > best_res[0]:
-                        best_res = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                    if qual > best_res[1]:
+                        best_res = res_infos
                 if res_aa == aac[0]:
                     if best_res_iaa == None:
-                        best_res_iaa = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                        best_res_iaa = res_infos
                     else:
-                        if qual > best_res_iaa[0]:
-                            best_res_iaa = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                        if qual > best_res_iaa[1]:
+                            best_res_iaa = res_infos
+                elif best_res_icc == None:
+                    best_res_icc = res_infos
+                else:
+                    if qual > best_res_icc[1]:
+                        best_res_icc = res_infos
+                    
             elif simple_mut_class == residue_simple_class:
                 if best_res_isc == None:
-                    best_res_isc = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                    best_res_isc = res_infos
                 else:
-                    if qual > best_res_isc[0]:
-                        best_res_isc = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                    if qual > best_res_isc[1]:
+                        best_res_isc = res_infos
                 if res_aa == aac[0]:
                     if best_res_iaa_isc == None:
-                        best_res_iaa_isc = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
+                        best_res_iaa_isc = res_infos
                     else:
-                        if qual > best_res_iaa_isc[0]:
-                            best_res_iaa_isc = [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa]
-            
+                        if qual > best_res_iaa_isc[1]:
+                            best_res_iaa_isc = res_infos
 
+            if min_lig != None:
+                lig_name,lig_res,lig_chain = min_lig
+
+                if (lig_chain,lig_res) in ligand_profile:
+                    lig_degree,lig_score = ligand_profile[(lig_chain,lig_res)]
+                    total_lig_qual += qual
+                    total_lig_degree += lig_degree*qual
+                    total_lig_score += lig_score*qual
+
+            if min_metal != None:
+                metal_name,metal_res,metal_chain = min_metal
+                if (metal_chain,metal_res) in metal_profile:
+                    metal_degree,metal_score = metal_profile[(metal_chain,metal_res)]
+                    total_metal_qual += qual
+                    total_metal_degree += metal_degree*qual
+                    total_metal_score += metal_score*qual
+
+            if min_ion != None:
+                ion_name,ion_res,ion_chain = min_ion
+                if (ion_chain,ion_res) in ion_profile:
+                    ion_degree,ion_score = ion_profile[(ion_chain,ion_res)]
+                    total_ion_qual += qual
+                    total_ion_degree += ion_degree*qual
+                    total_ion_score += ion_score*qual
+
+            if 'Protein' in iacs:
+                ichain = iacs['Protein']
+                if (chain,ichain) in cc_profile:
+                    prot_degree,prot_score = cc_profile[(chain,ichain)]
+                    total_prot_qual += qual
+                    total_prot_degree += prot_degree*qual
+                    total_prot_score += prot_score*qual
+
+
+            if 'RNA' in iacs:
+                ichain = iacs['RNA']
+                if (chain,ichain) in cc_profile:
+                    rna_degree,rna_score = cc_profile[(chain,ichain)]
+                    total_rna_qual += qual
+                    total_rna_degree += rna_degree*qual
+                    total_rna_score += rna_score*qual
+
+            if 'DNA' in iacs:
+                ichain = iacs['DNA']
+                if (chain,ichain) in cc_profile:
+                    dna_degree,dna_score = cc_profile[(chain,ichain)]
+                    total_dna_qual += qual
+                    total_dna_degree += dna_degree*qual
+                    total_dna_score += dna_score*qual
+
+        modres_prop = modres_prop/float(len(structure_classification_map[m]))
+            
+        if total_lig_qual  > 0.:
+            weighted_lig_degree = total_lig_degree/total_lig_qual
+            weighted_lig_score = total_lig_score/total_lig_qual
+        else:
+            weighted_lig_degree = 0
+            weighted_lig_score = 0.
+
+        if total_metal_qual  > 0.:
+            weighted_metal_degree = total_metal_degree/total_metal_qual
+            weighted_metal_score = total_metal_score/total_metal_qual
+        else:
+            weighted_metal_degree = 0
+            weighted_metal_score = 0.
+
+        if total_ion_qual  > 0.:
+            weighted_ion_degree = total_ion_degree/total_ion_qual
+            weighted_ion_score = total_ion_score/total_ion_qual
+        else:
+            weighted_ion_degree = 0
+            weighted_ion_score = 0.
+
+        if total_prot_qual  > 0.:
+            weighted_prot_degree = total_prot_degree/total_prot_qual
+            weighted_prot_score = total_prot_score/total_prot_qual
+        else:
+            weighted_prot_degree = 0
+            weighted_prot_score = 0.
+
+        if total_rna_qual  > 0.:
+            weighted_rna_degree = total_rna_degree/total_rna_qual
+            weighted_rna_score = total_rna_score/total_rna_qual
+        else:
+            weighted_rna_degree = 0
+            weighted_rna_score = 0.
+
+        if total_dna_qual  > 0.:
+            weighted_dna_degree = total_dna_degree/total_dna_qual
+            weighted_dna_score = total_dna_score/total_dna_qual
+        else:
+            weighted_dna_degree = 0
+            weighted_dna_score = 0.
 
         if best_res_iaa != None:
             best_res = best_res_iaa
         if best_res == None:
+            best_res = best_res_icc
+        if best_res == None:
             best_res = best_res_iaa_isc
         if best_res == None:
             best_res = best_res_isc
+
 
         class_dict[m] = (mut_class,conf,weighted_sc,conf_sc,best_res,max_seq_res,amount_of_structures,
                         weighted_c,conf_c,
@@ -4194,9 +4889,18 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
                         weighted_r,conf_r,
                         weighted_l,conf_l,
                         weighted_m,conf_m,
+                        weighted_i,conf_i,
                         weighted_h,conf_h,
                         max_seq_id,
-                        weighted_raw,weighted_cent,weighted_norm)
+                        weighted_raw,weighted_cent,weighted_norm,
+                        weighted_lig_degree,weighted_lig_score,
+                        weighted_metal_degree,weighted_metal_score,
+                        weighted_ion_degree,weighted_ion_score,
+                        weighted_prot_degree,weighted_prot_score,
+                        weighted_rna_degree,weighted_rna_score,
+                        weighted_dna_degree,weighted_dna_score,
+                        weighted_modres,modres_prop
+                        )
         t4 += time.time()
 
     #print 'createClassDict part 1: ',t1-t0
@@ -4208,22 +4912,47 @@ def createClassDict(min_l_dict,min_m_dict,min_c_dict,min_r_dict,min_d_dict,min_h
     for m in mutation_dict:
         if m in class_dict:
             continue
-        aac,g,iupred,glob = mutation_dict[m]
+        aac,g,iupred,region,input_res_id = mutation_dict[m]
         #print glob
-        if glob == None:
+        if region == None:
             continue
+        glob = True
+        if region == 'disorder':
+            glob = False
+        elif region == 'globular':
+            glob = True
+        elif region in MobiDB_map:
+            glob = False
+        elif verbose:
+            print('Unknown disorder region: ',region,' ,Mutation-ID: ',m)
         if not glob:
             mut_class = 'Disorder'
             conf = iupred
             weighted_sc = 'Surface'
             conf_sc = iupred
             best_res = None
-            class_dict[m] = mut_class,conf,weighted_sc,conf_sc,best_res,None,0,None,0,None,0,None,0,None,0,None,0,None,0,0.,None,None,None
+            class_dict[m] = (mut_class,conf,weighted_sc,conf_sc,best_res,None,0,
+                None,0,
+                None,0,
+                None,0,
+                None,0,
+                None,0,
+                None,0,
+                None,0,
+                0.,
+                None,None,None,
+                None,None,
+                None,None,
+                None,None,
+                None,None,
+                None,None,
+                None,None,
+                None,None)
     t5 = time.time()
 
     #print 'createClassDict part 5: ',t5-t41
 
-    return class_dict,structure_classification_map
+    return class_dict,structure_classification_map,interaction_dict
 
 def getNeighborhood(class_dict,db,cursor,num_of_neighbors=10):
     neighborhood = {}
@@ -4236,17 +4965,25 @@ def getNeighborhood(class_dict,db,cursor,num_of_neighbors=10):
         weighted_r,conf_r,
         weighted_l,conf_l,
         weighted_m,conf_m,
+        weighted_i,conf_i,
         weighted_h,conf_h,
         max_seq_id,
-        weighted_raw,weighted_cent,weighted_norm) = class_dict[m]
+        weighted_raw,weighted_cent,weighted_norm,
+        weighted_lig_degree,weighted_lig_score,
+        weighted_metal_degree,weighted_metal_score,
+        weighted_ion_degree,weighted_ion_score,
+        weighted_prot_degree,weighted_prot_score,
+        weighted_rna_degree,weighted_rna_score,
+        weighted_dna_degree,weighted_dna_score,
+        weighted_modres,modres_prop) = class_dict[m]
         if best_res == None:
             continue
-        [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa] = best_res
+        [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs] = best_res
         neighborhood[r_id] = []
 
     rows = ['Residue_1','Residue_2','Distance']
     table = 'RS_Residue_Residue'
-    in_rows = {'Residue_1':neighborhood.keys()}
+    in_rows = {'Residue_1':list(neighborhood.keys())}
     results = select(db,cursor,rows,table,in_rows=in_rows)
 
     res_ids = set()
@@ -4308,56 +5045,53 @@ def getNeighborhood(class_dict,db,cursor,num_of_neighbors=10):
 
     return neighborhood
 
+def excludeFarClasses(c,sc):
+    if c == "Surface" or c == "Core" or c == 'Disorder':
+        return c
+
+    interactions = re.sub(r' Interaction$','',re.sub(r'^[^:]*: ','',c)).split(' and ')
+    non_far_interactions = [ x for x in interactions if ' far' not in x ]
+
+    if (len(non_far_interactions)) == 0:
+        return sc
+
+    clas = " and ".join(non_far_interactions)
+    if len(non_far_interactions) == 4:
+        clas = "Quadruple Interaction: " + clas
+    elif len(non_far_interactions) == 3:
+        clas = "Triple Interaction: " + clas
+    elif len(non_far_interactions) == 2:
+        clas = "Double Interaction: " + clas
+    elif len(non_far_interactions) == 1:
+        clas = clas + " Interaction"
+
+    return clas
+
 def simplifyClass(c,sc):
     if c == "Surface" or c == "Core" or c == 'Disorder':
         return c
 
+    interactions = re.sub(r' Interaction$','',re.sub(r'^[^:]*: ','',c)).split(' and ')
+    non_far_interactions = set([ x for x in interactions if ' far' not in x ])
 
-    if c.count("Double") > 0:
-        if c.count('Protein far') > 0 or c.count("DNA far") > 0 or c.count("RNA far") > 0:
-            if c.count('Ligand far') > 0 or c.count('Metal far'):
-                return sc
-            else:
-                return "Ligand Interaction"
+    priorities = ['Metal', 'Ligand', 'DNA', 'RNA', 'Protein', 'Ion']
 
-        elif c.count('Ligand far') > 0 or c.count('Metal far'):
-            if c.count("DNA") > 0:
-                return "DNA Interaction"
-            if c.count("RNA") > 0:
-                return "RNA Interaction"
-            if c.count("Protein") > 0:
-                return "Protein Interaction"
+    if len(non_far_interactions) == 0:
+        return sc
 
-        else:
-            return "Ligand Interaction"
+    for interaction in priorities:
+        if interaction in non_far_interactions:
+            return interaction + ' Interaction'
 
+    print('Unknown Class: %s' % c)
+    return sc
 
-    if c.count("Ligand") > 0 or c.count("Metal") > 0:
-        if c.count('Ligand far') > 0 or c.count('Metal far'):
-            return sc
-        else:
-            return "Ligand Interaction"
-    if c.count("DNA") > 0:
-        if c.count("DNA far") > 0:
-            return sc
-        else:
-            return "DNA Interaction"
-    if c.count("RNA") > 0:
-        if c.count("RNA far") > 0:
-            return sc
-        else:
-            return "RNA Interaction"
-    if c.count("Protein") > 0:
-        if c.count("Protein far") > 0:
-            return sc
-        else:
-            return "Protein Interaction"
-    else:
-        print('Unknown Class: %s' % c)
-
-def writeInterFile(outfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,tag_map,class_dict):
+def writeInterFile(outfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,tag_map,class_dict,header=True):
     startline = "Uniprot\tAAC\tSpecie\tTag\tLigand_Interaction_Degree\tLigand_Interaction_Score\tChain_Interaction_Degree\tChain_Interaction_Score\tShort_Interaction_Degree\tShort_Interaction_Score\tMedium_Interaction_Degree\tMedium_Interaction_Score\tLong_Interaction_Degree\tLong_Interaction_Score\tClass\tComplex class"
-    lines = [startline]
+    if header:
+        lines = [startline]
+    else:
+        lines = []
     for m in inter_dict:
         aac,gene_id = mutation_dict[m][0:2]
 
@@ -4373,27 +5107,39 @@ def writeInterFile(outfile,inter_dict,mutation_dict,gene_score_dict,new_aa_map,t
         weighted_r,conf_r,
         weighted_l,conf_l,
         weighted_m,conf_m,
+        weighted_i,conf_i,
         weighted_h,conf_h,
         max_seq_id,
-        weighted_raw,weighted_cent,weighted_norm) = class_dict[m]
+        weighted_raw,weighted_cent,weighted_norm,
+        weighted_lig_degree,weighted_lig_score,
+        weighted_metal_degree,weighted_metal_score,
+        weighted_ion_degree,weighted_ion_score,
+        weighted_prot_degree,weighted_prot_score,
+        weighted_rna_degree,weighted_rna_score,
+        weighted_dna_degree,weighted_dna_score,
+        weighted_modres,modres_prop) = class_dict[m]
         simple_class = simplifyClass(Class,weighted_sc)
 
         if m in inter_dict:
             interstr = '\t'.join([str(x) for x in inter_dict[m]])
         else:
-            interstr = '\t'.join((['None']*10))
+            interstr = '\t'.join((['None']*14))
 
         line = "%s\t%s\t%s\t%s\t%s\t%s\t%s" % (u_ac,aac,species,tag_map[m],interstr,simple_class,Class)
         lines.append(line)
 
-    f = open(outfile,'w')
+    f = open(outfile,'a')
     f.write("\n".join(lines))
     f.close()
 
-def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict,gene_score_dict,class_dict,new_aa_map,tag_map,structure_classification_map):
-    startline = "Uniprot-Ac\tUniprot Id\tRefseq\tAAC\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tConfidence Value\tSecondary Structure\tChemical Distance\tBlosum62 Value\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
 
-    lines = [startline]
+def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict,gene_score_dict,class_dict,tag_map,header=True):
+    startline = "Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tIndividual Interactions\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
+
+    if header:
+        lines = [startline]
+    else:
+        lines = []
     for m in class_dict:
         if m in mutation_sec_dict:
             mv_sec_ass = majority_vote(mutation_sec_dict[m])
@@ -4406,13 +5152,21 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
         weighted_r,conf_r,
         weighted_l,conf_l,
         weighted_m,conf_m,
+        weighted_i,conf_i,
         weighted_h,conf_h,
         max_seq_id,
-        weighted_raw,weighted_cent,weighted_norm) = class_dict[m]
+        weighted_raw,weighted_cent,weighted_norm,
+        weighted_lig_degree,weighted_lig_score,
+        weighted_metal_degree,weighted_metal_score,
+        weighted_ion_degree,weighted_ion_score,
+        weighted_prot_degree,weighted_prot_score,
+        weighted_rna_degree,weighted_rna_score,
+        weighted_dna_degree,weighted_dna_score,
+        weighted_modres,modres_prop) = class_dict[m]
         simple_class = simplifyClass(Class,weighted_sc)
 
         if best_res != None:
-            [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa] = best_res
+            [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs] = best_res
 
             recommended_structure = '%s:%s %s:%s' % (pdb_id,chain,res_nr,res_aa)
         else:
@@ -4422,7 +5176,7 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
             recommended_structure = '-'
 
         if max_seq_res != None:
-            [max_seq_r_id,max_seq_qual,max_seq_res_aa,max_seq_res_nr,max_seq_pdb_id,max_seq_chain,max_seq_resolution,max_seq_cov,max_seq_seq_id,max_seq_rsa] = max_seq_res
+            [max_seq_r_id,max_seq_qual,max_seq_res_aa,max_seq_res_nr,max_seq_pdb_id,max_seq_chain,max_seq_resolution,max_seq_cov,max_seq_seq_id,max_seq_rsa,max_min_lig,max_min_metal,max_min_ion,max_iacs] = max_seq_res
 
             max_seq_structure = '%s:%s %s:%s' % (max_seq_pdb_id,max_seq_chain,max_seq_res_nr,max_seq_res_aa)
         else:
@@ -4432,49 +5186,67 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
             max_seq_structure = '-'
 
         aac,gene_id = mutation_dict[m][0:2]
-
-        new_aa = new_aa_map[m]
-        aac = "%s%s" % (aac.split(',')[0],new_aa)
-
-        chemical_distance = getChemicalDistance(aac)
-        blosum_value = getBlosumValue(aac)
+        input_res_id = mutation_dict[m][4]
+        if input_res_id == None:
+            input_res_id = ''
 
         (u_ac,gpan,u_id,error_code,error,species,gene_score) = gene_score_dict[gene_id]
 
-        lines.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (u_ac,u_id,gpan,mutation_dict[m][0],species,tag_map[m],weighted_sc,Class,simple_class,str(conf),mv_sec_ass,str(chemical_distance),str(blosum_value),recommended_structure,str(seq_id),str(cov),str(resolution),max_seq_structure,str(max_seq_seq_id),str(max_seq_cov),str(max_seq_resolution),str(amount_of_structures)))
-    f = open(outfile,'w')
+        input_pdb_id = ''
+        if len(u_ac) == 6 and u_ac[4] == ':':
+            input_pdb_id = u_ac
+            u_ac = ''
+        interaction_str = '-' # TODO
+
+        lines.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (u_ac,u_id,gpan,input_pdb_id,input_res_id,aac[0],aac[1:],species,tag_map[m],weighted_sc,Class,simple_class,interaction_str,str(conf),mv_sec_ass,recommended_structure,str(seq_id),str(cov),str(resolution),max_seq_structure,str(max_seq_seq_id),str(max_seq_cov),str(max_seq_resolution),str(amount_of_structures)))
+    f = open(outfile,'a')
     f.write("\n".join(lines))
     f.close()
 
-def writeStatFile(out_file,mutation_dict,class_dict,tag_map):
-    startline = 'Tag\tTotal proteins\tTotal positions\tMapped positions\tUnmapped, Disorder\tUnmapped, Globular'
-    outmap = {'All':[set(),0,0,0,0]}
+def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
+    seq_id_threshold = 0.95
+    startline = 'Tag\tTotal proteins\tTotal positions\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold),str(seq_id_threshold))
+    outmap = {'All':[set(),0,0,0,0,0,0]}
+    if stat_dict != None:
+        class_dict = stat_dict
+        max_seq_key = 1
+    else:
+        max_seq_key = 21
     for m in tag_map:
-        tag = tag_map[m]
-        if not tag in outmap:
-            outmap[tag] = [set(),0,0,0,0]
-        g = mutation_dict[m][1]
-        outmap['All'][0].add(g)
-        outmap[tag][0].add(g)
-        outmap['All'][1] += 1
-        outmap[tag][1] += 1
-        if m in class_dict:
-            clas = class_dict[m][0]
-            if clas != 'Disorder':
-                outmap['All'][2] += 1
-                outmap[tag][2] += 1
-            else:
-                #print m
-                outmap['All'][3] += 1
-                outmap[tag][3] += 1
+        if tag_map[m] != None:
+            raw_tags = tag_map[m].split(',')
         else:
-            #print m
-            outmap['All'][4] += 1
-            outmap[tag][4] += 1
+            raw_tags = []
+        tags = set(['All'])
+        for tag in raw_tags:
+            if tag[0] == '#':
+                tag = tag[1:].split(':')[0]
+            tags.add(tag)
+
+        for tag in tags:
+            if not tag in outmap:
+                outmap[tag] = [set(),0,0,0,0,0,0]
+            g = mutation_dict[m][1]
+            outmap[tag][0].add(g)
+            outmap[tag][1] += 1
+            
+            if m in class_dict:
+                clas = class_dict[m][0]
+                max_seq_id = class_dict[m][max_seq_key]
+                if clas != 'Disorder' and clas != None:
+                    outmap[tag][2] += 1
+                    if max_seq_id > seq_id_threshold:
+                        outmap[tag][5] += 1
+                    else:
+                        outmap[tag][6] += 1
+                elif clas == 'Disorder':
+                    outmap[tag][3] += 1
+                else:
+                    outmap[tag][4] += 1
+            else:
+                outmap[tag][4] += 1
     if None in outmap:
         del outmap[None]
-
-    #print outmap
 
     lines = [startline]
     for tag in outmap:
@@ -4483,14 +5255,18 @@ def writeStatFile(out_file,mutation_dict,class_dict,tag_map):
         mapped = outmap[tag][2]
         dis = outmap[tag][3]
         unmapped = outmap[tag][4]
+        mapped_to_corr = outmap[tag][5]
+        mapped_to_homolog = outmap[tag][6]
+
         if float(tot_pos) == 0.0:
             continue
-        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (tag,str(tot_prot),str(tot_pos),str(mapped),str(float(mapped)/float(tot_pos)),str(dis),str(float(dis)/float(tot_pos)),str(unmapped),str(float(unmapped)/float(tot_pos)))
+        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (tag,str(tot_prot),str(tot_pos),str(mapped),str(100.*float(mapped)/float(tot_pos)),str(mapped_to_corr),str(100.*float(mapped_to_corr)/float(tot_pos)),str(mapped_to_homolog),str(100.*float(mapped_to_homolog)/float(tot_pos)),str(dis),str(100.*float(dis)/float(tot_pos)),str(unmapped),str(100.*float(unmapped)/float(tot_pos)))
         lines.append(line)
     f = open(out_file,'w')
     f.write("\n".join(lines))
     f.close()
 
+#Is this still used???
 #called by output
 def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password,top=None,ligand_filter=None,proteome=False):
     if ligand_filter != None:
@@ -4507,7 +5283,7 @@ def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password
     mutation_id_list = set()
     template_id_list = set()
 
-    print db_name,session_id
+    print(db_name,session_id)
 
     sql = "SELECT Mutation,New_AA,Tag FROM RS_Mutation_Session WHERE Session = '%s'" % (str(session_id))
     try:
@@ -4623,16 +5399,7 @@ def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password
                             Relative_Surface_Access,
                             Secondary_Structure_Assignment,
                             Homomer_Distances,
-                            Ligand_Interaction_Degree,
-                            Ligand_Interaction_Score,
-                            Chain_Interaction_Degree,
-                            Chain_Interaction_Score,
-                            Short_Interaction_Degree,
-                            Short_Interaction_Score,
-                            Medium_Interaction_Degree,
-                            Medium_Interaction_Score,
-                            Long_Interaction_Degree,
-                            Long_Interaction_Score
+                            Interaction_Profile,
                             FROM Residue WHERE Residue_Id BETWEEN %s AND %s""" % (str(min_r),str(max_r))
             try:
                 # Execute the SQL command
@@ -4681,13 +5448,13 @@ def prodAnoOut(output_file,session_id,db_name,db_adress,db_user_name,db_password
             line2 = "\t".join(line)
             lines2.append(line2)
         except:
-            print "Error in prodAnoOut: ",line
+            print("Error in prodAnoOut: ",line)
     page = "\n".join(lines2)
     f = open(output_file, "wb")
     f.write(page)
     f.close()
 
-    print "%s done" % output_file
+    print("%s done" % output_file)
     return output_file
 
 def produceAnotationOutput(session_id,residue_dict,gene_score_dict,structure_dict,mutation_dict,ligand_filter,new_aa_map,tag_map,m_r_map,seq_id_map):
@@ -4697,7 +5464,7 @@ def produceAnotationOutput(session_id,residue_dict,gene_score_dict,structure_dic
     for m_id in mutation_dict:
         if not m_id in m_r_map:
             continue #unmapped mutations
-        (aachange,gene_id,iupred_score,glob) = mutation_dict[m_id]
+        (aachange,gene_id,iupred_score,glob,input_res_id) = mutation_dict[m_id]
         tag = tag_map[m_id]
         new_aa = new_aa_map[m_id]
         if ord(aachange[-1]) >47 and ord(aachange[-1]) < 59:
@@ -5040,7 +5807,7 @@ def goTermAnalysis(session_id,outfile,db,cursor):
         go_dict[row[0]][0] = row[1]
         go_dict[row[0]][1] = row[2]
 
-    go_list = sorted(go_dict.values(),key = lambda x: x[4],reverse = True)
+    go_list = sorted(list(go_dict.values()),key = lambda x: x[4],reverse = True)
     lines = ["GO-Term\tGO-ID\tTotal Score\tAVG-Score\tGene_Amount\tNormalized Score"]
     for go in go_list:
         normalized_score = go[4]/datasetsize
@@ -5114,7 +5881,7 @@ def pathwayAnalysis(session_id,outfile,db,cursor):
         path_dict[row[0]][0] = row[1]
         path_dict[row[0]][1] = row[2]
 
-    path_list = sorted(path_dict.values(),key = lambda x: x[4],reverse = True)
+    path_list = sorted(list(path_dict.values()),key = lambda x: x[4],reverse = True)
     lines = ["Pathway\tReactome-ID\tTotal Score\tAVG-Score\tGene_Amount\tNormalized Score"]
     for path in path_list:
         normalized_score = path[4]/datasetsize
@@ -5263,7 +6030,7 @@ def getStructureClassification(pdb_id,chain,db,cursor):
     except:
         raise NameError("Error in getStructureClassification: %s" % sql)
     if results == ():
-        print "Did not found the Structure"
+        print("Did not found the Structure")
         return {}
     s_id = results[0][0]
     chains = results[0][1]
@@ -5527,10 +6294,10 @@ def proteinStructureCoverage(session_id,db,cursor):
         if float(disorder)/float(order+disorder) >= 0.8:
             majorly_disordered += 1
 
-    print "Structure: ",len(gr_95)
-    print "Homolog: ",len(gr_35)-len(gr_95)
-    print "Disordered: ",majorly_disordered
-    print "No Structure: ",len(no_str) - majorly_disordered
+    print("Structure: ",len(gr_95))
+    print("Homolog: ",len(gr_35)-len(gr_95))
+    print("Disordered: ",majorly_disordered)
+    print("No Structure: ",len(no_str) - majorly_disordered)
 
 
 

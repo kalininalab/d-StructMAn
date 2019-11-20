@@ -45,10 +45,9 @@ def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,
     os.remove(blast_out)
 
     entries = {}
-    oligo_map = {}
 
     if len(lines) == 0:
-        return(entries,oligo_map)
+        return(entries)
 
     root = ET.fromstring(lines)
     blast_iter_hits = root[8][0][4]    

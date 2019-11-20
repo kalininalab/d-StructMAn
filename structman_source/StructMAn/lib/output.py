@@ -1,4 +1,4 @@
-import MySQLdb
+import pymysql as MySQLdb
 import database
 import os
 import babel
@@ -8,44 +8,14 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-db_adress = ""
-db_user_name = ""
-db_password = ""
-db_name = ""
-output_path = ""
-conf_path = ""
-infile = ""
-sess_id = 0
-go = False
-anno = False
-classification=True
-gene = False
-path = False
-godiff = False
-pathdiff = False
-do_modelling = False
-multi_modelling = False
-ligand_file = None
-mod_per_mut = 0
-mod_per_gene = 0
-tanimoto_cutoff = 0.05
-distance_threshold = 10.0
-ligand_filter = None
-proteome = False
-intertable_conf=False
-
-resources = 'manu'
-num_of_cores = None
-proc_n = 48
-
 def makeViolins(violins,outfile,session_name,add=''):
     fs = 10  # fontsize
     plt.clf()
 
     for violin_tag in violins:
         fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(12, 12))
-        classes = violins[violin_tag].keys()
-        pos = range(len(classes))
+        classes = list(violins[violin_tag].keys())
+        pos = list(range(len(classes)))
         data = [violins[violin_tag][cl] for cl in classes]
         #print classes
         axes.violinplot(data, pos, widths=0.5,
@@ -158,8 +128,8 @@ def plotScatter(scatter_plots,outfile,session_name):
         #print scatter_file
 
 
-def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=False):
-    #Uniprot	AAC	Weighted Surface/Core	Complex Class	Simple Class	Confidence Value	Secondary Structure	Chemical Distance	Blosum62 Value	Uniprot Id
+def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=False,rin_classes=False):
+    #"Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
     outfile = '%s/%s' % (outfolder,session_name)
 
     t0 = time.time()
@@ -191,13 +161,44 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
     violins = {}
     comp_violins = {}
 
+    species_pos = None
+    tag_pos = None
+    class_pos = None
+    simple_class_pos = None
+    confidence_pos = None
+    rin_class_pos = None
+    rin_simple_class_pos = None
+
+    for pos,column_name in enumerate(lines[0].split('\t')):
+        if column_name == 'Species':
+            species_pos = pos
+        if column_name == 'Tag':
+            tag_pos = pos
+        if column_name == 'Class':
+            class_pos = pos
+        if column_name == 'Simple Class':
+            simple_class_pos = pos
+        if column_name == 'Confidence Value':
+            confidence_pos = pos
+        if column_name == 'RIN Class':
+            rin_class_pos = pos
+        if column_name == 'RIN Simple Class':
+            rin_simple_class_pos = pos
+
     for line in lines[1:]:
         words = line.replace('\n','').split('\t')
-        species = words[4]
-        tag = words[5]
-        classification = words[7]
-        simple_classification = words[8]
-        confidence = float(words[9])
+        species = words[species_pos]
+        tag = words[tag_pos]
+        if not rin_classes:
+            classification = words[class_pos]
+            simple_classification = words[simple_class_pos]
+        else:
+            classification = words[rin_class_pos]
+            simple_classification = words[rin_simple_class_pos]
+        if words[confidence_pos] != 'None':
+            confidence = float(words[confidence_pos])
+        else:
+            confidence = 0.
 
         size += 1
 
@@ -288,15 +289,15 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
                     hc_size += 1
 
     t1 = time.time()
-    print ('Time for classDistribution Part1: %s' % str(t1-t0))
+    print(('Time for classDistribution Part1: %s' % str(t1-t0)))
 
     makeViolins(violins,outfile,session_name)
     makeViolins(comp_violins,outfile,session_name,add='_complex_classes')
 
     t2 = time.time()
-    print ('Time for classDistribution Part2: %s' % str(t2-t1))
+    print(('Time for classDistribution Part2: %s' % str(t2-t1)))
 
-    classes = class_map.keys()
+    classes = list(class_map.keys())
     outlines = ['\t%s' % '\t'.join(classes)]
 
     words = ['total']
@@ -338,7 +339,7 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
                 words.append(str(r))
             outlines.append('\t'.join(words))
 
-    simple_classes = simple_class_map.keys()
+    simple_classes = list(simple_class_map.keys())
     simple_outlines = ['\t%s' % '\t'.join(simple_classes)]
 
     words = ['total']
@@ -382,18 +383,23 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
 
 
     if by_conf:
-        simple_high_confidence_outlines = ['\t'.join(simple_high_confidence_map.keys())]
+        simple_high_confidence_outlines = ['\t'.join(list(simple_high_confidence_map.keys()))]
         words = []
         for simple_classification in simple_high_confidence_map:
             r = float(simple_high_confidence_map[simple_classification])/float(hc_size)
             words.append(str(r))
         simple_high_confidence_outlines.append('\t'.join(words))
 
-    f = open('%s.class_distribution.tsv' % outfile,'w')
+    if rin_classes:
+        file_name_tag = 'rin_'
+    else:
+        file_name_tag = ''
+
+    f = open('%s.%sclass_distribution.tsv' % (outfile,file_name_tag),'w')
     f.write('\n'.join(outlines))
     f.close()
 
-    f = open('%s.simple_class_distribution.tsv' % outfile,'w')
+    f = open('%s.%ssimple_class_distribution.tsv' % (outfile,file_name_tag),'w')
     f.write('\n'.join(simple_outlines))
     f.close()
 
@@ -403,7 +409,7 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
         f.close()
 
     t3 = time.time()
-    print ('Time for classDistribution Part3: %s' % str(t3-t2))
+    print(('Time for classDistribution Part3: %s' % str(t3-t2)))
 
 def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,session_name,by_tag=False):
     outfile = "%s/%s" % (outfile,session_name)
@@ -689,147 +695,32 @@ def annoAnnoNetwork(anno_anno_map,m_aac_map,gn_map,outfile,distance_threshold = 
     f.close()
 
 
-def config(config_path):
-    global go
-    global godiff
-    global anno
-    global gene
-    global path
-    global pathdiff
-    global do_modelling
-    global multi_modelling
-    global mod_per_mut
-    global mod_per_gene
-    global db_name
-    global db_adress
-    global db_password
-    global db_user_name
-    global tanimoto_cutoff
-    global distance_threshold
-    global ligand_filter
-    global proteome
-    global intertable_conf
-    global resources
-    global proc_n
-    
-    f = open(config_path, "r")
-    lines = f.read().split('\n')
-    f.close()
-
-    out_options = []
-    for line in lines:
-        if len(line) == 0:
-            continue
-        if line[0] == '#':
-            continue
-        words = line.split("=")
-        if len(words) > 1:
-            opt = words[0]
-            arg = words[1].replace("\n","")
-            if opt == 'do_anno':
-                if arg == "True":
-                    anno = True
-                else:
-                    anno = False
-            elif opt == 'do_genesort':
-                if arg == "True":
-                    gene = True
-                else:
-                    gene = False
-            elif opt == 'do_goterm':
-                if arg == "True":
-                    go = True
-                else:
-                    go = False
-            elif opt == 'do_godiff':
-                if arg == "True":
-                    godiff = True
-                else:
-                    godiff = False
-            elif opt == 'do_pathway':
-                if arg == "True":
-                    path = True
-                else:
-                    path = False
-            elif opt == 'do_pathdiff':
-                if arg == "True":
-                    pathdiff = True
-                else:
-                    pathdiff = False
-            elif opt == 'multi_modelling':
-                if arg == "True":
-                    multi_modelling = True
-                else:
-                    multi_modelling = False
-            elif opt == 'mod_per_gene':
-                mod_per_gene = arg
-            elif opt == 'mod_per_mut':
-                mod_per_mut = arg
-            elif opt == 'do_modelling':
-                if arg == "True":
-                    do_modelling = True
-                else:
-                    do_modelling = False
-            elif opt == 'db_adress':
-                db_adress = arg
-            elif opt == 'db_user_name':
-                db_user_name = arg
-            elif opt == 'db_password':
-                db_password = arg
-            elif opt == 'db_name':
-                db_name = arg
-            elif opt == 'tanimoto_cutoff':
-                tanimoto_cutoff = float(arg)
-            elif opt == 'lig_dist_thresh':
-                distance_threshold = arg
-            elif opt == 'ligand_filter':
-                ligand_filter = arg
-            elif opt == 'proteome':
-                if arg == 'True':
-                    proteome = True
-            elif opt == 'intertable':
-                if arg == 'True':
-                    intertable_conf = True
-            elif opt == 'resources':
-                resources = arg
-
-    if resources == 'auto' and num_of_cores == None:
-        proc_n = multiprocessing.cpu_count() -1
-        if proc_n <= 0:
-            proc_n = 1
-        
-
-    if num_of_cores != None:
-        proc_n = num_of_cores
-
-
 #called by structman
-def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_path='',overwrite=False,anno=False,intertable=False,n_of_cores=1):
-    
-    global go
-    global godiff
-    global classification
-    global gene
-    global path
-    global pathdiff
-    global do_modelling
-    global ligand_file
-    global multi_modelling
-    global mod_per_mut
-    global mod_per_gene
-    global infile
-    global tanimoto_cutoff
-    global distance_threshold
-    global ligand_filter
-    global proteome
-    global proc_n
-    global num_of_cores
-    num_of_cores = n_of_cores
+def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False):
+    db_name = config.db_name
+    db_adress = config.db_adress
+    db_password = config.db_password
+    db_user_name = config.db_user_name
+    go = config.go
+    godiff = config.godiff
+    classification = config.classification
+    gene = config.gene
+    path = config.path
+    pathdiff = config.pathdiff
+    do_modelling = config.do_modelling
+    ligand_file = config.ligand_file
+    multi_modelling = config.multi_modelling
+    mod_per_mut = config.mod_per_gene
+    mod_per_gene = config.mod_per_gene
+    infile = ''
+    tanimoto_cutoff = config.tanimoto_cutoff
+    distance_threshold = config.distance_threshold
+    ligand_filter = config.ligand_filter
+    proteome = config.proteome
+    proc_n = config.proc_n
+    verbose = config.verbose
 
-    if config_path != '':
-        config(config_path)
-
-    global intertable_conf
+    intertable_conf = config.intertable_conf
     intertable = intertable or intertable_conf
 
     db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
@@ -849,24 +740,32 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
     t0 = time.time()
 
     if classification:
-        classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable,processes=proc_n)
+        t00 = time.time()
+        if intertable:
+            classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable,processes=proc_n,verbose=verbose)
+        else:
+            classfiles = database.classificationOutput(output_path,session_name,session_id,db,cursor,overwrite=overwrite,verbose=verbose)
         t01 = time.time()
+        print("Time for minDistOut: ",t01-t00)
         for classfile in classfiles:
             classDistributionFromFile(classfile,output_path,session_name)
+            classDistributionFromFile(classfile,output_path,session_name,rin_classes=True)
         t02 = time.time()
-        print "Time for producing classification distributions: ",t02-t01
+        print("Time for producing classification distributions: ",t02-t01)
+        
         if intertable:
             for interfile in interfiles:
                 InteractionScoreAveragesFromFile(interfile,output_path,session_name,by_tag=True)
-
+            t03 = time.time()
+            print("Time for producing Interaction files: ",t03-t02)
     t1 = time.time()
-    print "Time for producing classification file: ",t1-t0    
+    print("Time for producing classification file: ",t1-t0)    
 
     t0 = time.time()
     if anno:
         ofile = database.prodAnoOut("%s/%s.anotations.tsv" % (output_path,session_name),session_id,db_name,db_adress,db_user_name,db_password,ligand_filter=ligand_filter,proteome=proteome)
     t1 = time.time()
-    print "Time for producing annotation file: ",t1-t0    
+    print("Time for producing annotation file: ",t1-t0)    
     if gene:
         database.sortGenes(session_id,"%s/%s.protsort.tsv" % (output_path,session_name),db,cursor)
     if go:
@@ -877,8 +776,8 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
             for f in files:
                 if '.goterm.tsv' in f:
                     go_files.append(f)
-            print go_files
-            print files
+            print(go_files)
+            print(files)
             if len(go_files) == 2:
                 fileA = "%s/%s" % (output_path,go_files[0])
                 fileB = "%s/%s" % (output_path,go_files[1])
@@ -917,5 +816,5 @@ def main(db_name,db_adress,db_password,db_user_name,sess_id,output_path,config_p
         babel.writeReport(anno_dict,"%s/Ligand_Report_%s_%s.tsv" % (output_path,ligand_file.rsplit('/',1)[1].rsplit(".",1)[0],session_name),db_name,db_adress,db_user_name,db_password)
         t2 = time.time()
 
-        print "Time for ligandAnalyzer: ",t1-t0
-        print "Time for writeReport: ",t2-t1
+        print("Time for ligandAnalyzer: ",t1-t0)
+        print("Time for writeReport: ",t2-t1)

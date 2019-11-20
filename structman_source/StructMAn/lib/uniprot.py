@@ -1,7 +1,8 @@
-import urllib,urllib2
+import urllib.request, urllib.parse, urllib.error,urllib.request,urllib.error,urllib.parse
 import time
-import MySQLdb
+import pymysql as MySQLdb
 import sys
+import os
 
 def getUniprotId(query,querytype):
     url = 'https://www.uniprot.org/uploadlists/'
@@ -12,15 +13,15 @@ def getUniprotId(query,querytype):
     'query':'%s' % (query)
     } 
     #print params
-    data = urllib.urlencode(params)
-    request = urllib2.Request(url, data)
+    data = urllib.parse.urlencode(params).encode('utf-8')
+    request = urllib.request.Request(url, data)
     contact = "" # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib2.urlopen(request)
+        response = urllib.request.urlopen(request)
     except:
         return "-"
-    page = response.read(200000)
+    page = response.read(200000).decode('utf-8')
     #print page
     try:
         lines = page.split("\n")
@@ -37,8 +38,78 @@ def getUniprotId(query,querytype):
     
     return uniprot_id
 
+def tag_update(tag_map,u_ac,new_entry):
+    if not u_ac in tag_map:
+        tag_map[u_ac] = new_entry
+        return tag_map
+    else:
+        old_entry = tag_map[u_ac]
+
+    for aac in new_entry:
+        if not aac in old_entry:
+            tag_map[u_ac][aac] = new_entry[aac]
+        else:
+            tags = set([])
+            for tag in old_entry[aac].split(','):
+                tags.add(tag)
+            for tag in new_entry[aac].split(','):
+                tags.add(tag)
+            tag_map[u_ac][aac] = ','.join(tags)
+    return tag_map
+
+def updateMappingDatabase(u_acs,db,verbose=False):
+    cursor = db.cursor()
+    ac_id_values = []
+    ac_ref_values = []
+    seq_values = []
+    for u_ac in u_acs:
+        seq_out = getSequence(u_ac,return_id=True,verbose=verbose)
+        if seq_out == None:
+            continue
+        
+        seq,refseqs,go_terms,pathways,u_id = seq_out
+        if u_id == None: #This can happen for uniprot entries, which got deleted from uniprot
+            print("Warning: Uniprot entry:",u_ac," not found, most probably the entry got deleted from uniprot")
+            continue
+        ac_id_values.append("('%s','%s','%s','%s')" % (u_ac,u_ac[-2:],u_id,u_id[:2]))
+        for refseq in refseqs.split(','):
+            ac_ref_values.append("('%s','%s','%s','%s')" % (u_ac,u_ac.split('-')[0][-2:],refseq,refseq[:2]))
+        seq_values.append("('%s','%s')" % (u_ac,seq))
+
+    if len(ac_id_values) > 0:
+
+        sql = "INSERT IGNORE INTO AC_ID(Uniprot_Ac,Ac_Hash,Uniprot_Id,Id_Hash) VALUES %s " % (','.join(ac_id_values))
+        try:
+            cursor.execute(sql)
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+
+    if len(ac_ref_values) > 0:
+
+        sql = "INSERT IGNORE INTO AC_Refseq(Uniprot_Ac,Ac_Hash,Refseq,Refseq_Hash) VALUES %s" % (','.join(ac_ref_values))
+        try:
+            cursor.execute(sql)
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+
+    if len(seq_values) > 0:
+
+        sql = "INSERT IGNORE INTO Sequences(Uniprot_Ac,Sequence) VALUES %s " % (','.join(seq_values))
+        try:
+            cursor.execute(sql)
+            db.commit()
+        except:
+            [e,f,g] = sys.exc_info()
+            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+
+    return
+
 #called by serializedPipeline
-def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
+def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map,pdb_map,verbose=False):
     genes = {}
     new_tag_map = {}
     new_species_map = {}
@@ -49,10 +120,14 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
         if ac in species_map:
             new_species_map[ac] = species_map[ac]
 
+    for pdb_tuple in pdb_map:
+        if pdb_tuple in tag_map:
+            new_tag_map[pdb_tuple] = tag_map[pdb_tuple]
+
     #Step one: map everything to uniprot-ac
     if len(id_map) > 0:
         if db != None:
-            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Id IN ('%s')" % "','".join(id_map.keys())
+            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Id IN ('%s')" % "','".join(list(id_map.keys()))
             try:
                 cursor.execute(sql)
                 results = cursor.fetchall()
@@ -60,14 +135,15 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
             except:
                 [e,f,g] = sys.exc_info()
                 raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
-
+            stored_ids = set()
             for row in results:
                 u_ac = row[0]
                 u_id = row[1]
+                stored_ids.add(u_id)
                 if not u_ac in genes:
                     genes[u_ac] = [u_id,set([]),id_map[u_id]]
                     if u_id in tag_map:
-                        new_tag_map[u_ac] = tag_map[u_id]
+                        new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
 
                     if u_id in species_map:
                         new_species_map[u_ac] = species_map[u_id]
@@ -75,25 +151,49 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                 else:
                     genes[u_ac][0] = u_id
                     genes[u_ac][2] = genes[u_ac][2]|id_map[u_id]
-                    new_tag_map[u_ac] = tag_map[u_id]
-
-                    if u_id in tag_map:
-                        if u_ac in new_tag_map:
-                            new_tag_map[u_ac].update(tag_map[u_id])
-                        else:
-                            new_tag_map[u_ac] = tag_map[u_id]
+                    new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
 
                     if u_id in species_map:
                         new_species_map[u_ac] = species_map[u_id]
 
+            unstored_ids = []
+            for u_id in id_map:
+                if not u_id in stored_ids:
+                    unstored_ids.append(u_id)
+            update_acs = []
+            if len(unstored_ids) > 0: #whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
+                
+                #This part is identical to the part, when no local database is used
+                id_ac_map = getUniprotIds(unstored_ids,'ID',target_type="ACC")
+                for u_id in id_ac_map:
+                    u_ac = id_ac_map[u_id]
+                    if not u_ac in genes:
+                        genes[u_ac] = [u_id,set([]),id_map[u_id]]
+                        if u_id in tag_map:
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
+
+                        if u_id in species_map:
+                            new_species_map[u_ac] = species_map[u_id]
+
+                    else:
+                        genes[u_ac][0] = u_id
+                        genes[u_ac][2] = genes[u_ac][2]|id_map[u_id]
+                        new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
+
+                        if u_id in species_map:
+                            new_species_map[u_ac] = species_map[u_id]
+                    #This part is different
+                    update_acs.append(u_ac)
+                updateMappingDatabase(update_acs,db,verbose=verbose)
+
         else:
-            id_ac_map = getUniprotIds(id_map.keys(),'ID',target_type="ACC")
+            id_ac_map = getUniprotIds(list(id_map.keys()),'ID',target_type="ACC")
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
                 if not u_ac in genes:
                     genes[u_ac] = [u_id,set([]),id_map[u_id]]
                     if u_id in tag_map:
-                        new_tag_map[u_ac] = tag_map[u_id]
+                        new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
 
                     if u_id in species_map:
                         new_species_map[u_ac] = species_map[u_id]
@@ -101,20 +201,14 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                 else:
                     genes[u_ac][0] = u_id
                     genes[u_ac][2] = genes[u_ac][2]|id_map[u_id]
-                    new_tag_map[u_ac] = tag_map[u_id]
-
-                    if u_id in tag_map:
-                        if u_ac in new_tag_map:
-                            new_tag_map[u_ac].update(tag_map[u_id])
-                        else:
-                            new_tag_map[u_ac] = tag_map[u_id]
+                    new_tag_map = tag_update(new_tag_map,u_ac,tag_map[u_id])
 
                     if u_id in species_map:
                         new_species_map[u_ac] = species_map[u_id]
 
     if len(np_map) > 0:
         if db != None:
-            sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Refseq IN ('%s')" % "','".join(np_map.keys())
+            sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Refseq IN ('%s')" % "','".join(list(np_map.keys()))
             try:
                 cursor.execute(sql)
                 results = cursor.fetchall()
@@ -126,28 +220,28 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
             ref_u_ac_map = {} #different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
             gene_id_snap = set(genes.keys()) #snapshot of u_acs not originating from refseq-mapping
 
+            stored_refs = set()
+
             for row in results:
                 u_ac = row[0]
                 ref = row[1]
-
+                stored_refs.add(ref)
                 if (not ref in ref_u_ac_map):
                     ref_u_ac_map[ref] = u_ac
                     if not u_ac in genes:
                         genes[u_ac] = ['',set([ref]),np_map[ref]]
                         if ref in tag_map:
-                            new_tag_map[u_ac] = tag_map[ref]
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
                         if ref in species_map:
                             new_species_map[u_ac] = species_map[ref]
                     else:
                         genes[u_ac][1].add(ref)
                         genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
-
+                        
                         if ref in tag_map:
-                            if u_ac in new_tag_map:
-                                new_tag_map[u_ac].update(tag_map[ref])
-                            else:
-                                new_tag_map[u_ac] = tag_map[ref]
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
+                            
 
                         if ref in species_map:
                             new_species_map[u_ac] = species_map[ref]
@@ -157,7 +251,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                     if not u_ac in genes:
                         genes[u_ac] = ['',set([ref]),np_map[ref]]
                         if ref in tag_map:
-                            new_tag_map[u_ac] = tag_map[ref]
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
                         if ref in species_map:
                             new_species_map[u_ac] = species_map[ref]
@@ -166,10 +260,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                         genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
 
                         if ref in tag_map:
-                            if u_ac in new_tag_map:
-                                new_tag_map[u_ac].update(tag_map[ref])
-                            else:
-                                new_tag_map[u_ac] = tag_map[ref]
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
                         if ref in species_map:
                             new_species_map[u_ac] = species_map[ref]
@@ -204,16 +295,43 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
 
                             if ref in species_map:
                                 new_species_map[u_ac] = species_map[ref]
+            #similar to uniprot-id mapping, we have to go to uniprot to get search for unstored refseq entries and if we find them, we have to update the local mapping database
+            unstored_refs = []
+            for ref in np_map:
+                if not ref in stored_refs:
+                    unstored_refs.append(ref)
+            update_acs = []
+            if len(unstored_refs) > 0:
+                np_ac_map = getUniprotIds(unstored_refs,'P_REFSEQ_AC',target_type="ACC")
+                for ref in np_ac_map:
+                    u_ac = np_ac_map[ref]
+                    if not u_ac in genes:
+                        genes[u_ac] = ['',set([ref]),np_map[ref]]
+                        if ref in tag_map:
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+                    else:
+                        genes[u_ac][1].add(ref)
+                        genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
+
+                        if ref in tag_map:
+                            new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
+
+                        if ref in species_map:
+                            new_species_map[u_ac] = species_map[ref]
+                    update_acs.append(u_ac)
+                updateMappingDatabase(update_acs,db,verbose=verbose)
 
         else:
-            np_ac_map = getUniprotIds(np_map.keys(),'P_REFSEQ_AC',target_type="ACC")
+            np_ac_map = getUniprotIds(list(np_map.keys()),'P_REFSEQ_AC',target_type="ACC")
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
                 if not u_ac in genes:
                     genes[u_ac] = ['',set([ref]),np_map[ref]]
                     if ref in tag_map:
-                        new_tag_map[u_ac] = tag_map[ref]
+                        new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
                     if ref in species_map:
                         new_species_map[u_ac] = species_map[ref]
@@ -222,10 +340,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                     genes[u_ac][2] = genes[u_ac][2]|np_map[ref]
 
                     if ref in tag_map:
-                        if u_ac in new_tag_map:
-                            new_tag_map[u_ac].update(tag_map[ref])
-                        else:
-                            new_tag_map[u_ac] = tag_map[ref]
+                        new_tag_map = tag_update(new_tag_map,u_ac,tag_map[ref])
 
                     if ref in species_map:
                         new_species_map[u_ac] = species_map[ref]
@@ -251,6 +366,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
 
     if len(id_search) > 0:
         if db != None:
+            stored_u_acs = set()
             sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(id_search)
             try:
                 cursor.execute(sql)
@@ -263,11 +379,43 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
             for row in results:
                 u_ac = row[0]
                 u_id = row[1]
+
+                stored_u_acs.add(u_ac)
                 if u_ac in genes:
                     genes[u_ac][0] = u_id
+                    
                 if u_ac in ac_iso_map:
                     for iso in ac_iso_map[u_ac]:
                         genes['%s-%s' % (u_ac,iso)][0] = u_id
+                        stored_u_acs.add('%s-%s' % (u_ac,iso))
+
+            unstored_u_acs = []
+            for u_ac in id_search:
+                if not u_ac in stored_u_acs:
+                    unstored_u_acs.append(u_ac)
+
+            if len(unstored_u_acs) > 0:
+                updateMappingDatabase(unstored_u_acs,db,verbose=verbose)
+
+                sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(unstored_u_acs)
+                try:
+                    cursor.execute(sql)
+                    results = cursor.fetchall()
+                    db.commit()
+                except:
+                    [e,f,g] = sys.exc_info()
+                    raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+
+                for row in results:
+                    u_ac = row[0]
+                    u_id = row[1]
+                    
+                    if u_ac in genes:
+                        genes[u_ac][0] = u_id
+                    if u_ac in ac_iso_map:
+                        for iso in ac_iso_map[u_ac]:
+                            genes['%s-%s' % (u_ac,iso)][0] = u_id
+
         else:
             ac_id_map = getUniprotIds(id_search,'ACC',target_type="ID")
             for u_ac in ac_id_map:
@@ -279,7 +427,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
                         genes['%s-%s' % (u_ac,iso)][0] = u_id
 
     if db != None:
-        sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(genes.keys())
+        sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(list(genes.keys()))
         try:
             cursor.execute(sql)
             results = cursor.fetchall()
@@ -293,7 +441,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,tag_map,species_map):
             ref = row[1]
             genes[u_ac][1].add(ref)
     else:
-        ac_np_map = getUniprotIds(genes.keys(),'ACC',target_type="P_REFSEQ_AC")
+        ac_np_map = getUniprotIds(list(genes.keys()),'ACC',target_type="P_REFSEQ_AC")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
             genes[u_ac][1].add(ref)
@@ -315,17 +463,16 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     'query':'%s' % (query)
     } 
     #print params
-    data = urllib.urlencode(params)
-    request = urllib2.Request(url, data)
+    data = urllib.parse.urlencode(params).encode('utf-8')
+    request = urllib.request.Request(url, data)
     contact = "agress@mpi-inf.mpg.de" # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib2.urlopen(request)
+        response = urllib.request.urlopen(request)
     except:
-        print "ERROR: Uniprot did not answer" 
+        print("ERROR: Uniprot did not answer") 
         return {}
-    page = response.read(2000000)
-    #print page
+    page = response.read(2000000).decode('utf-8')
     uniprot_ids = {}
     try:
         error = False
@@ -372,13 +519,16 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     return uniprot_ids
 
 #called by serializedPipeline
-def getSequencesPlain(u_acs,db,cursor):
+def getSequencesPlain(u_acs,db,cursor,max_seq_len=None,debug=False,filtering_db=None):
     gene_sequence_map = {}
+    filtered_set = set()
+
     if db != None:
         if len(u_acs) == 0:
             return {}
-        t0 = time.time()
-        sql = "SELECT Uniprot_Ac,Sequence FROM Sequences WHERE Uniprot_Ac IN ('%s')" % "','".join(u_acs)
+        if debug:
+            t0 = time.time()
+        sql = "SELECT Uniprot_Ac,Sequence,Disorder_Scores,Disorder_Regions FROM Sequences WHERE Uniprot_Ac IN ('%s')" % "','".join(u_acs)
         try:
             cursor.execute(sql)
             results = cursor.fetchall()
@@ -387,52 +537,101 @@ def getSequencesPlain(u_acs,db,cursor):
             [e,f,g] = sys.exc_info()
             raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
 
-        t1 = time.time()
-        #print "getSequences Part 1: ",str(t1-t0)
+        if debug:
+            t1 = time.time()
+            print("getSequences Part 1: ",str(t1-t0))
 
-        
+        n = 0
         for row in results:
             u_ac = row[0]
             if not u_ac in u_acs:
                 continue
             seq = row[1]
-            gene_sequence_map[u_ac] = seq
+            disorder_scores = row[2]
+            disorder_regions = row[3]
+            if max_seq_len != None:
+                if len(seq) > max_seq_len:
+                    filtered_set.add(u_ac)
+                    n += 1
+                    continue
+            if disorder_scores != None:
+                disorder_scores = [float(x) for x in disorder_scores[1:-1].split(',')]
+                if len(disorder_regions) == 2: #this happens for completely globular proteins
+                    disorder_regions_datastruct = []
+                else:
+                    disorder_regions = disorder_regions[:-2].replace('[','').replace(' ','')
+                    disorder_regions_datastruct = []
+                    for region in disorder_regions.split('],'):
+                        lower_bound,upper_bound,region_type = region.split(',')
+                        lower_bound = int(lower_bound)
+                        upper_bound = int(upper_bound)
+                        disorder_regions_datastruct.append((lower_bound,upper_bound,region_type))
+            else:
+                disorder_scores = None
+                disorder_regions_datastruct = None
 
-        t2 = time.time()
-        #print "getSequences Part 2: ",str(t2-t1)
+            gene_sequence_map[u_ac] = seq,disorder_scores,disorder_regions_datastruct
 
-    else:
+        if n > 0:
+            print('Filtered ',n,' Sequences due to max length: ',max_seq_len)
+
+        if debug:
+            t2 = time.time()
+            print("getSequences Part 2: ",str(t2-t1))
+
+    elif debug:
         t2 = time.time()
 
     missing_set = set()
 
     for u_ac in u_acs:
+        if filtering_db != None:
+            folder_key = u_ac.split('-')[0][-2:]
+            filename = '%s/%s/%s_ref50_gpw.fasta.gz' % (filtering_db,folder_key,u_ac)
+            if os.path.isfile(filename):
+                continue
+
+        if u_ac in filtered_set:
+            continue
+
         if not u_ac in gene_sequence_map:
             missing_set.add(u_ac)
             #print u_ac
 
-    t3 = time.time()
-    #print "getSequences Part 3: ",str(t3-t2)
+    if debug:
+        t3 = time.time()
+        print("getSequences Part 3: ",str(t3-t2))
 
-    #print len(missing_set)
+    if debug:
+        print('Size of missing set: ',len(missing_set))
+        print(missing_set)
     #sys.exit()
     for u_ac in missing_set:
-        seq,refseqs,go_terms,pathways = getSequence(u_ac)
-        gene_sequence_map[u_ac] = seq
+        seq_out = getSequence(u_ac,verbose=debug)
+        if seq_out == None:
+            gene_sequence_map[u_ac] = 0,None,None
+            continue
+        seq,refseqs,go_terms,pathways = seq_out
+        gene_sequence_map[u_ac] = seq,None,None
 
-    t4 = time.time()
-    #print "getSequences Part 4: ",str(t4-t3)
+    if debug:
+        t4 = time.time()
+        print("getSequences Part 4: ",str(t4-t3))
 
     return gene_sequence_map
 
 #called by serializePipeline
-def getSequences(u_acs,info_map_path,db,cursor,pdb_dict):
-    #print u_acs
+def getSequences(raw_u_acs,info_map_path,db,cursor,pdb_dict):
     t0 = time.time()
+    u_acs = {}
+    for u_ac in raw_u_acs:
+        if u_ac in pdb_dict:
+            continue
+        u_acs[u_ac] = raw_u_acs[u_ac]
 
     gene_sequence_map = getSequencesPlain(u_acs,db,cursor)
 
-    
+    #print(gene_sequence_map)
     f = open(info_map_path,'r')
     lines = f.readlines()
     f.close()
@@ -451,10 +650,10 @@ def getSequences(u_acs,info_map_path,db,cursor,pdb_dict):
             iso_map[base] = [iso]
         else:
             iso_map[base].append(iso)
-        gene_info_map[u_acs[u_ac]] = ({},{},gene_sequence_map[u_ac])
+        gene_info_map[u_acs[u_ac]] = ({},{},gene_sequence_map[u_ac][0])
 
     t4 = time.time()
-    print "Time for extracting from Fasta Part 4: %s" % str(t4-t0)
+    print("Time for extracting from Fasta Part 4: %s" % str(t4-t0))
 
     
     for line in lines:
@@ -481,46 +680,29 @@ def getSequences(u_acs,info_map_path,db,cursor,pdb_dict):
                     iso_u_ac = u_ac
                 else:
                     iso_u_ac = '%s-%s' % (u_ac,iso)
-                gene_info_map[u_acs[iso_u_ac]] = (go_terms,pathways,gene_sequence_map[iso_u_ac])
+                gene_info_map[u_acs[iso_u_ac]] = (go_terms,pathways,gene_sequence_map[iso_u_ac][0])
 
     t5 = time.time()
-    print "Time for extracting from Fasta Part 5: %s" % str(t5-t4)
-
-    """
-    #print missing_set
-    #sys.exit()
-    for u_ac in missing_set:
-        seq,refseqs,go_terms,pathways = getSequence(u_ac)
-        gene_sequence_map[u_ac] = seq
-        gene_info_map[u_acs[u_ac]] = (refseqs,go_terms,pathways,seq)
-
-    t6 = time.time()
-    print "Time for extracting from Fasta Part 6: %s" % str(t6-t5)
-    """
-
-    #print gene_sequence_map
+    print("Time for extracting from Fasta Part 5: %s" % str(t5-t4))
 
     return gene_sequence_map,gene_info_map
 
-#called by serializedPipeline
-def getSequence(uniprot_ac,tries=0):
+def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
+    if verbose:
+        print('uniprot.getSequence for ',uniprot_ac)
     #new part just for the sequence
     time.sleep(2.0**tries-1.0)
     if len(uniprot_ac) < 2:
         return (0,"",{},{})
     url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
     try:
-        request = urllib2.Request(url)
-        response = urllib2.urlopen(request)
-        page = response.read(9000000)
+        request = urllib.request.Request(url)
+        response = urllib.request.urlopen(request)
+        page = response.read(9000000).decode('utf-8')
     except:
-        if tries < 3:
-            return getSequence(uniprot_ac,tries=tries+1)
+        print('Error trying to reach: ',url)
+        return None
 
-        else:
-            #print uniprot_ac
-            return (1,"",{},{})
-    #print uniprot_ac,page
     lines = page.split("\n")
 
     wildtype_sequences = []
@@ -540,12 +722,12 @@ def getSequence(uniprot_ac,tries=0):
         return (0,"",{},{})
     url = 'https://www.uniprot.org/uniprot/%s.txt' %uniprot_ac
     try:
-        request = urllib2.Request(url)
-        response = urllib2.urlopen(request)
-        page = response.read(9000000)
+        request = urllib.request.Request(url)
+        response = urllib.request.urlopen(request)
+        page = response.read(9000000).decode('utf-8')
     except:
         if tries < 4:
-            return getSequence(uniprot_ac,tries=tries+1)
+            return getSequence(uniprot_ac,tries=tries+1,verbose=verbose)
 
         else:
             #print uniprot_ac
@@ -555,13 +737,16 @@ def getSequence(uniprot_ac,tries=0):
     refseqs = {}
     go_terms = {}
     pathways = {}
+    u_id = None
     for line in lines:
         if line == '':
             continue
         words = line.split()
         if len(words) == 0:
-            print uniprot_ac
+            print(uniprot_ac)
             return (1,"",{},{})
+        if words[0] == 'ID':
+            u_id = words[1]
         if words[0] == "DR":
             if len(words) > 1:
                 if words[1] == "GO;":
@@ -590,5 +775,6 @@ def getSequence(uniprot_ac,tries=0):
         refseqs = ",".join(refseqs[uniprot_ac])
     else:
         refseqs = ''
-
+    if return_id:
+        return (wildtype_sequence,refseqs,go_terms,pathways,u_id)
     return (wildtype_sequence,refseqs,go_terms,pathways)

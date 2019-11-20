@@ -1,14 +1,14 @@
-import MySQLdb
+import pymysql as MySQLdb
 import os
 import sys
 import getopt
 import time
 import multiprocessing
-from multiprocessing import Process, Queue, Manager, Value, Lock
 import subprocess
 import shutil
 import traceback
 import math
+import json
 
 import pdbParser as pdb
 import templateSelection
@@ -18,288 +18,30 @@ import database
 import uniprot
 import blast
 import annovar
+import MMseqs2
 
-
-#dev options:
-neighborhood_calculation = False
-error_annotations_into_db = True
-anno_session_mapping = True
-calculate_interaction_profiles=False
-verbose = False
-
-resources = 'manu'
-num_of_cores = None
-proc_n = 48
-blast_processes = proc_n
-alignment_processes = proc_n
-annotation_processes = proc_n
-number_of_processes = proc_n
-
-dssp = True
-pdb_input_asymetric_unit = False
-
-#active options
-option_seq_thresh = 35.0
-option_res_thresh = 4.5
-option_ral_thresh = 0.5
-option_seq_wf = 1.0
-option_ral_wf = 0.5
-option_res_wf = 0.25
-option_rval_wf = 0.1
-option_lig_wf = 1.0
-option_chain_wf = 1.0
-option_number_of_templates = 0
-compute_surface = True
-tax_id = None
-ref_genome_id = None
-mrna_fasta = None
-species = None
-config = ""
-auto_scale = False
-auto_scale_template_threshold = 10
-#auto_scale_template_percentage gets set by buildQueue
-auto_scale_template_percentage = None
-
-#Paths to Helper Programs     
-blast_path = ""
-blast_db_path = ""
-output_path = ""
-pdb_path = ""
-annovar_path = ""
-smiles_path = ""
-inchi_path = ""
-human_id_mapping_path = ''
-dssp_path = ''
-rin_db_path = ''
-iupred_path = ''
-errorlog = ""
-
-
-#Database
-db_adress = ""
-db_user_name = ""
-db_password = ""
-db_name = ""
-session = 0
-
-manager = Manager()
-lock = manager.Lock()
-cwd = ''
 
 def SQLDateTime():
     return time.strftime('%Y-%m-%d %H:%M:%S',time.localtime())
 
-def setBasePaths(main_file_path):
-    global blast_db_path
-    global smiles_path
-    global inchi_path
-    global human_id_mapping_path
-
-    trunk = main_file_path.rsplit('/',1)[0]
-
-    blast_db_path = '%s/lib/base/blast_db/pdbba' % trunk
-    smiles_path = '%s/lib/base/ligand_bases/Components-smiles-stereo-oe.smi' % trunk
-    inchi_path = '%s/lib/base/ligand_bases/inchi_base.tsv' % trunk
-    human_id_mapping_path = '%s/lib/base/id_mapping' % trunk
-
-
-def setPaths(output_path,config):
-    global blast_path
-    global pdb_path
-    global annovar_path
-    global dssp_path
-    global rin_db_path
-    global iupred_path
-    global errorlog
-
-    cwd = os.getcwd()
-
-    f = open(config, "r")
-    lines = f.read().split('\n')
-    f.close()
-    for line in lines:
-        if len(line) == 0:
-            continue
-        if line[0] == '#':
-            continue
-        words = line.split("=")
-        if len(words) < 2:
-            continue
-        opt = words[0]
-        arg = words[1].replace("\n","")
-        if opt == 'blast_path':
-            blast_path = arg
-        elif opt == 'pdb':
-            pdb_path = arg
-        elif opt == 'annovar_path':
-            annovar_path = arg
-        elif opt == 'dssp_path':
-            dssp_path = arg
-        elif opt == 'rin_db_path':
-            rin_db_path = arg
-        elif opt == 'iupred_path':
-            iupred_path = arg
-
-    if not os.path.exists("%s/errorlogs" % output_path):
-        os.mkdir("%s/errorlogs" % output_path)
-    errorlog = "%s/errorlogs/errorlog.txt" % output_path
-
-def parseConfig(config):
-    global option_seq_thresh
-    global option_res_thresh
-    global option_ral_thresh
-    global option_seq_wf
-    global option_ral_wf
-    global option_res_wf
-    global option_rval_wf
-    global option_lig_wf
-    global option_chain_wf
-    global option_number_of_templates
-    global compute_surface
-    global tax_id
-    global species
-    global ref_genome_id
-    global db_adress
-    global db_user_name
-    global db_password
-    global db_name
-    global auto_scale
-    global error_annotations_into_db
-    global anno_session_mapping
-    global mrna_fasta
-    global neighborhood_calculation
-    global calculate_interaction_profiles
-    global pdb_input_asymetric_unit
-    global resources
-    global proc_n
-    global blast_processes
-    global alignment_processes
-    global annotation_processes
-    global number_of_processes
-
-    f = open(config, "r")
-    lines = f.read().split('\n')
-    f.close()
-    for line in lines:
-        if len(line) == 0:
-            continue
-        if line[0] == '#':
-            continue
-        words = line.split("=")
-        if len(words) > 1:
-            opt = words[0]
-            arg = words[1].replace("\n","")
-            if opt == 'seq_thresh':
-                option_seq_thresh = float(arg)
-                if option_seq_thresh <= 1.0:
-                    option_seq_thresh *= 100.0
-            elif opt == 'res_thresh':
-                option_res_thresh = float(arg)
-            elif opt == 'cov_thresh':
-                option_ral_thresh = float(arg)
-                if option_ral_thresh > 1.0:
-                    option_ral_thresh *= 0.01
-            elif opt == 'seq_wf':
-                option_seq_wf = float(arg)
-            elif opt == 'cov_wf':
-                option_ral_wf = float(arg)
-            elif opt == 'res_wf':
-                option_res_wf = float(arg)
-            elif opt == 'rval_wf':
-                option_rval_wf = float(arg)
-            elif opt == 'lig_wf':
-                option_lig_wf = float(arg)
-            elif opt == 'chain_wf':
-                option_chain_wf = float(arg)
-            elif opt == 'option_number_of_templates':
-                option_number_of_templates = int(arg)
-            elif opt == 'db_adress':
-                db_adress = arg
-            elif opt == 'db_user_name':
-                db_user_name = arg
-            elif opt == 'db_password':
-                db_password = arg
-            elif opt == 'db_name':
-                db_name = arg
-            elif opt == 'species':
-                species = arg
-            elif opt == 'tax_id':
-                tax_id = arg
-            elif opt == 'ref':
-                ref_genome_id = arg
-            elif opt == 'compute_surface':
-                compute_surface = True
-            elif opt == 'resources':
-                resources = arg
-            elif opt == 'auto_scale':
-                if arg == 'on':
-                    auto_scale = True
-                else:
-                    auto_scale = False
-            elif opt == 'error_annotations_into_db':
-                if arg == 'True':
-                    error_annotations_into_db = True
-                elif arg == 'False':
-                    error_annotations_into_db = False
-            elif opt == 'anno_session_mapping':
-                if arg == 'True':
-                    anno_session_mapping = True
-                elif arg == 'False':
-                    anno_session_mapping = False
-            elif opt == 'mrna':
-                mrna_fasta = arg
-            elif opt == 'neighborhood_calculation':
-                if arg == 'True':
-                    neighborhood_calculation = True
-            elif opt == 'calculate_interaction_profiles':
-                if arg == 'True':
-                    calculate_interaction_profiles = True
-                elif arg == 'False':
-                    calculate_interaction_profiles = False
-            elif opt == 'pdb_input_asymetric_unit':
-                if arg == 'True':
-                    pdb_input_asymetric_unit = True
-                elif arg == 'False':
-                    pdb_input_asymetric_unit = False
-
-    if resources == 'auto' and num_of_cores == None:
-        proc_n = multiprocessing.cpu_count() -1
-        if proc_n <= 0:
-            proc_n = 1
-
-        blast_processes = proc_n
-        alignment_processes = proc_n
-        annotation_processes = proc_n
-        number_of_processes = proc_n
-
-    if num_of_cores != None:
-        proc_n = num_of_cores
-        
-        blast_processes = proc_n
-        alignment_processes = proc_n
-        annotation_processes = proc_n
-        number_of_processes = proc_n
-
-    print 'Using %s core(s)' % str(proc_n)
-
-def sequenceScan(genes):
-    global pdb_path
-    global db_adress
-    global db_user_name
-    global db_password
+def sequenceScan(config,genes,tag_map):
+    pdb_path = config.pdb_path
+    db_adress = config.db_adress
+    db_user_name = config.db_user_name
+    db_password = config.db_password
 
     sequenceScanGenes = set()
     sequenceScanPDB = set()
     for u_ac in genes:
 
-        if u_ac.count(':') > 0 :
+        if u_ac.count(':') > 0:
             if None in genes[u_ac][2]:
-                sequenceScanPDB.add(u_ac)
                 genes[u_ac][2] = set()
+            sequenceScanPDB.add(u_ac) #PDB inputs are always processed by the sequence scan
         else:
             if None in genes[u_ac][2]:
-                sequenceScanGenes.add(u_ac)
                 genes[u_ac][2] = set()
+                sequenceScanGenes.add(u_ac)
 
     try:
         db = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
@@ -309,39 +51,58 @@ def sequenceScan(genes):
         cursor = None
 
     if len(sequenceScanGenes) > 0:
-        print "Amount of genes going into sequenceScan: ",len(sequenceScanGenes)
+        print("Amount of genes going into sequenceScan: ",len(sequenceScanGenes))
 
-        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanGenes,db,cursor)
+        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanGenes,db,cursor,debug=config.verbose)
         for u_ac in gene_sequence_map:
-            if gene_sequence_map[u_ac] == 1 or gene_sequence_map[u_ac] == 0:
-                print "Error in sequenceScan with gene: ",u_ac
+            if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0:
+                print("Error in sequenceScan with gene: ",u_ac)
                 continue
-            for (pos,aa) in enumerate(gene_sequence_map[u_ac]):
-                #print pos,aa
+            for (pos,aa) in enumerate(gene_sequence_map[u_ac][0]):
                 aac = '%s%s%s' % (aa,str(pos+1),aa)
                 genes[u_ac][2].add(aac)
 
+    residue_id_backmap = {}
     if len(sequenceScanPDB) > 0:
-        pdb_sequence_map = pdb.getSequencesPlain(sequenceScanPDB,pdb_path)
+        pdb_sequence_map,pdb_pos_map = pdb.getSequences(sequenceScanPDB,pdb_path)
         for u_ac in pdb_sequence_map:
-            for (pos,aa) in enumerate(pdb_sequence_map[u_ac]):
-                #print pos,aa
-                aac = '%s%s%s' % (aa,str(pos+1),aa)
-                genes[u_ac][2].add(aac)
+            residue_id_backmap[u_ac] = {}
+            res_pos_map = pdb_pos_map[u_ac]
+            for res_id in res_pos_map:
+                residue_id_backmap[u_ac][res_pos_map[res_id]] = res_id
+            if len(genes[u_ac][2]) == 0: #The full set of positions is only taking, if the pdb-id is given in the input file without a specific position
+                for (pos,aa) in enumerate(pdb_sequence_map[u_ac][0]):
+                    aac = '%s%s%s' % (aa,str(pos+1),aa)
+                    genes[u_ac][2].add(aac)
+                
+            else: #The given residue-ids are mapped onto their sequence position
+                new_aacs = set()
+                new_tags = {}
+                for aac in genes[u_ac][2]:
+                    res_id = aac[1:-1]
+                    if not res_id in res_pos_map:
+                        print('Skipped residue ',res_id,' from ',u_ac,' since illegal alternative location id')
+                        continue
+                    seq_pos = res_pos_map[res_id]
+                    new_aac = '%s%s%s' % (aac[0],seq_pos,aac[-1])
+                    new_aacs.add(new_aac)
+                    new_tags[new_aac] = tag_map[u_ac][aac]
+                genes[u_ac][2] = new_aacs
+                tag_map[u_ac] = new_tags
 
     if db != None:
         db.close()
-    return genes,sequenceScanPDB
+    return genes,sequenceScanPDB,residue_id_backmap,tag_map
 
-def buildQueue(filename,junksize,mrna_fasta=None):
-    global auto_scale_template_percentage
-    global species
-    global human_id_mapping_path
-    global db
-    global cursor
-    global db_adress
-    global db_user_name
-    global db_password
+def buildQueue(config,db,cursor,filename,junksize,mrna_fasta=None):
+    auto_scale_template_percentage = config.auto_scale_template_percentage
+    species = config.species
+
+    db_adress = config.db_adress
+    db_user_name = config.db_user_name
+    db_password = config.db_password
+
+    verbose = config.verbose
 
     t0 =time.time()
 
@@ -365,16 +126,15 @@ def buildQueue(filename,junksize,mrna_fasta=None):
     global_species = species
 
     for line in lines:
-        #print line
         if line == '':
             continue
         if len(line) < 3:
-            print "Skipped input line:\n%s\nToo short.\n" % line
+            print("Skipped input line:\n%s\nToo short.\n" % line)
             continue
         line = line.replace(' ','\t')
         words = line.split("\t")
         if len(words) < 1:
-            print "Skipped input line:\n%s\nToo few words.\n" % line
+            print("Skipped input line:\n%s\nToo few words.\n" % line)
             continue
         sp_id = words[0]#.replace("'","\\'")
         try:
@@ -398,20 +158,22 @@ def buildQueue(filename,junksize,mrna_fasta=None):
                     else:
                         aa2 = aachange.split(',')[0][-1]
                         pos = int(aachange.split(',')[0][1:-1])
-                    if pos < 1:
-                        print "Skipped input line:\n%s\nPosition < 1.\n" % line
-                        continue
+
                 else:
-                    aachange = "%s%s" % (aachange,aachange[0])
+                    if aachange.count('_') == 1:
+                        aachange = aachange.replace('_','')
+                    else:
+                        aachange = "%s%s" % (aachange,aachange[0])
 
         except:
-            print "File Format Error: ",line
+            print("File Format Error: ",line)
             sys.exit()
 
 
 
         tag = None
         species = global_species
+
 
         if len(words) > 2:
             species = words[2].replace(' ','')
@@ -421,8 +183,7 @@ def buildQueue(filename,junksize,mrna_fasta=None):
             tag = words[3]
 
         if mrna_fasta == None:
-            #if len(sp_id) < 2:
-            #    print line
+
             if sp_id[2] == "_":
                 nps.add(sp_id)
                 if not sp_id in np_map:
@@ -438,7 +199,7 @@ def buildQueue(filename,junksize,mrna_fasta=None):
                     else:
                         id_map[sp_id].add(aachange)
                 elif len(sp_id) == 6 and sp_id.count(':') == 1:
-                    pdb_chain_tuple = sp_id
+                    pdb_chain_tuple = '%s:%s' % (sp_id[:4].upper(),sp_id[-1]) #enforce uppercase pdb-id 
                     if not pdb_chain_tuple in pdb_map:
                         pdb_map[pdb_chain_tuple] = set([aachange])
                     else:
@@ -476,17 +237,12 @@ def buildQueue(filename,junksize,mrna_fasta=None):
         if species != None:
             if sp_id in species_map:
                 if species != species_map[sp_id]:
-                    print "Error: Identical gene ids for different species are not allowed: ",sp_id,species,species_map[sp_id]
+                    print("Error: Identical gene ids for different species are not allowed: ",sp_id,species,species_map[sp_id])
             species_map[sp_id] = species
-
-    #print global_species
-    #print species
-    #print id_map
-    #print ac_map
 
     t1 = time.time()
     if verbose:
-        print "buildQueue Part 1: ",str(t1-t0)
+        print("buildQueue Part 1: ",str(t1-t0))
 
     try:
         db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
@@ -494,26 +250,28 @@ def buildQueue(filename,junksize,mrna_fasta=None):
     except:
         db_uniprot = None
         cursor_uniprot = None
-    genes,tag_map,species_map = uniprot.IdMapping(ac_map,id_map,np_map,db_uniprot,cursor_uniprot,tag_map,species_map)
+    genes,tag_map,species_map = uniprot.IdMapping(ac_map,id_map,np_map,db_uniprot,cursor_uniprot,tag_map,species_map,pdb_map,verbose=verbose)
     if db_uniprot != None:
         db_uniprot.close()
 
     t2 = time.time()
     if verbose:
-        print "buildQueue Part 2: ",str(t2-t1)
+        print("buildQueue Part 2: ",str(t2-t1))
 
     if mrna_fasta == None:
         for pdb_chain_tuple in pdb_map:
-            genes[pdb_chain_tuple] = pdb_map[pdb_chain_tuple]
+            genes[pdb_chain_tuple] = ['',set([]),pdb_map[pdb_chain_tuple]]
 
 
     t3 = time.time()
     if verbose:
-        print "buildQueue Part 3: ",str(t3-t2)
+        print("buildQueue Part 3: ",str(t3-t2))
 
     #detect human datasets and add some entries to the species map
     human_set = True
     for u_ac in genes:
+        if u_ac in pdb_map:
+            continue
         u_id = genes[u_ac][0]
         if u_id.count('HUMAN') == 0:
             human_set = False
@@ -526,18 +284,18 @@ def buildQueue(filename,junksize,mrna_fasta=None):
     
     t4 = time.time()
     if verbose:
-        print "buildQueue Part 4: ",str(t4-t3)
+        print("buildQueue Part 4: ",str(t4-t3))
 
-    genes,corrected_input_pdbs = sequenceScan(genes)
+    genes,corrected_input_pdbs,residue_id_backmap,tag_map = sequenceScan(config,genes,tag_map)
 
     t5 = time.time()
     if verbose:
-        print "buildQueue Part 5: ",str(t5-t4)
+        print("buildQueue Part 5: ",str(t5-t4))
 
     outlist = []
     #computation of auto_scale_template_percentage:
     s = len(genes)
-    print "Total proteins: ",s
+    print("Total proteins: ",s)
     if s > 0:
         auto_scale_template_percentage = 1-0.5**(math.log10(s)-2)
         if auto_scale_template_percentage < 0.0:
@@ -549,10 +307,10 @@ def buildQueue(filename,junksize,mrna_fasta=None):
 
     if s > junksize:
 
-        n_of_batches = s/junksize
+        n_of_batches = s//junksize
         if s%junksize != 0:
             n_of_batches += 1
-        batchsize = s/n_of_batches
+        batchsize = s//n_of_batches
         rest = s%n_of_batches
         outlist = []
 
@@ -575,29 +333,9 @@ def buildQueue(filename,junksize,mrna_fasta=None):
 
     t6 = time.time()
     if verbose:
-        print "buildQueue Part 6: ",str(t6-t5)
+        print("buildQueue Part 6: ",str(t6-t5))
 
-    return outlist,tag_map,species_map,fasta_map,corrected_input_pdbs
-
-"""#seems unused, remove?
-def paraGetSequences(gene_queue,out_queue,lock,err_queue):
-    with lock:
-        gene_queue.put(None)
-    while True:
-        with lock:
-            gene = gene_queue.get()
-        if gene == None:
-            return
-        try:
-            (wildtype_sequence,refseqs,go_terms,pathways) = uniprot.getSequence(gene)
-            with lock:
-                out_queue.put((gene,wildtype_sequence,refseqs,go_terms,pathways))
-        except:
-            [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
-            with lock:
-                err_queue.put((e,f,g,gene))
-"""
+    return outlist,tag_map,species_map,fasta_map,corrected_input_pdbs,residue_id_backmap
 
 def nToAA(seq):
     table={ 
@@ -631,20 +369,18 @@ def nToAA(seq):
         i += 1
     return aa_seq
 
-def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,stored_gene_new_pos,IU_db,iupred_path,corrected_input_pdbs):
-    global mrna_fasta
-    global species
-    global No_Errors
-    global manager
-    global lock
-    global db
-    global cursor
-    global number_of_processes
-    global human_id_mapping_path
-    global pdb_path
-    global pdb_input_asymetric_unit
-    global blast_processes
-    global cwd
+def getSequences(config,new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,stored_gene_new_pos,corrected_input_pdbs,manager,lock,db,cursor):
+    mrna_fasta = config.mrna_fasta
+    species = config.species
+    No_Errors = True
+
+    number_of_processes = config.proc_n
+    human_id_mapping_path = config.human_id_mapping_path
+    pdb_path = config.pdb_path
+    pdb_input_asymetric_unit = config.pdb_input_asymetric_unit
+    blast_processes = config.blast_processes
+    cwd = os.getcwd()
+    verbose = config.verbose
 
     if mrna_fasta == None: #formerly: species == 'human', now using the full uniprot
         pdb_dict = {}
@@ -655,28 +391,40 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
             if len(gene) == 6 and gene.count(':') == 1:
                 pdb_dict[gene] = stored_genes[gene]
 
+
+        if verbose:
+            print('Get Sequences for ',len(new_genes)-len(pdb_dict),' unstored proteins')
+
         t0 = time.time()
         try:
-            db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,'struct_man_db_uniprot')
+            db_uniprot = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,'struct_man_db_uniprot')
             cursor_uniprot = db_uniprot.cursor()
         except:
             db_uniprot = None
             cursor_uniprot = None
-        gene_sequence_map,gene_info_map = uniprot.getSequences(new_genes,'%s/human_info_map.tab' % human_id_mapping_path,db_uniprot,cursor_uniprot,pdb_dict)
+        
         if db_uniprot != None:
+            used_local_uniprot_db = True
+            new_genes_c = new_genes.copy()
+            new_genes_c.update(stored_genes)
+            gene_sequence_map,gene_info_map = uniprot.getSequences(new_genes_c,'%s/human_info_map.tab' % human_id_mapping_path,db_uniprot,cursor_uniprot,pdb_dict)
             db_uniprot.close()
+        else:
+            used_local_uniprot_db = False
+            gene_sequence_map,gene_info_map = uniprot.getSequences(new_genes,'%s/human_info_map.tab' % human_id_mapping_path,db_uniprot,cursor_uniprot,pdb_dict)
         t1 = time.time()
         if verbose:
-            print "Time for getSequences Part 1: %s" % str(t1-t0)
+            print("Time for getSequences Part 1: %s" % str(t1-t0))
 
         pdb_sequence_map,pdb_pos_map = pdb.getSequences(pdb_dict,pdb_path,AU=pdb_input_asymetric_unit)
+        #print pdb_pos_map
         t2 = time.time()
         if verbose:
-            print "Time for getSequences Part 2: %s" % str(t2-t1)
+            print("Time for getSequences Part 2: %s" % str(t2-t1))
         gene_sequence_map.update(pdb_sequence_map)
         t3 = time.time()
         if verbose:
-            print "Time for getSequences Part 3: %s" % str(t3-t2)
+            print("Time for getSequences Part 3: %s" % str(t3-t2))
         #print pdb_pos_map
         #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
         #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
@@ -685,7 +433,7 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
                 continue
             if u_id in corrected_input_pdbs: #Input pdbs for full sequence analysis have already corrected aaclists
                 (gene_id,aac_map) = gene_mut_map_new[u_id]
-                gene_info_map[gene_id] = ({},{},pdb_sequence_map[u_id])
+                gene_info_map[gene_id] = ({},{},pdb_sequence_map[u_id][0])
                 continue
             (gene_id,aac_map) = gene_mut_map_new[u_id]
             new_aac_map = {}
@@ -698,7 +446,7 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
                 new_aac_map[new_aac_base] = aac_map[aac_base]
             gene_mut_map_new[u_id] = (gene_id,new_aac_map)
             #structure of gene_info_map: {gene_id:({go_term_id:go_term_name},{reactome_id:pathway_name}),sequence}
-            gene_info_map[gene_id] = ({},{},pdb_sequence_map[u_id])
+            gene_info_map[gene_id] = ({},{},pdb_sequence_map[u_id][0])
 
         for u_id in stored_gene_new_pos:
             if not u_id in pdb_pos_map:
@@ -710,7 +458,7 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
             for aac_base in aac_map:
                 res_id = aac_base[1:]
                 if not res_id in pdb_pos_map[u_id]:
-                    print("Given res_id: %s not found in pdb_pos_map for: %s" % (res_id,u_id))
+                    print(("Given res_id: %s not found in pdb_pos_map for: %s" % (res_id,u_id)))
                     continue
                 pos = pdb_pos_map[u_id][res_id]
                 new_aac_base = '%s%s' % (aac_base[0],str(pos))
@@ -719,15 +467,16 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
 
         t4 = time.time()
         if verbose:
-            print "Time for getSequences Part 4: %s" % str(t4-t3)
+            print("Time for getSequences Part 4: %s" % str(t4-t3))
         database.addGeneInfos(gene_info_map,db,cursor)
         t5 = time.time()
         if verbose:
-            print "Time for getSequences Part 5: %s" % str(t5-t4)
-        gene_sequence_map = database.getSequences(stored_genes,gene_sequence_map,db,cursor)
+            print("Time for getSequences Part 5: %s" % str(t5-t4))
+        if not used_local_uniprot_db:
+            gene_sequence_map = database.getSequences(stored_genes,gene_sequence_map,db,cursor)
         t6 = time.time()
         if verbose:
-            print "Time for getSequences Part 6: %s" % str(t6-t5)
+            print("Time for getSequences Part 6: %s" % str(t6-t5))
     else:
         gene_sequence_map = {}
         for species in fasta_map:
@@ -766,7 +515,7 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
                     if not gene_name in gene_seq_map:
                         raise NameError("Did not found gene: %s in %s" % (gene_name,mrna_fasta))
                     sequence = nToAA(gene_seq_map[gene_name])
-                    gene_sequence_map[gene] = sequence
+                    gene_sequence_map[gene] = sequence,None,None
                     gene_info_map[new_genes[gene]] = ([],{},{},sequence)
             database.addGeneInfos(gene_info_map,db,cursor)
             gene_sequence_map.update(database.getSequences(stored_genes,gene_sequence_map,db,cursor))
@@ -774,65 +523,111 @@ def getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,s
 
     background_iu_process = None
     iupred_map = {}
-    if iupred_path != '':
-        """
-        sys.path.append(iupred_path)
-        import iupred2a
-        for u_ac in gene_sequence_map:
-            seq = gene_sequence_map[u_ac]
-            iupred_score,glob_text = iupred2a.iupred(seq, 'long')
-            print seq,iupred_score
-        """
-        
+    if config.iupred_path != '':
+        iupred_path = config.iupred_path
+        if iupred_path.count('mobidb-lite') > 0:
+            mobi_lite = True
+        else:
+            mobi_lite = False
+
         t0 = time.time()
 
-        in_queue = manager.Queue()
-        out_queue = manager.Queue()
+        if not mobi_lite:
+            in_queue = manager.Queue()
+            out_queue = manager.Queue()
+        else:
+            mobi_list = []
 
+        stored_disorder_ids = []
         for u_ac in gene_sequence_map:
             #iupred_map[u_ac] = ([],{}) #globular domains and residue->score dict
-            seq = gene_sequence_map[u_ac]
+            seq,disorder_scores,disorder_regions = gene_sequence_map[u_ac]
             if seq == 0 or seq == 1 or seq == None:
                 continue
+            if disorder_scores == None:
+                if not mobi_lite:
+                    in_queue.put((u_ac,seq))
+                else:
+                    mobi_list.append('>%s\n%s\n' % (u_ac,seq))
+            elif disorder_scores != 'Stored':
+                disorder_scores_datastruct = {}
+                for pos,score in enumerate(disorder_scores):
+                    seq_pos = pos + 1
+                    if pos >= len(seq):
+                        if verbose:
+                            print('Warning: illegal position ',pos,' for sequence of ',u_ac)
+                        continue
+                    disorder_scores_datastruct[seq_pos] = (seq[pos],score)
+                iupred_map[u_ac] = (disorder_regions,disorder_scores_datastruct,'MobiDB3.0')
 
-            in_queue.put((u_ac,seq))
-        processes = {}
-        for i in range(1,blast_processes + 1):
-            try:
-                os.stat("%s/%d" %(cwd,i))
-            except:
-                os.mkdir("%s/%d" %(cwd,i))
-            p = Process(target=paraIupred, args=(in_queue,out_queue,lock))
-            processes[i] = p
-            p.start()
-        for i in processes:
-            processes[i].join()
+        if not mobi_lite:
+            processes = {}
+            for i in range(1,blast_processes + 1):
+                try:
+                    os.stat("%s/%d" %(cwd,i))
+                except:
+                    os.mkdir("%s/%d" %(cwd,i))
+                p = multiprocessing.Process(target=paraIupred, args=(config,in_queue,out_queue,lock))
+                processes[i] = p
+                p.start()
+            for i in processes:
+                processes[i].join()
 
-        out_queue.put(None)
-        while True:
-            out = out_queue.get()
-            if out == None:
-                break
-            iupred_parts = out
+            out_queue.put(None)
+            while True:
+                out = out_queue.get()
+                if out == None:
+                    break
+                iupred_parts = out
 
-            iupred_map[iupred_parts[0]] = (iupred_parts[1],iupred_parts[2])
+                iupred_map[iupred_parts[0]] = (iupred_parts[1],iupred_parts[2],'IUpred')
 
-        #print iupred_map
+        else:
+            mobi_tmp_file = 'mobi_tmp_file.fasta'
+            f = open(mobi_tmp_file,'w')
+            f.write(''.join(mobi_list))
+            f.close()
+            mobi_bin_path = '%s/binx/' % iupred_path.rsplit('/',1)[0]
+            mobi_threads = min([7,config.proc_n])
+            p = subprocess.Popen([iupred_path,mobi_tmp_file,'-t',str(mobi_threads),'-bin',mobi_bin_path,'-l'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+            out,err = p.communicate()
+            os.remove(mobi_tmp_file)
+            if err != '':
+                print('Warning: mobidb-lite threw an error: ',err)
+            else:
+                entries = []
+                for line in out.split('}'):
+                    if line.count('{') == 0:
+                        continue
+                    line = line + '}'
+                    #print(line)
+                    mobi_results = json.loads(line)
+                    u_ac = mobi_results['acc']
+                    raw_scores = mobi_results['p']
+                    raw_regions = mobi_results['regions']
+                    regions = []
+                    for a,b in raw_regions:
+                        regions.append([a,b,'disorder'])
+                    scores = {}
+                    seq,disorder_scores,disorder_regions = gene_sequence_map[u_ac]
+                    for pos,score in enumerate(raw_scores):
+                        scores[pos+1] = (seq[pos],score)
+                    iupred_map[u_ac] = (regions,scores,'mobidb-lite')
 
         t1 = time.time()
         if verbose:
-            print "Time for addIupred Part 1: %s" % str(t1-t0)
-        try:
-            background_iu_process = database.addIupred(iupred_map,gene_mut_map_new,stored_gene_new_pos,IU_db)
-        except:
-            background_iu_process = None
+            print("Time for addIupred Part 1: %s" % str(t1-t0))
+
+        background_iu_process = database.addIupred(iupred_map,gene_mut_map_new,stored_gene_new_pos,config)
+
         t2 = time.time()
         if verbose:
-            print "Time for addIupred Part 2: %s" % str(t2-t1)
+            print("Time for addIupred Part 2: %s" % str(t2-t1))
 
-    return gene_sequence_map,gene_mut_map_new,stored_gene_new_pos,{},background_iu_process
+    return gene_sequence_map,gene_mut_map_new,stored_gene_new_pos,{},background_iu_process,No_Errors
 
-def paraIupred(in_queue,out_queue,lock):
+def paraIupred(config,in_queue,out_queue,lock):
+    iupred_path = config.iupred_path
     with lock:
         in_queue.put(None)
     while True:
@@ -846,7 +641,7 @@ def paraIupred(in_queue,out_queue,lock):
         #print seq
 
 
-        p = subprocess.Popen(['python3','%s/iupred2a.py' % iupred_path,seq,'glob'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        p = subprocess.Popen(['python3','%s/iupred2a.py' % iupred_path,seq,'glob'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
         out,err = p.communicate()
         #print out
         after_glob = False
@@ -863,25 +658,25 @@ def paraIupred(in_queue,out_queue,lock):
                 if len(words) < 4:
                     continue
                 if words[0] == 'globular' and words[1] == 'domain':
-                    glob_ranges = words[3].split('-')
-                    iupred_parts[1].append(glob_ranges)
+                    lower_bound,upper_bound = words[3].split('-')
+                    iupred_parts[1].append((int(lower_bound),int(upper_bound),'globular'))
             if after_glob:
                 if len(words) < 3:
                     continue
-                iupred_parts[2][words[0]] = (words[1],words[2])
+                iupred_parts[2][int(words[0])] = (words[1],words[2])
 
         with lock:
             out_queue.put(iupred_parts)
 
-def paraBlast(process_queue_blast,out_queue,lock,i,err_queue):
-    global blast_path
-    global blast_db_path
-    global option_number_of_templates
-    global option_seq_thresh
-    global option_ral_thresh
-    global option_res_thresh
-    global pdb_path
-    global cwd
+def paraBlast(config,process_queue_blast,out_queue,lock,i,err_queue):
+    blast_path = config.blast_path
+    blast_db_path = config.blast_db_path
+    option_number_of_templates = config.option_number_of_templates
+    option_seq_thresh = config.option_seq_thresh
+    option_ral_thresh = config.option_ral_thresh
+    option_res_thresh = config.option_res_thresh
+    pdb_path = config.pdb_path
+    cwd = os.getcwd()
     with lock:
         process_queue_blast.put(None)
     while True:
@@ -904,142 +699,160 @@ def paraBlast(process_queue_blast,out_queue,lock,i,err_queue):
                 out_queue.put((gene,structures))
         except:
             [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
+            g = traceback.format_exc()
             with lock:
                 err_queue.put((e,f,g,gene))
 
-def autoTemplateSelection(gene_sequence_map,new_genes):
+def autoTemplateSelection(config,db,cursor,manager,lock,No_Errors,gene_sequence_map,new_genes,search_tool='MMseqs2'):
     #structure of stored_genes: {Uniprot-Id:(gene_id,more_restrictive)}
     #structure of new_genes: {Uniprot-Id:gene_id}
-    global db
-    global cursor
-    global manager
-    global lock
-    global blast_processes
-    global option_seq_thresh
-    global option_ral_thresh
-    global option_res_thresh
-    global session
-    global cwd
-    global option_number_of_templates
-    global blast_path
-    global blast_db_path
-    global No_Errors
-    global anno_session_mapping
 
-    t0 = time.time()
+    blast_processes = config.blast_processes
+    option_seq_thresh = config.option_seq_thresh
+    option_res_thresh = config.option_res_thresh
+    cwd = os.getcwd()
+    pdb_path = config.pdb_path
+    errorlog = config.errorlog_path
 
-    process_list_db = set([])
-    process_queue_blast = manager.Queue()
-    blast_queues = [process_queue_blast]
-    n = 0
-    gene_error_map = {}
+    mmseqs2_path = config.mmseqs2_path
+    mmseqs2_db_path = config.mmseqs2_db_path
 
-    #seq_map = {}
-
-    #print gene_sequence_map,db,cursor,blast_path,blast_db_path
-
-    for gene in new_genes:
-        seq = gene_sequence_map[gene]
-        if seq == 0 or seq == 1:
-            gene_error_map[new_genes[gene]] = seq
-        elif seq == "":
-            gene_error_map[new_genes[gene]] = 2
-        else:
-            process_queue_blast.put((gene,seq))
-            n += 1
-            if n == 1000:
-                process_queue_blast = manager.Queue()
-                blast_queues.append(process_queue_blast)
-                n = 0
-            #seq_map[gene] = seq
- 
-    t1 = time.time()
-
-    #"""paralized blasting of single sequences  
-    #print "before parablast"
-    t12 = 0.0
-    t3 = 0.0
-    t2 = 0.0
-    t4 = 0.0
-    structure_map = {}
-    for process_queue_blast in blast_queues:
-        t12 += time.time()
-        out_queue = manager.Queue()
-        err_queue = manager.Queue()
-        processes = {}
-        for i in range(1,blast_processes + 1):
-            try:
-                os.stat("%s/%d" %(cwd,i))
-            except:
-                os.mkdir("%s/%d" %(cwd,i))
-            p = Process(target=paraBlast, args=(process_queue_blast,out_queue,lock,i,err_queue))
-            processes[i] = p
-            p.start()
-        for i in processes:
-            processes[i].join()
-
-        err_queue.put(None)
-        while True:
-            err = err_queue.get()
-            if err == None:
-                break
-            (e,f,g,gene) = err
-            errortext = "BLAST Error: %s\n%s\n\n" % (gene,'\n'.join([str(e),str(f),str(g)]))
-            f = open(errorlog,'a')
-            f.write(errortext)
-            f.close()
-            No_Errors = False
-
-        t2 += time.time()
-        #print "after parablast"
-
-        template_map = {}
-        out_queue.put(None)
-        while True:
-            out = out_queue.get()
-            if out == None:
-                break
-            (gene,structures) = out
-            structure_map[gene] = structures
-        #"""
-        del out_queue
-        del process_queue_blast
-
-        t3 += time.time()
+    verbose = config.verbose
 
     if verbose:
-        print "Template Selection Part 1: %s" % (str(t1-t0))
-        print "Template Selection Part 2: %s" % (str(t2-t12))
-        print "Template Selection Part 3: %s" % (str(t3-t2))
+        print('Sequence search with: ',search_tool)
 
-    #print structure_map
+    if search_tool == 'Blast':
 
-    #for gene in structure_map:
-    #    print gene
-    #    for tup in structure_map[gene]:
-    #        print tup,structure_map[gene][tup]
+        t0 = time.time()
 
-    return structure_map,gene_error_map
+        process_list_db = set([])
+        process_queue_blast = manager.Queue()
+        blast_queues = [process_queue_blast]
+        n = 0
+        gene_error_map = {}
 
-def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map):
+        #seq_map = {}
+
+        #print gene_sequence_map,db,cursor,blast_path,blast_db_path
+
+        for gene in new_genes:
+            seq = gene_sequence_map[gene][0]
+            if seq == 0 or seq == 1:
+                gene_error_map[new_genes[gene]] = seq
+            elif seq == "":
+                gene_error_map[new_genes[gene]] = 2
+            else:
+                process_queue_blast.put((gene,seq))
+                n += 1
+                if n == 1000:
+                    process_queue_blast = manager.Queue()
+                    blast_queues.append(process_queue_blast)
+                    n = 0
+                #seq_map[gene] = seq
+     
+        t1 = time.time()
+
+        #"""paralized blasting of single sequences  
+        #print "before parablast"
+        t12 = 0.0
+        t3 = 0.0
+        t2 = 0.0
+        t4 = 0.0
+        structure_map = {}
+        for process_queue_blast in blast_queues:
+            t12 += time.time()
+            out_queue = manager.Queue()
+            err_queue = manager.Queue()
+            processes = {}
+            for i in range(1,blast_processes + 1):
+                try:
+                    os.stat("%s/%d" %(cwd,i))
+                except:
+                    os.mkdir("%s/%d" %(cwd,i))
+                p = multiprocessing.Process(target=paraBlast, args=(config,process_queue_blast,out_queue,lock,i,err_queue))
+                processes[i] = p
+                p.start()
+            for i in processes:
+                processes[i].join()
+
+            err_queue.put(None)
+            while True:
+                err = err_queue.get()
+                if err == None:
+                    break
+                (e,f,g,gene) = err
+                errortext = "BLAST Error: %s\n%s\n\n" % (gene,'\n'.join([str(e),str(f),str(g)]))
+                f = open(errorlog,'a')
+                f.write(errortext)
+                f.close()
+                No_Errors = False
+
+            t2 += time.time()
+            #print "after parablast"
+
+            template_map = {}
+            out_queue.put(None)
+            while True:
+                out = out_queue.get()
+                if out == None:
+                    break
+                (gene,structures) = out
+                structure_map[gene] = structures
+            #"""
+            del out_queue
+            del process_queue_blast
+
+            t3 += time.time()
+
+        if verbose:
+            print("Template Selection Part 1: %s" % (str(t1-t0)))
+            print("Template Selection Part 2: %s" % (str(t2-t12)))
+            print("Template Selection Part 3: %s" % (str(t3-t2)))
+
+        #print structure_map
+
+        #for gene in structure_map:
+        #    print gene
+        #    for tup in structure_map[gene]:
+        #        print tup,structure_map[gene][tup]
+    elif search_tool == 'MMseqs2':
+        t0 = time.time()
+        gene_error_map = {}
+        filtered_gene_seq_map = {}
+        for gene in new_genes:
+            filtered_gene_seq_map[gene] = gene_sequence_map[gene]
+        if len(filtered_gene_seq_map) > 0:
+            mmseqs_tmp_folder = config.mmseqs_tmp_folder
+            raw_structure_map,pdb_ids = MMseqs2.search(filtered_gene_seq_map,mmseqs2_db_path,mmseqs2_path,mmseqs_tmp_folder,option_seq_thresh,verbose=verbose)
+
+            t1 = time.time()
+
+            structure_map = templateSelection.filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,blast_processes)
+
+            t2 = time.time()
+            if verbose:
+                print("Template Selection Part 1: %s" % (str(t1-t0)))
+                print("Template Selection Part 2: %s" % (str(t2-t1)))
+        else:
+            structure_map = {}
+
+    return structure_map,gene_error_map,No_Errors
+
+def paraAlignment(config,db,cursor,manager,lock,No_Errors,gene_sequence_map,structure_map,stored_genes,stored_gene_ids,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map):
     #structure of template_map: {Uniprot-Id:(template-list,{template-id:stored-template},oligo_map)}
     #structure of gene_sequence_map: {Uniprot_Id:Sequence}
     #structure of stored_genes: {Uniprot-Id:gene_id}
     #structure of new_genes: {Uniprot-Id:gene_id}
     #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
     #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_base:mutation_id})}
-    global manager
-    global lock
-    global alignment_processes
-    global cwd
-    global db
-    global cursor
-    global No_Errors
-    global pdb_path
-    global smiles_path
-    global inchi_path
-    global session
+    
+    alignment_processes = config.alignment_processes
+    pdb_path = config.pdb_path
+    smiles_path = config.smiles_path
+    inchi_path = config.inchi_path
+    verbose = config.verbose
+    errorlog = config.errorlog_path
     t0 = time.time()
     input_queue = manager.Queue()
     err_queue = manager.Queue()
@@ -1053,8 +866,6 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
 
     n = 0
 
-    #temp_amount = 0
-
     for gene in structure_map:
         gene_id = new_genes[gene]
         gene_id_gene_map[gene_id] = gene
@@ -1063,7 +874,7 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
         aaclist = gene_mut_map_new[gene][1]
 
         for (pdb_id,chain) in structures:
-            input_queue.put((gene,gene_sequence_map[gene],pdb_id,chain,structures[(pdb_id,chain)],aaclist))
+            input_queue.put((gene,gene_sequence_map[gene][0],pdb_id,chain,structures[(pdb_id,chain)],aaclist))
             #new_structures.add(pdb_id)
         if n == 1000:
             input_queue = manager.Queue()
@@ -1073,16 +884,14 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
 
     t1 = time.time()
     if verbose:
-        print "Alignment Part 1: %s" % (str(t1-t0))
-    gene_structure_alignment_map,structure_id_map = database.getAlignments(stored_genes,db,cursor)
+        print("Alignment Part 1: %s" % (str(t1-t0)))
+    gene_structure_alignment_map,structure_id_map,id_structure_map = database.getAlignments(stored_gene_ids,db,cursor,verbose=verbose)
     t2 = time.time()
     if verbose:
-        print "Alignment Part 2: %s" % (str(t2-t1))
+        print("Alignment Part 2: %s" % (str(t2-t1)))
 
     input_queue = manager.Queue()
     out_queue = manager.Queue()
-
-    #print stored_gene_new_pos
 
     for u_ac in stored_gene_new_pos:
         gene_id,aaclist = stored_gene_new_pos[u_ac]
@@ -1090,22 +899,20 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
             continue
         #print u_ac
         if u_ac in pdb_pos_map:
-            pos_res_map = dict((v,k) for k,v in pdb_pos_map[gene].iteritems())
+            pos_res_map = dict((v,k) for k,v in pdb_pos_map[gene].items())
         else:
             pos_res_map = {}
         #print u_ac
+        if not u_ac in structure_map:
+            structure_map[u_ac] = {}
         for structure_id in gene_structure_alignment_map[gene_id]:
-            structure_id_map[(pdb_id,chain)] = structure_id
+            pdb_id,chain = id_structure_map[structure_id]
             (target_seq,template_seq,coverage,seq_id) = gene_structure_alignment_map[gene_id][structure_id]
-            #print structure_id,aaclist
+            structure_map[u_ac][(pdb_id,chain)] = {'Coverage':coverage,'Seq_Id':seq_id}
             input_queue.put((aaclist,structure_id,pos_res_map,pdb_id,chain,target_seq,template_seq,gene_id))
     processes = {}
     for i in range(1,alignment_processes + 1):
-        try:
-            os.stat("%s/%d" %(cwd,i))
-        except:
-            os.mkdir("%s/%d" %(cwd,i))
-        p = Process(target=paraMap, args=(input_queue,out_queue,lock))
+        p = multiprocessing.Process(target=paraMap, args=(config,input_queue,out_queue,lock))
         processes[i] = p
         p.start()
     for i in processes:
@@ -1123,15 +930,11 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
         (mutation_updates_part,mappings) = out
         mutation_updates += mutation_updates_part
         total_mappings += mappings
-        #print mappings
 
     t3 = time.time()
     if verbose:
-        print "Alignment Part 3: %s" % (str(t3-t2))
+        print("Alignment Part 3: %s" % (str(t3-t2)))
 
-    #print "before alignment"
-
-    template_sub_amount = 0
     t31 = 0.0
     t4 = 0.0
     t5 = 0.0
@@ -1153,11 +956,7 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
         err_queue = manager.Queue()
         processes = {}
         for i in range(1,alignment_processes + 1):
-            try:
-                os.stat("%s/%d" %(cwd,i))
-            except:
-                os.mkdir("%s/%d" %(cwd,i))
-            p = Process(target=align, args=(input_queue,out_queue,error_queue,lock,cwd,i,err_queue))
+            p = multiprocessing.Process(target=align, args=(config,input_queue,out_queue,error_queue,lock,err_queue))
             processes[i] = p
             p.start()
         for i in processes:
@@ -1215,10 +1014,10 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
             #structure of pdb_pos_map: pdb_pos_map[pdb_chain_tuple(=gene)][res_nr (in the pdb file)] = pos (in the sequence)
 
             if gene in pdb_pos_map:
-                pos_res_map = dict((v,k) for k,v in pdb_pos_map[gene].iteritems())
+                pos_res_map = dict((v,k) for k,v in pdb_pos_map[gene].items())
             else:
                 pos_res_map = {}
-            #print pos_res_map
+
             if gene in gene_mut_map_new:
                 gene_mut_map_new[gene] = (gene_mut_map_new[gene][0],aaclist)
             for old_aac_base in update_map:
@@ -1247,9 +1046,6 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
                 gene_template_alignment_map[gene] = {}
             gene_template_alignment_map[gene][(pdb_id,chain)] = sub_infos
 
-            #print pdb_id
-            #print template_map[gene][2]
-
             #structure of template_map: {Uniprot-Id:(template-list,{template-id:stored-template},oligo_map)}
 
 
@@ -1267,37 +1063,35 @@ def paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mu
 
     t6 += time.time()
     #structure of template_id_map[gene_id] = {pdb_id:template_id}
-    #print structure_id_map
-    structure_id_map,stored_structures = database.insertStructures(structure_insertion_list,db,cursor,smiles_path,inchi_path,pdb_path,structure_id_map)
-    #print structure_id_map
+    structure_id_map,stored_structures,structure_dict = database.insertStructures(structure_insertion_list,db,cursor,smiles_path,inchi_path,pdb_path,structure_id_map)
+
     t7 += time.time()
 
-    database.insertMapping(total_mappings,new_gene_stored_structure_mappings,stored_structures,gene_template_alignment_map,gene_mut_map_new,db,cursor)
+    if verbose:
+        print("Amount of mappings based on stored structures: ",len(total_mappings))
+
+    m_r_map,residue_dict = database.getStoredResidues(total_mappings,new_gene_stored_structure_mappings,stored_structures,gene_template_alignment_map,gene_mut_map_new,db,cursor,verbose=verbose)
 
     t8 += time.time()
     database.insertAlignments(alignment_insertion_list,structure_id_map,stored_structures,db,cursor)
 
     t9 += time.time()
 
-    if verbose:
-        print "Amount of template-mutation pairs after alignment: ",template_sub_amount
-        
-
     #after_amount = 0
 
     #print "Template amounts, before and after: ",temp_amount,after_amount
     if verbose:
-        print "Alignment Part 4: %s" % (str(t4-t31))
-        print "Alignment Part 5: %s" % (str(t5-t4))
-        print "Alignment Part 6: %s" % (str(t6-t5))
-        print "Alignment Part 7: %s" % (str(t7-t6))
-        print "Alignment Part 8: %s" % (str(t8-t7))
-        print "Alignment Part 9: %s" % (str(t9-t8))
+        print("Alignment Part 4: %s" % (str(t4-t31)))
+        print("Alignment Part 5: %s" % (str(t5-t4)))
+        print("Alignment Part 6: %s" % (str(t6-t5)))
+        print("Alignment Part 7: %s" % (str(t7-t6)))
+        print("Alignment Part 8: %s" % (str(t8-t7)))
+        print("Alignment Part 9: %s" % (str(t9-t8)))
 
-    return structure_map,gene_template_alignment_map,structure_id_map
+    return structure_map,gene_template_alignment_map,structure_id_map,No_Errors,structure_dict,m_r_map,residue_dict,stored_structures
 
-def paraMap(input_queue,out_queue,lock):
-    global pdb_path
+def paraMap(config,input_queue,out_queue,lock):
+    pdb_path = config.pdb_path
     with lock:
         input_queue.put(None)
     while True:
@@ -1308,7 +1102,7 @@ def paraMap(input_queue,out_queue,lock):
 
         (aaclist,structure_id,pos_res_map,pdb_id,chain,target_seq,template_seq,gene_id) = inp
 
-        template_page = pdb.standardParsePDB(pdb_id,pdb_path)
+        template_page = pdb.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
         seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,onlySeqResMap = True)
         sub_infos,errors,aaclist,update_map = globalAlignment.getSubPos(target_seq,template_seq,aaclist,seq_res_map)
 
@@ -1333,6 +1127,8 @@ def paraMap(input_queue,out_queue,lock):
                 continue
             m_id = aaclist[aacbase]
             res_id,t_aa = sub_infos[aacbase]
+            if res_id == None: #This happens, when the position is mapped to a gap in the alignment
+                continue
             mappings.append((m_id,structure_id,res_id,gene_id))
 
         with lock:
@@ -1340,8 +1136,9 @@ def paraMap(input_queue,out_queue,lock):
 
     return
 
-def align(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
-    global pdb_path
+def align(config,input_queue,out_queue,error_queue,lock,err_queue):
+    pdb_path = config.pdb_path
+    option_seq_thresh = config.option_seq_thresh
     t0 = 0.0
     t1 = 0.0
     t2 = 0.0
@@ -1363,6 +1160,8 @@ def align(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
 
         (gene,wildtype_sequence,pdb_id,chain,structure,aaclist) = inp
 
+        #print pdb_id,chain
+
         try:
             t0 += time.time()
 
@@ -1374,19 +1173,9 @@ def align(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
 
             t1 += time.time()
             if error == None:
-                """
-                try:
-                    os.stat("%s/%d" %(cwd,proc_number))
-                except:
-                    os.mkdir("%s/%d" %(cwd,proc_number))  
-                os.chdir("%s/%d" %(cwd,proc_number))
-                temp_cwd = "%s/%d" %(cwd,proc_number)
-                """
-                #print "before alignment"
-                #print wildtype_sequence,aaclist
-                #if pdb_id == '4JAN' and chain == 'I':
-                #    print template_page
+
                 (coverage,seq_id,sub_infos,alignment_pir,errors,times,aaclist,update_map) = globalAlignment.alignBioPython(gene,wildtype_sequence,pdb_id,template_page,chain,aaclist)
+
                 structure['Seq_Id'] = seq_id
                 structure['Coverage'] = coverage
                 n = 0
@@ -1396,47 +1185,40 @@ def align(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue):
 
                 for err in errors:
                     #[e,f,g] = sys.exc_info()
-                    #g = traceback.format_exc(g)
+                    #g = traceback.format_exc()
                     with lock:
                         error_queue.put((err,gene,pdb_id,chain))
                 #print "after alignment"
 
-                with lock:
-                    out_queue.put((gene,pdb_id,chain,structure,coverage,seq_id,sub_infos,alignment_pir,aaclist,update_map))
-                #os.chdir(cwd)
+                if 100.0*seq_id >= option_seq_thresh:
+                    with lock:
+                        out_queue.put((gene,pdb_id,chain,structure,coverage,seq_id,sub_infos,alignment_pir,aaclist,update_map))
             else:
                 with lock:
                     error_queue.put((error,gene,pdb_id,chain))
             t2 += time.time()
         except:
             [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
+            g = traceback.format_exc()
             with lock:
                 err_queue.put((e,f,g,gene,pdb_id,chain))
     
 
-def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,structure_id_map):
-    global annotation_processes
-    global manager
-    global lock
-    global db
-    global cursor
-    global option_lig_wf
-    global option_chain_wf
-    global cwd
-    global session
-    global No_Errors
-    global anno_session_mapping
-    global error_annotations_into_db
+def paraAnnotate(config,db,cursor,manager,lock,No_Errors,gene_mut_map_new,gene_mut_map_stored,gene_template_alignment_map,structure_map,structure_id_map,structure_dict,m_r_map,stored_residue_dict,stored_structures):
+    annotation_processes = config.annotation_processes
+    anno_session_mapping = config.anno_session_mapping
+    error_annotations_into_db = config.error_annotations_into_db
 
-    global smiles_path
-    global inchi_path
-    global pdb_path
+    smiles_path = config.smiles_path
+    inchi_path = config.inchi_path
+    pdb_path = config.pdb_path
+    verbose = config.verbose
+    errorlog = config.errorlog_path
 
     #new structure of template_map: {Uniprot-Id:({template-id:new template},{template-id:stored-template},oligo_map)}
     #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
     #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
-    #structure of gene_template_alignment_map: {Uniprot_Id:{PDB_Id:(coverage,seq_id,sub_infos)}}
+    #structure of gene_template_alignment_map: {Uniprot_Id:{(PDB_Id,Chain):(csub_infos)}}
     t0 = time.time()
     
     input_queue = manager.Queue()
@@ -1449,14 +1231,33 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
     pdb_structure_map = {}
     size_sorted = {}
     max_size = 0
-
+    gene_structure_map = {}
+    pdb_ids = set()
     for gene in structure_map:
         structures = structure_map[gene]
+        if gene in gene_mut_map_new:
+            g_id = gene_mut_map_new[gene][0]
+        else:
+            g_id = gene_mut_map_stored[gene][0]
+        gene_structure_map[g_id] = {}
+        deletion_list = []
         for (pdb_id,chain) in structures:
-            if not (pdb_id,chain) in structure_id_map:
+            if not (pdb_id,chain) in structure_id_map: #Structures, that where filtered after the alignment
+                deletion_list.append((pdb_id,chain))
                 continue
-            structure = structures[(pdb_id,chain)]
+            pdb_ids.add(pdb_id)
             s_id = structure_id_map[(pdb_id,chain)]
+            structure = structures[(pdb_id,chain)]
+            cov = structure['Coverage']
+            seq_id = structure['Seq_Id']
+            gene_structure_map[g_id][s_id] = (seq_id,cov)
+
+            if 'IAP' not in structure:
+                #del structure_map[gene][(pdb_id,chain)]
+                continue
+            if (pdb_id,chain) in stored_structures:
+                continue
+
             if not pdb_id in pdb_structure_map:
                 pdb_structure_map[pdb_id] = {}
                 
@@ -1470,8 +1271,14 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
                     size_sorted[size] = []
                 size_sorted[size].append(pdb_id)
             pdb_structure_map[pdb_id][chain] = (s_id,structure)
+        for (pdb_id,chain) in deletion_list:
+            del structure_map[gene][(pdb_id,chain)]
 
-    #print size_sorted
+    '''
+    sys.path.append("/TL/sin/work/agress/RIN")
+    import createRINdb
+    createRINdb.calculateRINsFromPdbList(pdb_structure_map.keys(),fromScratch=True,forceCentrality=True)
+    '''
 
     n_of_structs = 0
     while max_size > 0:
@@ -1481,13 +1288,14 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
                 n_of_structs += 1
         max_size -= 1
 
-    t01 = time.time()
     if verbose:
-        print "Annotation Part 0.1: %s" % (str(t01-t0))
+        t01 = time.time()
+        print("Annotation Part 0.1: %s" % (str(t01-t0)))
     
 
     total_annotations = {}
     interacting_structure_dict = {}
+    complex_profiles = {}
 
     out_queue = manager.Queue()
     error_queue = manager.Queue()
@@ -1495,20 +1303,18 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
     processes = {}
     if annotation_processes > n_of_structs:
         annotation_processes = n_of_structs
+    if verbose:
+        print("Going into Annotation with ",annotation_processes,' processes')
     for i in range(1,annotation_processes + 1):
-        try:
-            os.stat("%s/%d" %(cwd,i))
-        except:
-            os.mkdir("%s/%d" %(cwd,i))
-        p = Process(target=annotate, args=(input_queue,out_queue,error_queue,lock,cwd,i,err_queue,t01,i))
+        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue,t01))
         processes[i] = p
         p.start()
     for i in processes:
         processes[i].join()
 
-    t02 = time.time()
     if verbose:
-        print "Annotation Part 0.2: %s" % (str(t02-t01))
+        t02 = time.time()
+        print("Annotation Part 0.2: %s" % (str(t02-t01)))
 
     err_queue.put(None)
     while True:
@@ -1522,9 +1328,9 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         f.close()
         No_Errors = False
 
-    t1 = time.time()
     if verbose:
-        print "Annotation Part 1: %s" % (str(t1-t02))
+        t1 = time.time()
+        print("Annotation Part 1: %s" % (str(t1-t02)))
     
     with lock:
         out_queue.put(None)
@@ -1533,9 +1339,7 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
         out = out_queue.get()
         if out == None:
             break
-        (annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict) = out
-        #print len(annotations)
-
+        (annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = out
         for chain in interacting_chain_map:
             interacting_structure_dict[(pdb_id,chain)] = interacting_chain_map[chain]
         
@@ -1543,41 +1347,98 @@ def paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,stru
             annotations = annotation_chain_dict[chain]
 
             total_annotations[(pdb_id,chain)] = annotations,residue_residue_dict[chain]
+
+        complex_profiles[pdb_id] = ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
             
 
-    t11 = time.time()
     if verbose:
-        print 'Annotation Part 1.1: %s' % (str(t11-t1))
+        t11 = time.time()
+        print('Annotation Part 1.1: %s' % (str(t11-t1)))
     interacting_structure_ids = database.insertInteractingChains(interacting_structure_dict,db,cursor,smiles_path,inchi_path,pdb_path)
 
-
-    t2  = time.time()
     if verbose:
-        print "Annotation Part 2: %s" % (str(t2-t11))
-    structure_residue_map = database.insertResidues(total_annotations,db,cursor,structure_id_map,interacting_structure_ids)
-    #print structure_residue_map
-
-    t3  = time.time()
+        t12 = time.time()
+        print('Annotation Part 1.2: %s' % (str(t12-t11)))
+    complex_profile = database.insertComplexes(complex_profiles,pdb_ids,db,cursor)
 
     if verbose:
-        print "Annotation Part 3: %s" % (str(t3-t2))
-    #print gene_mut_map_new
-    #print gene_template_alignment_map
-    database.insertNewMappings(gene_mut_map_new,gene_template_alignment_map,structure_residue_map,structure_id_map,db,cursor)
+        t2  = time.time()
+        print("Annotation Part 2: %s" % (str(t2-t12)))
 
-    t4 = time.time()
+    structure_residue_map,residue_dict = database.insertResidues(total_annotations,db,cursor,structure_id_map,interacting_structure_ids,stored_structures)
+    residue_dict.update(stored_residue_dict)
 
     if verbose:
-        print "Annotation Part 4: %s" % (str(t4-t3))
+        t21  = time.time()
+        print("Annotation Part 2.1: %s" % (str(t21-t2)))
 
-def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue,t01,i):
-    global compute_surface
-    global neighborhood_calculation
-    global calculate_interaction_profiles
-    global dssp
-    global dssp_path
-    global pdb_path
-    global rin_db_path
+    if verbose:
+        t3  = time.time()
+        print("Annotation Part 3: %s" % (str(t3-t21)))
+
+        print('Res_dict size before updateResidues: ',len(residue_dict))
+
+    m_r_map,residue_dict = updateResidues(gene_mut_map_new,gene_template_alignment_map,structure_residue_map,structure_id_map,db,cursor,m_r_map,residue_dict)
+
+    residue_dict.update(stored_residue_dict)
+
+    if verbose:
+        print('Res_dict size after: ',len(residue_dict))
+
+    if verbose:
+        t4 = time.time()
+        print("Annotation Part 4: %s" % (str(t4-t3)))
+
+    database.insertClassifications(db,cursor,residue_dict,structure_dict,gene_structure_map,m_r_map,config,complex_profiles)
+
+    if verbose:
+        t5 = time.time()
+        print("Annotation Part 5: %s" % (str(t5-t4)))
+
+    return No_Errors
+
+def updateResidues(gene_mut_map_new,gene_template_alignment_map,structure_residue_map,structure_id_map,db,cursor,m_r_map,residue_dict):
+    #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
+    #structure of gene_template_alignment_map: {Uniprot_Id:{(PDB_Id,chain):sub_infos}}
+    #structute of structure_residue_map: {s_id:{res_nr:r_id}}
+
+    value_strs = []
+    condensed_residue_dict = {}
+
+    for u_ac in gene_template_alignment_map:
+        for (pdb_id,chain) in gene_template_alignment_map[u_ac]:
+            if not (pdb_id,chain) in structure_id_map:
+                continue
+            s_id = structure_id_map[(pdb_id,chain)]
+            g_id = gene_mut_map_new[u_ac][0]
+
+            sub_infos = gene_template_alignment_map[u_ac][(pdb_id,chain)]
+            for aacbase in sub_infos:
+
+                res_nr,t_aa = sub_infos[aacbase]
+                if res_nr == None:
+                    continue
+                m_id = gene_mut_map_new[u_ac][1][aacbase]
+                if not s_id in structure_residue_map:
+                    print('Warning: Structure ',s_id,'not in structure_residue_map, u_ac: ',u_ac,',PDB,Chain: ',pdb_id,chain)
+                    continue
+                if not res_nr in structure_residue_map[s_id]:
+                    print('Warning: res_nr ',res_nr,'not in structure_residue_map, u_ac,s_id,aacb,m_id:',u_ac,s_id,aacbase,m_id)
+                    continue
+                r_id = structure_residue_map[s_id][res_nr]
+                if not m_id in m_r_map:
+                    m_r_map[m_id] = set()
+                m_r_map[m_id].add(r_id)
+                condensed_residue_dict[r_id] = residue_dict[r_id]
+    return m_r_map,condensed_residue_dict
+
+def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
+    neighborhood_calculation = config.neighborhood_calculation
+    calculate_interaction_profiles = config.calculate_interaction_profiles
+    dssp = config.dssp
+    dssp_path = config.dssp_path
+    pdb_path = config.pdb_path
+    rin_db_path = config.rin_db_path
 
     with lock:
         input_queue.put(None)
@@ -1591,40 +1452,35 @@ def annotate(input_queue,out_queue,error_queue,lock,cwd,proc_number,err_queue,t0
         (pdb_id,chain_structure_map) = inp
         #print 'Proc %s - annotate: %s' % (str(i),pdb_id)
         try:
-            annotation_chain_dict,interacting_chain_map,residue_residue_dict,errorlist = templateFiltering.structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
+            annotation_chain_dict,interacting_chain_map,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = templateFiltering.structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
             with lock:
-                out_queue.put((annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict))
+                out_queue.put((annotation_chain_dict,pdb_id,chain_structure_map,interacting_chain_map,residue_residue_dict,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles))
                 if len(errorlist) > 0:
                     for (error,e,f,g) in errorlist:
                         err_queue.put((error,f,g,pdb_id))
+            #print 'finished Proc %s - annotate: %s' % (str(i),pdb_id)
         except:
             [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
+            g = traceback.format_exc()
             with lock:
                 err_queue.put((e,f,g,pdb_id))
 
-def main(filename,config,output_path,main_file_path,n_of_cores):
-    global session
-    global db
-    global cursor
-    global option_seq_thresh
-    global option_res_thresh
-    global option_ral_thresh
-    global cwd
-    global species
-    global mrna_fasta
-    global num_of_cores
+def main(filename,config,output_path,main_file_path):
+    n_of_cores = config.proc_n
+    species = config.species
+    mrna_fasta = config.mrna_fasta
+    num_of_cores = config.proc_n
+    verbose = config.verbose
+    search_tool = config.search_tool
+    errorlog = config.errorlog_path
+    session = 0 #This can later be used, structman.py could give a specific session id and the pipeline can then expand that session
 
-    num_of_cores = n_of_cores
+    background_process_MS = None
+
+    manager = multiprocessing.Manager()
+    lock = manager.Lock()
 
     t0 = time.time()
-
-    setBasePaths(main_file_path)
-    setPaths(output_path,config)
-
-    parseConfig(config)
-
-
 
     if mrna_fasta != None and species == None:
         species = mrna_fasta.split('/')[-1].replace('.fa','').replace('.fasta','')
@@ -1635,9 +1491,10 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
     #annovar-pipeline in case of vcf-file
     if filename.rsplit(".",1)[1] == "vcf":
         anno_db = "%s_annovar" % db_name.rsplit("_",1)[0]
-        print 'Convert vcf file format using Annovar'
-        nfname = annovar.annovar_pipeline(filename,tax_id,annovar_path,db_adress,db_user_name,db_password,anno_db,mrna_fasta,ref_id=ref_genome_id)
-        #print nfname
+        print('Convert vcf file format using Annovar')
+        if mrna_fasta != None:
+            '... and using mrna file: ',mrna_fasta
+        nfname = annovar.annovar_pipeline(filename,config.tax_id,config.annovar_path,config.db_adress,config.db_user_name,config.db_password,anno_db,mrna_fasta,ref_id=config.ref_genome_id)
     else:
         nfname = filename
 
@@ -1646,37 +1503,25 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
     if mrna_fasta_for_annovar:
         mrna_fasta = None
 
-    #print db_adress,db_user_name,db_password,db_name
-
-    db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
-    MS_db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
-    #AS_db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
-    IU_db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
+    db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
     cursor = db.cursor()
 
     t01 = time.time()
 
     if verbose:
-        print "Time for preparation before buildQueue: %s" % (str(t01-t0))
+        print("Time for preparation before buildQueue: %s" % (str(t01-t0)))
 
     junksize = 500
 
     if verbose:
-        print "Call buildQueue with chunksize: %s and file: %s" % (str(junksize),nfname)
-    gene_aaclist_map_list,tag_map,species_map,fasta_map,corrected_input_pdbs = buildQueue(nfname,junksize,mrna_fasta=mrna_fasta)
+        print("Call buildQueue with chunksize: %s and file: %s" % (str(junksize),nfname))
+    gene_aaclist_map_list,tag_map,species_map,fasta_map,corrected_input_pdbs,residue_id_backmap = buildQueue(config,db,cursor,nfname,junksize,mrna_fasta=mrna_fasta)
 
     t02 = time.time()
     if verbose:
-        print "Time for buildQueue: %s" % (str(t02-t01))
-
-    #sys.exit()
-
-    #print gene_aaclist_map_list
-    #print tag_map
-    #print species_map
-    #print fasta_map
+        print("Time for buildQueue: %s" % (str(t02-t01)))
     
-    print "Number of chunks: ",len(gene_aaclist_map_list)
+    print("Number of chunks: ",len(gene_aaclist_map_list))
 
     newsession = False
     if session == 0:     
@@ -1686,23 +1531,19 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
 
     date = time.strftime("%a, %d %b %Y %H:%M:%S", time.gmtime())
     errortext  = "###############################################################################\n%s:\n%s - Session: %s\n" % (date,nfname,str(session))
-    No_Errors = True
 
     f = open(errorlog,'a')
     f.write(errortext)
     f.close()
 
-
-
     errors = []
-    print errorlog
+    print(errorlog)
     junk_nr = 1 
     for gene_aaclist_map in gene_aaclist_map_list:
         if len(gene_aaclist_map) == 0:
-            #print "empty gene_aaclist_map"
             continue
 
-        print "Chunk %s/%s" % (str(junk_nr),str(len(gene_aaclist_map_list)))
+        print("Chunk %s/%s" % (str(junk_nr),str(len(gene_aaclist_map_list))))
         junk_nr+=1
         try:
             os.stat("%s/tmp_structman_pipeline" %(output_path))
@@ -1713,7 +1554,7 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
 
         try:
             t1 = time.time()
-            print "Before geneCheck"
+            print("Before geneCheck")
             #check for already stored genes and make all the necessary database interactions
             #structure of stored_genes: {Uniprot-Id:gene_id}
             #structure of new_genes: {Uniprot-Id:gene_id}
@@ -1723,55 +1564,58 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
 
             t2 = time.time()
             if verbose:
-                print "Time for geneCheck: %s" % (str(t2-t1))
+                print("Time for geneCheck: %s" % (str(t2-t1)))
 
-            print "Before mutationCheck", len(stored_genes), len(new_genes)
+            print("Before mutationCheck", len(stored_genes), len(new_genes))
             #check for already stored mutations or position twins and make all the necessary database interactions
             #structure of gene_mut_map_new: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
-            #structure of gene_mut_map_stored: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
-            gene_mut_map_new,stored_gene_new_pos,background_process_MS = database.mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_gene_ids,session,tag_map,db,cursor,MS_db)
+            #structure of stored_gene_new_pos: {Uniprot_Id:(gene_id,{AAC_Base:mutation_id})}
+            gene_mut_map_new,stored_gene_new_pos,background_process_MS = database.mutationCheck(gene_aaclist_map,stored_genes,stored_gene_ids,new_genes,new_gene_ids,session,tag_map,db,cursor,config,residue_id_backmap)
 
             #print gene_mut_map_new
 
             t3 = time.time()
             if verbose:
-                print "Time for mutationCheck: %s" % (str(t3-t2))
+                print("Time for mutationCheck: %s" % (str(t3-t2)))
 
-            print "Before getSequences"
+            print("Before getSequences")
             #structure of gene_sequence_map: {Uniprot_Id:Sequence}
-            gene_sequence_map,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map,background_iu_process = getSequences(new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,stored_gene_new_pos,IU_db,iupred_path,corrected_input_pdbs)
+            gene_sequence_map,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map,background_iu_process,No_Errors = getSequences(config,new_genes,stored_genes,fasta_map,species_map,gene_mut_map_new,
+                                                                                                                                stored_gene_new_pos,corrected_input_pdbs,manager,lock,db,cursor)
 
             #print gene_mut_map_new
 
             t4 = time.time()
             if verbose:
-                print "Time for getSequences: %s" % (str(t4-t3))
+                print("Time for getSequences: %s" % (str(t4-t3)))
 
-            print "Before autoTemplateSelection"
+            print("Before autoTemplateSelection")
             #structure of template_map: {Uniprot-Id:(template-list,{template-id:stored-template},oligo_map)}
-            structure_map,gene_error_map = autoTemplateSelection(gene_sequence_map,new_genes)
+            structure_map,gene_error_map,No_Errors = autoTemplateSelection(config,db,cursor,manager,lock,No_Errors,gene_sequence_map,new_genes,search_tool=search_tool)
             database.addErrorCodeToGene(gene_error_map,db,cursor)
             #print structure_map
 
             t5 = time.time()
             if verbose:
-                print "Time for Template Selection: %s" % (str(t5-t4))
+                print("Time for Template Selection: %s" % (str(t5-t4)))
 
-            print "Before paraAlignment"
+            print("Before paraAlignment")
             #new structure of template_map: {Uniprot-Id:({template-id:new template},{template-id:stored-template},oligo_map)}
-            structure_map,gene_template_alignment_map,structure_id_map = paraAlignment(gene_sequence_map,structure_map,stored_genes,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map)
+            structure_map,gene_template_alignment_map,structure_id_map,No_Errors,structure_dict,m_r_map,residue_dict,stored_structures = paraAlignment(config,db,cursor,manager,lock,No_Errors,gene_sequence_map,structure_map,stored_genes,stored_gene_ids,new_genes,gene_mut_map_new,stored_gene_new_pos,pdb_pos_map)
 
             t6 = time.time()
             if verbose:
-                print "Time for Alignment: %s" % (str(t6-t5))
+                print("Time for Alignment: %s" % (str(t6-t5)))
+
+            if background_iu_process != None:
+                background_iu_process.join() #Disorder values have to finished before the classification happens
 
             #structure of gene_template_alignment_map: {gene_id:{template_id:(coverage,seq_id,sub_infos,alignment_pir)}}
-            print "Before paraAnnotate"
-            paraAnnotate(gene_mut_map_new,gene_template_alignment_map,structure_map,structure_id_map)
-            
+            print("Before paraAnnotate")
+            No_Errors = paraAnnotate(config,db,cursor,manager,lock,No_Errors,gene_mut_map_new,stored_gene_new_pos,gene_template_alignment_map,structure_map,structure_id_map,structure_dict,m_r_map,residue_dict,stored_structures)
             t7 = time.time()
             if verbose:
-                print "Time for Annotation: %s" % (str(t7-t6))
+                print("Time for Annotation: %s" % (str(t7-t6)))
 
             t1 = time.time()
             #join the background inserts
@@ -1780,24 +1624,24 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
             #if background_process_AS != None:
             #    background_process_AS.join()
 
-            if background_iu_process != None:
-                background_iu_process.join()
 
             t2 = time.time()
             if verbose:
-                print 'Resttime for background inserts: ',t2-t1
+                print('Resttime for background inserts: ',t2-t1)
 
         #Error-Handling for a whole input line
         except:
             
             [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
+            g = traceback.format_exc()
             #print "Pipeline Core Error: ",e,f,g
             errortext = '\n'.join([str(e),str(f),str(g)]) + '\n\n'
             f = open(errorlog,'a')
             f.write(errortext)
             f.close()
             No_Errors = False
+            if background_process_MS != None:
+                background_process_MS.join()
 
         os.chdir(output_path)
         #"""
@@ -1818,15 +1662,13 @@ def main(filename,config,output_path,main_file_path,n_of_cores):
         f.write(errortext)
         f.close()
 
+        print("At least one error occured, please check the errorlog.")
 
     if newsession:
         endtime = SQLDateTime()
         database.updateSession(session,endtime,db,cursor)
     db.close()
-    MS_db.close()
-    #AS_db.close()
-    IU_db.close()
 
     tend = time.time()
-    print(tend-t0)
+    print((tend-t0))
     return session

@@ -9,8 +9,10 @@ from Bio.SubsMat import MatrixInfo
 from operator import itemgetter
 
 import pdbParser as pdb
-import sphecol as siss
+import spherecon as siss
+
 import rin
+import database
 
 residue_max_acc = { 
 # Miller max acc: Miller et al. 1987 http://dx.doi.org/10.1016/0022-2836(87)90038-6 
@@ -95,8 +97,8 @@ def calcDSSP(path,DSSP,angles=False):
     dssp_dict = {}
     errorlist = []
 
-    p = subprocess.Popen([DSSP,path], universal_newlines=True, 
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE) 
+    #print([DSSP,path])
+    p = subprocess.Popen([DSSP,path], universal_newlines=True,stdout=subprocess.PIPE, stderr=subprocess.PIPE) 
     out, err = p.communicate() 
 
     # Alert user for errors 
@@ -177,6 +179,11 @@ def parsePDB(input_page):
     box_map = {}
 
     ligands = set()
+    metals = set()
+    ions = set()
+    b_factors = {}
+
+    firstAltLoc = None
 
     for line in lines:
         if len(line) > 5:
@@ -192,7 +199,7 @@ def parsePDB(input_page):
                 record_name = 'ATOM'
             atom_name = line[12:16].replace(" ","")
             res_name = line[17:20].replace(" ","")
-        
+
             if len(line) > 21:
                 if record_name == 'MODRES':
                     chain_id = line[16]
@@ -203,8 +210,18 @@ def parsePDB(input_page):
 
                 chain_id = line[21]
                 res_nr = line[22:27].replace(" ","") #[22:27] includes the insertion_code
-                #insertion_code = line[26]
             
+                altLoc = line[16]
+                if firstAltLoc == None and altLoc != ' ':
+                    firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
+                if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
+                    continue
+
+            if len(line) > 60:
+                try:
+                    b_factor = float(line[61:67].replace(" ",""))
+                except:
+                    b_factor = 0.0
             if record_name == "ATOM" or record_name == 'MODRES' or record_name == "HETATM":
                 if chain_id not in chain_type_map:
                     if record_name == "ATOM":
@@ -241,6 +258,12 @@ def parsePDB(input_page):
                         coordinate_map[chain_id][0][res_nr] = [res_name,{}]
                     coordinate_map[chain_id][0][res_nr][1][atom_nr] = (atom_name,x,y,z)
 
+                    if not chain_id in b_factors:
+                        b_factors[chain_id] = {}
+                    if not res_nr in b_factors[chain_id]:
+                        b_factors[chain_id][res_nr] = []
+                    b_factors[chain_id][res_nr].append(b_factor)
+
                     if x < box_map[chain_id][0]:
                         box_map[chain_id][0] = x
                     if x > box_map[chain_id][1]:
@@ -276,12 +299,20 @@ def parsePDB(input_page):
                         coordinate_map[chain_id] = [{},{}]
                         box_map[chain_id] = [x,x,y,y,z,z]
                     
-                    if (chain_id,res_nr) in modres_map or res_name in pdb.threeToOne: #If it is modified residue, than add it to the normal residues...
+                    if (chain_id,res_nr) in modres_map or res_name in pdb.threeToOne: #If it is a modified residue, than add it to the normal residues...
                         if atom_name[0] in ('H','D'):
                             continue
+                        if not (chain_id,res_nr) in modres_map:
+                            modres_map[(chain_id,res_nr)] = res_name
                         if res_nr not in coordinate_map[chain_id][0]:
                             coordinate_map[chain_id][0][res_nr] = [res_name,{}]
                         coordinate_map[chain_id][0][res_nr][1][atom_nr] = (atom_name,x,y,z)
+
+                        if not chain_id in b_factors:
+                            b_factors[chain_id] = {}
+                        if not res_nr in b_factors[chain_id]:
+                            b_factors[chain_id][res_nr] = []
+                        b_factors[chain_id][res_nr].append(b_factor)
 
                         if x < box_map[chain_id][0]:
                             box_map[chain_id][0] = x
@@ -316,9 +347,14 @@ def parsePDB(input_page):
                         if res_nr not in coordinate_map[chain_id][1]:#If not, then add it to the ligands
                             coordinate_map[chain_id][1][res_nr] = [res_name,{}]
                         coordinate_map[chain_id][1][res_nr][1][atom_nr] = (atom_name,x,y,z)
-                        ligands.add((chain_id,res_nr))
-                        
-    return coordinate_map,siss_map,res_contig_map,ligands,box_map,chain_type_map
+                        if res_name in database.metal_atoms:
+                            metals.add((chain_id,res_nr))
+                        elif res_name in database.ion_atoms:
+                            ions.add((chain_id,res_nr))
+                        else:
+                            ligands.add((chain_id,res_nr))
+
+    return coordinate_map,siss_map,res_contig_map,ligands,metals,ions,box_map,chain_type_map,b_factors,modres_map
 
 def dist(coord1,coord2):
     diff = [coord1[0]-coord2[0],coord1[1]-coord2[1],coord1[2]-coord2[2]]
@@ -394,20 +430,26 @@ def box_check(box_1,box_2,distance_threshold=5.0):
 def calcFuzzyDM(coordinate_map,box_map):
     #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}
     fuzzy_dm = {}
+    processed_chains = set()
     for chain in coordinate_map:
         for chain_2 in coordinate_map:
+            if chain_2 in processed_chains:
+                continue
             neighbors,center_dist = box_check(box_map[chain],box_map[chain_2])
             if not neighbors:
                 fuzzy_dm[(chain,chain_2)] = center_dist
+                fuzzy_dm[(chain_2,chain)] = center_dist
                 #print chain,chain_2
                 continue
 
             for res in coordinate_map[chain][0]:
-                test_coord = coordinate_map[chain][0][res][1].values()[0][1:]
+                test_coord = list(coordinate_map[chain][0][res][1].values())[0][1:]
                 for res_2 in coordinate_map[chain_2][0]:
-                    test_coord_2 = coordinate_map[chain_2][0][res_2][1].values()[0][1:]
+                    test_coord_2 = list(coordinate_map[chain_2][0][res_2][1].values())[0][1:]
                     d = dist(test_coord,test_coord_2)
                     fuzzy_dm[(chain,chain_2,res,res_2)] = d
+                    fuzzy_dm[(chain_2,chain,res_2,res)] = d
+        processed_chains.add(chain)
     return fuzzy_dm
 
 #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}
@@ -429,28 +471,218 @@ def getMinDist(c_map,res,chain,res2,chain2,het=0,het2=0):
                 min_atom2 = atomnr2
 
     if min_d == None:
-        print c_map,res,chain,res2,chain2,het,het2
+        print(c_map,res,chain,res2,chain2,het,het2)
 
     return min_d,min_atom,min_atom2
 
+#called by lite_pipeline
+def liteAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=False,dssp=True,calculate_interaction_profiles=True,distance_threshold=5.0):
+    page = pdb.standardParsePDB(pdb_id,pdb_path)
+    resolution,homomer_dict = pdb.getInfo(pdb_id,pdb_path)
+
+    if page == '':
+        print("Error while parsing: ",pdb_id)
+        return {},{},[]
+
+    coordinate_map,siss_coord_map,res_contig_map,ligands,metals,ions,box_map,chain_type_map,b_factors,modres_map = parsePDB(page)
+
+    fuzzy_dist_matrix = calcFuzzyDM(coordinate_map,box_map)
+    errorlist = []
+    annotations = {}
+
+    for t_chain in homomer_dict:#Happens for repeated chains in asymetric units, which do not occur in the biological assembly
+        irregular_homo_chains = []
+        for i,homo_chain in enumerate(homomer_dict[t_chain]):
+            if not homo_chain in chain_type_map:
+                irregular_homo_chains.append(i)
+
+        irregular_homo_chains = sorted(irregular_homo_chains,reverse=True)
+        for i in irregular_homo_chains:
+            del homomer_dict[t_chain][i]
+
+    residue_residue_dict = {}
+
+    if dssp:
+        #write temp pdb file
+        tmp_path = 'tmp_%s.pdb' % (pdb_id)
+        f = open(tmp_path,'w')
+        f.write(page)
+        f.close()
+
+        #call DSSP  -structure of dssp_dict: {Chain:{Res_id:(racc,ssa)}}
+        dssp_dict,errlist = calcDSSP(tmp_path,dssp_path)
+        errorlist += errlist
+        #remove tmp_file
+        try:
+            os.remove(tmp_path)
+        except:
+            pass
+        if dssp_dict == {}:
+            dssp = False
+
+    profiles = {}
+    if calculate_interaction_profiles:
+        #print(rin.lookup)                                                               lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map):
+        profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = rin.lookup(pdb_id,None,None,ligands,metals,ions,res_contig_map,rin_db_path,chain_type_map)
+
+    for target_chain in res_contig_map:
+        if chain_type_map[target_chain] != 'Protein':
+            continue
+        
+        target_residues = []
+        if target_chain in chain_structure_map:
+            structure,sub_infos = chain_structure_map[target_chain]
+            oligos = structure['Oligo']
+            for aacbase in sub_infos:
+                res_id = sub_infos[aacbase][0]
+                target_residues.append(res_id)
+        else:
+            continue
+
+        #siss_coord_map: {Chain:{String:[String,{String:(String,float,float,float)}]}} ; Maps residue-id on residue name and atom map. atom map maps atom-id on atom name and atomic coordinates.
+        try:
+            centroid_map = siss.calcCentroidMap(siss_coord_map[target_chain],target_residues,False)
+
+            dist_matrix = siss.calcDistMatrix(siss_coord_map[target_chain],centroid_map,target_residues,False)
+
+            siss_map = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues,False)
+        except:
+            [e,f,g] = sys.exc_info()
+            g = traceback.format_exc()
+            errorlist.append(("Siss error: %s,%s\n" % (pdb_id,target_chain),e,f,g))
+
+        
+
+        annotation_dict = {}
+
+        
+        #anno_amount = 0
+        residue_residue_dict[target_chain] = {}
+        for target_res_id in target_residues:
+
+            residue_residue_dict[target_chain][target_res_id] = {}
+            three_letter = res_contig_map[target_chain][target_res_id][1]
+            if three_letter in pdb.threeToOne:
+                if pdb.threeToOne[three_letter][0] in pdb.oneToThree:
+                    one_letter = pdb.threeToOne[three_letter][0]
+                else:
+                    one_letter = 'X'
+            else:
+                one_letter = 'X'
+            min_dists = {}
+            min_chain_dists = {}
+            #Distance Calculations
+            for chain in coordinate_map:
+
+                #Sub - Chain - Calculations
+                if chain != target_chain and len(coordinate_map[chain][0]) > 0:
+                    min_chain_dist,min_res,atom_sub,atom_chain,inside_sphere = getMinSubDist(coordinate_map,fuzzy_dist_matrix,target_res_id,target_chain,chain,distance_threshold=distance_threshold)
+                    min_chain_dists[chain] = (min_chain_dist,(atom_chain,atom_sub),min_res)
+                    if chain_type_map[chain] == 'Protein' and neighborhood_calculation: #Filter DNA and RNA chains
+                        residue_residue_dict[target_chain][target_res_id][chain] = inside_sphere
+
+
+                #Residue-Residue Calculations
+                elif chain == target_chain and len(coordinate_map[chain][0]) > 0 and neighborhood_calculation:
+                    if chain_type_map[chain] == 'Protein': #Filter DNA and RNA chains
+                        min_chain_dist,min_res,atom_sub,atom_chain,inside_sphere = getMinSubDist(coordinate_map,fuzzy_dist_matrix,target_res_id,target_chain,chain,distance_threshold=distance_threshold)
+                        residue_residue_dict[target_chain][target_res_id][chain] = inside_sphere
+
+                #Sub - Lig - Calculations
+                for hetres in coordinate_map[chain][1]:
+                    min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,hetres,chain,het2=1)
+                    abr = coordinate_map[chain][1][hetres][0]
+                    ligand_identifier = "%s_%s_%s" % (abr,hetres,chain)
+                    min_dists[ligand_identifier] = (min_d,(atom,atom2))
+            
+            #coordinate_map: {Chain:[{Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]},{Hetatm-Residue (inlcuding insertion_code):[Resname,{atomnr:(atomname,x,y,z)}]}]}    
+            #Homomer Sub - Sub Calculations:
+            homomer_map = {}
+            residue_type = coordinate_map[target_chain][0][target_res_id][0]
+            for homo_chain in oligos:
+                if homo_chain == target_chain:
+                    continue
+                if not homo_chain in coordinate_map:
+                    continue
+                if not target_res_id in coordinate_map[homo_chain][0]:
+                    continue #Sanity Check - residue-id must be the same in the homo-chain
+                if coordinate_map[homo_chain][0][target_res_id][0] != residue_type:
+                    continue #Sanity Check - residue type of the homomer residue must be the same as the residue type of the target residue
+                min_d,atom,atom2 = getMinDist(coordinate_map,target_res_id,target_chain,target_res_id,homo_chain)                
+                homomer_map[homo_chain] = min_d        
+
+            
+            if dssp:
+                if target_chain in dssp_dict:
+                    if target_res_id in dssp_dict[target_chain]:
+                        (raac,ssa) = dssp_dict[target_chain][target_res_id]
+                    else:
+                        #print(target_res_id)
+                        #print(siss_map)
+                        siss_value = None
+                        if target_res_id in siss_map:
+                            siss_value = siss_map[target_res_id]
+
+                        ssa = None 
+                        raac  = siss_value
+                else:
+                    [e,f,g] = sys.exc_info()
+                    g = traceback.format_exc()
+                    errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
+                    dssp = False
+                    if target_res_id in siss_map:
+                        siss_value = siss_map[target_res_id]
+                    else:
+                        siss_value = None
+                    ssa = None 
+                    raac  = siss_value
+            else:
+                siss_value = None
+                if target_res_id in siss_map:
+                    siss_value = siss_map[target_res_id]
+                        
+                ssa = None 
+                raac  = siss_value
+            if target_chain in profiles:
+                if target_res_id in profiles[target_chain]:
+                    profile,centrality_scores = profiles[target_chain][target_res_id]
+                else:
+                    profile = None
+                    centrality_scores = (None,None,None)
+            else:
+                profile = None
+                centrality_scores = (None,None,None)
+
+            avg_b_factor = sum(b_factors[target_chain][target_res_id])/float(len(b_factors[target_chain][target_res_id]))
+
+            if (target_chain,target_res_id) in modres_map:
+                modres = True
+            else:
+                modres = False
+
+            annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile,centrality_scores,avg_b_factor,modres)
+
+        annotations[target_chain] = annotation_dict
+
+    return annotations,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
+
 #called by serializedPipeline
 def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=False,dssp=True,calculate_interaction_profiles=True,distance_threshold=5.0):
-    #print pdb_id,sub_info_map
 
     page = pdb.standardParsePDB(pdb_id,pdb_path)
     resolution,homomer_dict = pdb.getInfo(pdb_id,pdb_path)
 
     if page == '':
-        print "Error while parsing: ",pdb_id
+        print("Error while parsing: ",pdb_id)
         return {},{},[]
 
-    coordinate_map,siss_coord_map,res_contig_map,ligands,box_map,chain_type_map = parsePDB(page)
-    #print pdb_id
+    coordinate_map,siss_coord_map,res_contig_map,ligands,metals,ions,box_map,chain_type_map,b_factors,modres_map = parsePDB(page)
+
     fuzzy_dist_matrix = calcFuzzyDM(coordinate_map,box_map)
     errorlist = []
     annotations = {}
 
-    example_structure = chain_structure_map[chain_structure_map.keys()[0]][1]
+    example_structure = chain_structure_map[list(chain_structure_map.keys())[0]][1]
 
     for t_chain in homomer_dict:#Happens for repeated chains in asymetric units, which do not occur in the biological assembly
         irregular_homo_chains = []
@@ -485,11 +717,9 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
             dssp = False
 
     profiles = {}
-    error = None
     if calculate_interaction_profiles:
-        profiles,error = rin.lookup(pdb_id,None,None,ligands,res_contig_map,rin_db_path)
-    if error != None:
-        errorlist.append((error,'','',''))
+        #print(rin.lookup)                                                               lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map):
+        profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = rin.lookup(pdb_id,None,None,ligands,metals,ions,res_contig_map,rin_db_path,chain_type_map)
 
     for target_chain in res_contig_map:
         if chain_type_map[target_chain] != 'Protein':
@@ -507,7 +737,7 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
                 oligos = target_chain
             interacting_chain_map[target_chain] = (resolution,example_structure['IAP'],oligos)
 
-        target_residues = res_contig_map[target_chain].keys()
+        target_residues = list(res_contig_map[target_chain].keys())
 
         #if not dssp:
         #surface-calculation with SISI
@@ -521,7 +751,7 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
             siss_map = siss.calculateSiss(siss_coord_map[target_chain],centroid_map,dist_matrix,target_residues,False)
         except:
             [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
+            g = traceback.format_exc()
             errorlist.append(("Siss error: %s,%s\n" % (pdb_id,target_chain),e,f,g))
 
         
@@ -600,7 +830,7 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
                         raac  = siss_value
                 else:
                     [e,f,g] = sys.exc_info()
-                    g = traceback.format_exc(g)
+                    g = traceback.format_exc()
                     errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id,target_chain),e,f,g))
                     dssp = False
                     if target_res_id in siss_map:
@@ -625,21 +855,24 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
             else:
                 profile = None
                 centrality_scores = (None,None,None)
-            annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile,centrality_scores)
 
+            avg_b_factor = sum(b_factors[target_chain][target_res_id])/float(len(b_factors[target_chain][target_res_id]))
+
+            if (target_chain,target_res_id) in modres_map:
+                modres = True
+            else:
+                modres = False
+
+            annotation_dict[target_res_id] = (one_letter,min_dists,min_chain_dists,raac,ssa,homomer_map,profile,centrality_scores,avg_b_factor,modres)
 
         annotations[target_chain] = annotation_dict
 
-    #print pdb_id,t_m_amount,anno_amount
-
-    #print annotation_dict
-    return annotations,interacting_chain_map,residue_residue_dict,errorlist
+    return annotations,interacting_chain_map,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
 
 #Return True, if the template is not good
 def weakCriteria(seq,res,rel_aln_len,seq_thresh,res_thresh,rel_aln_len_thresh):
-    #print seq,seq_thresh
-    #print res,res_thresh
+
     if float(seq) <= 1.0:
         seq = float(seq)*100.0
     if float(seq) < seq_thresh:

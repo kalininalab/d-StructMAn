@@ -1,7 +1,7 @@
 import os
 import sys
 import subprocess
-import MySQLdb
+import pymysql as MySQLdb
 import ftplib
 import shutil
 import gzip
@@ -26,21 +26,22 @@ stop_codons = ('TAG','TGA','TAA')
 #called by serializedPipeline
 def annovar_pipeline(vcf_file,tax_id,annovar_path,host,user,pw,db_name,mrna,mail_adress='',ref_id=None):
     if mrna == None:
-        print "Start Annovar Pipeline with vcf_file: %s, taxonomic ID: %s and ref_id: %s" % (vcf_file,str(tax_id),str(ref_id))
+        print("Start Annovar Pipeline with vcf_file: %s, taxonomic ID: %s and ref_id: %s" % (vcf_file,str(tax_id),str(ref_id)))
+        print(annovar_path)
         (name,ucsc_id,ref_path) = searchInAnnovarDB(tax_id,host,user,pw,db_name,ref_id=ref_id)
 
         if name == "No Entry":
             (ucsc_id,name) = taxIdToUcscId(tax_id)
             name = name.lower()
             if ucsc_id == "not in ucsc":
-                print "Did not found the species in the UCSC, search in NCBI-refSeq and construct a new reference ..."
+                print("Did not found the species in the UCSC, search in NCBI-refSeq and construct a new reference ...")
                 (ref_gene_path,ref_seq_path,name,ucsc_id) = buildRefFromNCBI(tax_id,annovar_path,mail_adress)
             else:
-                print "Found the species in the UCSC, constrcuting a new reference..."
+                print("Found the species in the UCSC, constrcuting a new reference...")
                 (ref_gene_path,ref_seq_path) = downloadRefFromUCSC(name,ucsc_id,annovar_path)            
             ref_path = createRef(ref_gene_path,ref_seq_path,name,tax_id,ucsc_id,annovar_path,host,user,pw,db_name)
         else:
-            print "Found the species in the local reference database: %s" % ref_path
+            print("Found the species in the local reference database: %s" % ref_path)
         smlf_file = vcfToSmlf(vcf_file,ref_path,ucsc_id,annovar_path)
         return smlf_file
     else:
@@ -59,6 +60,7 @@ def ToSmlf(vcf_file,fasta):
         line = line.replace('\n','')
         if line[0] == '>':
             g_id = line.split()[0][1:]
+            #print g_id
             gene_name = line.split()[1]
             gene_seq_map[g_id] = ''
         else:
@@ -75,6 +77,8 @@ def ToSmlf(vcf_file,fasta):
 
     inverse = {'A':'T','T':'A','G':'C','C':'G'}
 
+    inverse_strands = set()
+
     for g in gene_seq_map:
         seq = gene_seq_map[g]
         #print seq
@@ -85,6 +89,7 @@ def ToSmlf(vcf_file,fasta):
             for nuc in list(seq):
                 inv_seq = '%s%s' % (inv_seq,inverse[nuc]) 
             gene_seq_map[g] = inv_seq
+            inverse_strands.add(g)
             #print g
 
     #sys.exit()
@@ -112,11 +117,19 @@ def ToSmlf(vcf_file,fasta):
             continue
         if len(ref) == 1 and len(alt) == 1:
             seq = gene_seq_map[g_id]
-            #print 'line: ',n
-            
-            #print pos
-            #print seq
-            #print g_id
+
+            inv_strand = g_id in inverse_strands
+
+            if inv_strand:
+                pos = (len(seq) - pos) + 1
+                ref = inverse[ref]
+                alt = inverse[alt]
+            if ref != seq[pos-1]:
+                print('line: ',n)
+                print(pos)
+                print(seq)
+                print(g_id)
+
             #if nucleic:
             if pos%3 == 0:
                 aa_pos = pos/3
@@ -315,8 +328,8 @@ def vcfToSmlf(vcf_file,ref_path,ucsc_id,annovar_path):
     else:
         raise NameError("vcf-version is too old")
 
-    if os.path.isfile(vcf_file):
-        os.remove(vcf_file)
+    #if os.path.isfile(vcf_file):
+    #    os.remove(vcf_file)
 
     subprocess.call(["perl","%s/annotate_variation.pl" % annovar_path,"-geneanno","-buildver",ucsc_id,"%s/%s.avinput" % (out_path,name),"%s/%s" % (annovar_path,ref_path),"-outfile","%s/%s" % (cwd,name)])
 
@@ -335,19 +348,24 @@ def vcfToSmlf(vcf_file,ref_path,ucsc_id,annovar_path):
         f.close()
     else:
         return ""
+
     outlines = []
     for line in lines:
+        #print line
         words = line.split("\t")
         if len(words) < 2:
-            print line
+            print(line)
         elif words[1] == "nonsynonymous SNV":
             muts = words[2].split(",")
+            chromo = words[3]
+            chr_pos = words[4]
+            g_coord = '%s:%s' % (chromo,chr_pos)
             for mut in  muts:
                 infos = mut.split(":")
                 if len(infos) > 3:
                     refseq = infos[1]
                     aac = infos[4].replace("p.","")
-                    outlines.append("%s\t%s" % (refseq,aac))
+                    outlines.append("%s\t%s\t\t%s" % (refseq,aac,g_coord))
     os.remove("%s/%s.exonic_variant_function" % (cwd,name))
     
     
