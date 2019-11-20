@@ -1,57 +1,82 @@
 # StructMAn
 
-# What is StructMAn?
+## What is StructMAn?
 
-> The Structural Mutation Annotation (StructMAn) software provides the annotation of non-synonymous single-nucleotide polymorphisms (nsSNPs) in the context of the structural neighbourhood of the resulting amino acid variations in the protein. Its rationale is that if a mutation is located on an interaction interface between the protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction.
+> The Structural Mutation Annotation (StructMAn) software provides annotation of non-synonymous single-nucleotide variants (nsSNVs) in the context of the structural properties of the resulting amino acid changes in the corresponding proteins. Its rationale is that if a mutation is located on an interaction interface between a protein and another protein, DNA, RNA or a small molecule, it is likely to interfere with this interaction, and mutations location in the protein core are likely to influence its stability. StructMAn was first published in [Nucl Acids Res, 2016](https://academic.oup.com/nar/article-abstract/44/W1/W463/2499349) where we showed that such structural annotation correlate well with established tools for predicting damaging effect of missense mutations. Later we have [applied StructMAn to a large collection of disease-associated and neutral mutations](https://www.nature.com/articles/oncsis201779) and discovered distinct trends of their spatial distribution.
 
-# Why docker container for StructMAn
+## Why containers for StructMAn
 
-* A docker container will help a user to setup their own local installation of StructMAn 
+* A container will help a user to setup their own local installation of StructMAn
+* Here we present [docker](https://www.docker.com/) and [podman](https://podman.io/) versions of containers for StructMAn
 * Alternatively, you can also use the webserver version of [StructMAn](http://structman.mpi-inf.mpg.de/)
 
-# Requirements
+# Docker version of StructMAn
 
-* Install docker and docker-compose
+## Requirements
 
-*Example CentOS (execute as root user(denoted by #))*
+**NOTE: All the example code/commands here are based on CentOS 7 (everything is executed as root user(denoted by #))**
+
+* Install [docker](https://docs.docker.com/install/) and docker-compose
+
+*NOTE: Enable/install epel repo if by default it is not available in your system (for CentOS it is not available by default)*
+
+```bash
+# yum install epel-release
+```
+
 ```bash
 # yum install docker
 # yum install docker-compose
 ```
-*NOTE: Replace "yum" with the respective package manager of your operating system*
+**NOTE 1: Replace "yum install" with the respective command of your operating system to install**
 
-# To get this image
-
-The recommended way to get this StructMAn docker image is to pull the prebuilt image from the [Docker Hub Registry](https://hub.docker.com/r/sanjaysrikakulam/structman/).
+**NOTE 2: After installing docker, start and enable docker by doing the following (this is the case for CentOS only, check the docker documentation if your OS requires you to do so)**
 
 ```bash
-# docker pull docker.io/sanjaysrikakulam/structman:latest
+# systemctl start docker
+# systemctl enable docker
 ```
 
-## To use/run this image in a container
+## To get this image
 
-Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) to create base setup and configuration for your StructMAn to run succesfully with docker-compose
+The recommended way to get this StructMAn docker image is to pull the prebuilt image from the [Docker Hub Registry](https://hub.docker.com/r/sanjaysrikakulam/structman/) by using the "docker pull" command
 
-*Example CentOS (execute as root user(denoted by #))*
 ```bash
-# ./setup_structman_docker_container.sh -p <> -d <> -c <>
+# docker pull "docker.io/sanjaysrikakulam/structman:latest"
 ```
-```
+
+## To use/run this image
+
+Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) by downloading the script to your local machine in order to create the base setup and configuration for your StructMAn to run succesfully using docker-compose client
+
+```bash
+
+- Download the script using cURL (you will be prompted for password, since this is a private repo)
+
+# curl -u <github_username> -O https://raw.githubusercontent.com/sanjaysrikakulam/structman/master/utility_scripts/setup_structman_docker_container.sh
+
+- Set the execution flag to the script once it is downloaded from github
+
+#  chmod +x <path>/setup_structman_docker_container.sh
+
+- Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>")
+
+# ./setup_structman_docker_container.sh -p <path/to/create/the/container_directory> -c <container_name>
+
 Where: 
--p => A path to create the container
--d => A name for the container directory
--c => A name for the container (This is an optional parameter, default value is "StructMAn")
+-p => A path to create the container direcotry
+-c => A name for the container (This is an optional parameter, and its default value is "structman")
 ```
-- This script will create a folder structure, docker-compose.yml file and will change the selinux context of them
+- This script will create the following folder structure along with the docker-compose.yml file in the path you provided above with "-p" option
 
 ```
-└── docker-compose.yml
-└── mysql_lib
-└── mysql_logs
-└── structman
-    ├── input_data
-    ├── results
-    └── mysql_custom_conf.d
+<container_directory>
+    └── docker-compose.yml
+    └── mysql_lib
+    └── mysql_logs
+    └── structman
+        ├── input_data
+        └── results
 ```
 ## Directory setup
 
@@ -61,49 +86,148 @@ Where:
 - **structman:** This is where we organize all the files, so that we can keep them under one roof
 - **input_data:** A user has to upload their input files into this directory
 - **reuslts:** StructMAn by default will write all the generated output to this directory
-- **mysql_custom_conf.d:** Before starting the container, a user can add any additional MySQL server configuration, if it wasn't already implemented/enabled
 - **NOTE 1: All these volumes are bind mounted and for more information on [bind mounts](https://docs.docker.com/storage/bind-mounts/)**
 - **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
 
 
 ## Docker Compose
 
-- Once this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) has been executed and the above mentioned directory structure is created, a user can change from the current working directory to the container directory where docker-compose.yml file is created, then the user can start the container in the detach mode using the following command
+- After the script has created the above mentioned directory structure, you can change to the container directory where docker-compose.yml file is created, then you can start the container in the detach mode using the following command
 
-*Example CentOS (execute as root user(denoted by #))*
 ```bash
+# cd <container_directory>
+
 # docker-compose up -d
 ```
-# How to access the structman tool running in the container
+## How to access the StructMAn tool running in the container
 * To list the running docker containers
  
  ```bash
  # docker ps
 ```
-
-* Type 1: To run StructMAn from within the running container
-
- ```bash
- # docker exec -it <container_name> /bin/bash
-```
-*This will allow you to access the shell of the running container*
-
-* Accessing the StructMAn application
+Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
 
  ```bash
- # structman.py -i </structman/input_data/<input_file_name>> -o </structman/results/> 
+ # docker exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
 ```
 
-* Type 2: To access StructMAn from your localhost itself
+**Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
+
+**NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
+
+## To update the existing StructMAn docker image
+
+* If there is a new image of StructMAn available, one can easily update their container to use this latest image by doing the following
+
 
  ```bash
- # docker exec -it StructMAn structman.py -i </structman/input_data/<input_file_name>> -o </structman/results/>
+ - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
+ 
+ # docker-compose -f <docker-compose.yml> stop
+
+ - Remove the container that we stopped just now
+ 
+ # docker-compose -f <docker-compose.yml> rm -f
+
+ - Pull the latest image of StructMAn from Docker Hub Registry (The docker compose.yml file already contains the image location which is pointing to the docker hub's registry, so just a pull command will download the latest image from the registry)
+ 
+ # docker-compose -f <docker-compose.yml> pull
+
+ - Finally start the container in the detach mode
+ 
+ # docker-compose -f <docker-compose.yml> up -d
 ```
-*This command will run the application (StructMAn) inside the container from your localhost*
 
-**NOTE: By default StructMAn will look for the input here </structman/input_data/> and stores the output here </structman/results/>. These paths are located inside the docker container and these folders are bind mounted to your localhost**
+## To reset StructMAn database/ To have a clean StructMAn container 
 
-## Useful docker commands
+* Once you encounter some issues with the database/container while executing structman.py with some input or you simple want a clean setup of the container, you can do the following
+
+```bash
+ - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
+ 
+ # docker-compose -f <docker-compose.yml> stop
+
+ - Remove the container that we stopped just now
+ 
+ # docker-compose -f <docker-compose.yml> rm -f
+
+ - Remove all the files located under mysql_lib directory (Remember that this directory was created with the help of the utility script and that this direcotry is bind mounted into the container. Removing everything inside this folder will reset the database and reinitializes the mysql server setup)
+ 
+ # rm -r <path_to_the_mysql_lib_directory> 
+
+ - Finally start the container in the detach mode
+ 
+ # docker-compose -f <docker-compose.yml> up -d
+```
+
+## To have more than one StructMAn container
+
+* If you want to have more than one StructMAn container
+
+1) Use the utility script like mentioned above in [To use/run this image](https://github.com/sanjaysrikakulam/structman#to-userun-this-image) section to create the new directory structure for your n'th instance of the StructMAn by exclusively changig the -p and -c option to some other value than the ones you used for your previous instances
+
+# Podman version of StructMAn (for users with no root access)
+
+## Requirements
+
+**NOTE: All the example code/commands here are based on Fedora 30**
+
+* Install [podman](https://github.com/containers/libpod/blob/master/install.md) **only for this step you require to be root**
+
+```bash
+# dnf install podman
+```
+**NOTE: Replace "dnf install" with the respective command of your operating system to install**
+
+## To get this image
+
+Pull the image, just like with docker
+
+```bash
+$ podman pull "docker.io/sanjaysrikakulam/structman:latest"
+```
+
+## To use/run this image
+
+Like in the docker version we need same directory setup, so execute the following in your current working directory to create the setup
+
+```bash
+$ path="$(pwd)"             # change this path to anywhere you like
+$ container_name="structman"
+$ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results}}
+```
+**To run this image**
+
+```bash
+$ podman run -d -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
+```
+**That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
+
+**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/libpod/blob/master/commands.md)**
+
+## How to access the StructMAn tool running in the container
+* To list the running podman containers
+ 
+ ```bash
+ $ podman ps
+```
+Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
+
+ ```bash
+ $ podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
+```
+
+**Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
+
+**NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
+
+## How to site container tools
+
+If you find these tools useful, please cite:
+
+```Gress A, Srikakulam SK, Keller S, Kalinina OV. Container-based tools for structural annotation of genetic variants. submitted.```
+
+# Useful commands
 
 * To start a container
 

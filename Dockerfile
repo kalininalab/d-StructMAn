@@ -15,6 +15,7 @@ LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
 # Install and update the required dependencies for StructMAn
 RUN apt-get update \
 && DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server \
+wget \
 curl \
 vim \
 less \
@@ -29,6 +30,7 @@ rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
 RUN pip install numpy biopython matplotlib multiprocess
+RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/; ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
 
 # Adding the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
@@ -38,7 +40,7 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Default volumes to organize all the files under one roof and to allow backup
-VOLUME ["/structman/input_data/", "/structman/results/", "/structman/mysql_data_backup/", "/var/log/mysql/", "/var/lib/mysql/", "/etc/mysql/mysql_custom_conf.d/"]
+VOLUME ["/structman/input_data/", "/structman/results/", "/var/log/mysql/", "/var/lib/mysql/"]
 
 # Ports
 EXPOSE 3306/tcp
