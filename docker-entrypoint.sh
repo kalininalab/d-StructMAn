@@ -170,10 +170,22 @@ configure_database() {
     fi
 }
 
+build_mmseqs_index() {
+    (cd /usr/structman_library/sources/StructMAn/lib/base/blast_db/; mmseqs createindex /usr/structman_library/sources/StructMAn/lib/base/blast_db/pdbba_search_db_mmseqs2 /usr/structman_library/sources/StructMAn/lib/base/blast_db/tmp/)
+    
+    if [[ $?==0 ]]; then
+        echo "===>    MMseqs2 index has been created for the database!    <==="
+    else
+        echo "===>    MMseqs2 index could not be created for the database!    <==="
+        exit 1
+    fi
+}
+
 # Initializing MySQL server configuration
 configure_structman
 create_mysql_dirs
 configure_mysql
+build_mmseqs_index
 
 # Initialize MySQL server and create users
 if [[ ! -d /var/lib/mysql/mysql ]]; then
