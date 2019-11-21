@@ -3874,7 +3874,7 @@ def classificationOutput(outfolder,session_name,session_id,db,cursor,ligand_filt
         t6 = time.time()
         print("Time for classificationOutput part 6: ",t6-t5)
 
-    return class_files
+    return class_files,[]
 
 #method for comparing/developing the new classifiction
 def diffSurfs(mutation_surface_dict,g_u_dict,mutation_dict,outfile):
