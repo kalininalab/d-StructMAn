@@ -1422,8 +1422,12 @@ def createStructureDicts(manager,lock,gene_aaclist_map,gene_template_alignment_m
     mutation_dict = {}
 
     for u_ac in gene_aaclist_map:
-        regions = iupred_map[u_ac][0]
-        method = iupred_map[u_ac][2]
+        if u_ac in iupred_map:
+            regions = iupred_map[u_ac][0]
+            method = iupred_map[u_ac][2]
+        else:
+            regions = []
+            pos_region_type = None
         if method == 'MobiDB3.0'or method == 'mobidb-lite':
             pos_region_type = 'globular'
         else:
@@ -1435,8 +1439,11 @@ def createStructureDicts(manager,lock,gene_aaclist_map,gene_template_alignment_m
             for [a,b,region_type] in regions:
                 if aac_pos > int(a) and aac_pos < int(b):
                     pos_region_type = region_type
-            if aac_pos in iupred_map[u_ac][1]:
-                aa1,iupred_score = iupred_map[u_ac][1][aac_pos]
+            if u_ac in iupred_map:
+                if aac_pos in iupred_map[u_ac][1]:
+                    aa1,iupred_score = iupred_map[u_ac][1][aac_pos]
+                else:
+                    iupred_score = None
             else:
                 iupred_score = None
 
