@@ -521,6 +521,10 @@ def liteAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neigh
             dssp = False
 
     profiles = {}
+    ligand_profiles = {}
+    metal_profiles = {}
+    ion_profiles = {}
+    chain_chain_profiles = {}
     if calculate_interaction_profiles:
         #print(rin.lookup)                                                               lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map):
         profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = rin.lookup(pdb_id,None,None,ligands,metals,ions,res_contig_map,rin_db_path,chain_type_map)
@@ -717,6 +721,10 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
             dssp = False
 
     profiles = {}
+    ligand_profiles = {}
+    metal_profiles = {}
+    ion_profiles = {}
+    chain_chain_profiles = {}
     if calculate_interaction_profiles:
         #print(rin.lookup)                                                               lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map):
         profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = rin.lookup(pdb_id,None,None,ligands,metals,ions,res_contig_map,rin_db_path,chain_type_map)
