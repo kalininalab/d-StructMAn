@@ -43,7 +43,7 @@ mkdir -p $path/{mysql_lib,mysql_logs,structman/{input_data,results}}
 echo "version: '2'
 services:
     structman_db:
-        image: docker.io/sanjaysrikakulam/structman
+        image: docker.io/sanjaysrikakulam/structman:latest
         restart: unless-stopped
         container_name: $container_name
         hostname: structman
