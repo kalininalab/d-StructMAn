@@ -652,10 +652,10 @@ def liteAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neigh
                     profile,centrality_scores = profiles[target_chain][target_res_id]
                 else:
                     profile = None
-                    centrality_scores = (None,None,None)
+                    centrality_scores = (None,None,None,None,None,None)
             else:
                 profile = None
-                centrality_scores = (None,None,None)
+                centrality_scores = (None,None,None,None,None,None)
 
             avg_b_factor = sum(b_factors[target_chain][target_res_id])/float(len(b_factors[target_chain][target_res_id]))
 
@@ -859,10 +859,10 @@ def structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path
                     profile,centrality_scores = profiles[target_chain][target_res_id]
                 else:
                     profile = None
-                    centrality_scores = (None,None,None)
+                    centrality_scores = (None,None,None,None,None,None)
             else:
                 profile = None
-                centrality_scores = (None,None,None)
+                centrality_scores = (None,None,None,None,None,None)
 
             avg_b_factor = sum(b_factors[target_chain][target_res_id])/float(len(b_factors[target_chain][target_res_id]))
 
