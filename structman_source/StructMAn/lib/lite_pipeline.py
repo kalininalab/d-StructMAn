@@ -1425,13 +1425,14 @@ def createStructureDicts(manager,lock,gene_aaclist_map,gene_template_alignment_m
         if u_ac in iupred_map:
             regions = iupred_map[u_ac][0]
             method = iupred_map[u_ac][2]
+            if method == 'MobiDB3.0'or method == 'mobidb-lite':
+                pos_region_type = 'globular'
+            else:
+                pos_region_type = 'disorder'
         else:
             regions = []
             pos_region_type = None
-        if method == 'MobiDB3.0'or method == 'mobidb-lite':
-            pos_region_type = 'globular'
-        else:
-            pos_region_type = 'disorder'
+        
         for aacbase in gene_aaclist_map[u_ac][2]:
             i += 1
 
