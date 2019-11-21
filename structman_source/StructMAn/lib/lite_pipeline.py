@@ -1046,7 +1046,7 @@ def paraAnnotate(config,manager,lock,No_Errors,gene_aaclist_map,gene_template_al
     if verbose:
         print("Going into Annotation with ",annotation_processes,' processes')
     for i in range(1,annotation_processes + 1):
-        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue,t01))
+        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue))
         processes[i] = p
         p.start()
     for i in processes:
@@ -1099,7 +1099,7 @@ def paraAnnotate(config,manager,lock,No_Errors,gene_aaclist_map,gene_template_al
 
     return No_Errors
 
-def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
+def annotate(config,input_queue,out_queue,error_queue,lock,err_queue):
     neighborhood_calculation = config.neighborhood_calculation
     calculate_interaction_profiles = config.calculate_interaction_profiles
     dssp = config.dssp
@@ -1112,12 +1112,8 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
     while True:
         inp = input_queue.get()
         if inp == None:
-            #t02 = time.time()
-            #print "Annotation Process %s: %s" % (str(i),str(t02-t01))
             return
-        #print inp
         (pdb_id,chain_structure_map) = inp
-        #print 'Proc %s - annotate: %s' % (str(i),pdb_id)
         try:
             annotation_chain_dict,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = templateFiltering.liteAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
             with lock:
@@ -1125,7 +1121,6 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
                 if len(errorlist) > 0:
                     for (error,e,f,g) in errorlist:
                         err_queue.put((error,f,g,pdb_id))
-            #print 'finished Proc %s - annotate: %s' % (str(i),pdb_id)
         except:
             [e,f,g] = sys.exc_info()
             g = traceback.format_exc()

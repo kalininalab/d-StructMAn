@@ -1306,7 +1306,7 @@ def paraAnnotate(config,db,cursor,manager,lock,No_Errors,gene_mut_map_new,gene_m
     if verbose:
         print("Going into Annotation with ",annotation_processes,' processes')
     for i in range(1,annotation_processes + 1):
-        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue,t01))
+        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue))
         processes[i] = p
         p.start()
     for i in processes:
@@ -1432,7 +1432,7 @@ def updateResidues(gene_mut_map_new,gene_template_alignment_map,structure_residu
                 condensed_residue_dict[r_id] = residue_dict[r_id]
     return m_r_map,condensed_residue_dict
 
-def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
+def annotate(config,input_queue,out_queue,error_queue,lock,err_queue):
     neighborhood_calculation = config.neighborhood_calculation
     calculate_interaction_profiles = config.calculate_interaction_profiles
     dssp = config.dssp
@@ -1445,12 +1445,8 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
     while True:
         inp = input_queue.get()
         if inp == None:
-            #t02 = time.time()
-            #print "Annotation Process %s: %s" % (str(i),str(t02-t01))
             return
-        #print inp
         (pdb_id,chain_structure_map) = inp
-        #print 'Proc %s - annotate: %s' % (str(i),pdb_id)
         try:
             annotation_chain_dict,interacting_chain_map,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = templateFiltering.structuralAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
             with lock:
@@ -1458,7 +1454,6 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,t01):
                 if len(errorlist) > 0:
                     for (error,e,f,g) in errorlist:
                         err_queue.put((error,f,g,pdb_id))
-            #print 'finished Proc %s - annotate: %s' % (str(i),pdb_id)
         except:
             [e,f,g] = sys.exc_info()
             g = traceback.format_exc()

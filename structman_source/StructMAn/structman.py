@@ -381,11 +381,11 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     multiprocessing.set_start_method('forkserver')
     #print(multiprocessing.get_start_method())
-    disclaimer = 'Usage: structman.py <-i input_file>\n\n\n##### Optional parameter: #####\n\n<-n threads> : Number of cores to be used\n\n<-o output_folder> : Path to the output folder\n\n<-c config_file> : Path to the configuration file\n\n<-l> : lite-mode'
+    disclaimer = 'Usage: structman.py <-i input_file>\n\n\n##### Optional parameter: #####\n\n<-n threads> : Number of cores to be used\n\n<-o output_folder> : Path to the output folder\n\n<-c config_file> : Path to the configuration file\n\n<-l> : lite-mode\n\n<-v> : verbose output'
 
     argv = sys.argv[1:]
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:l",['help','overwrite','annotationtable'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lv",['help','overwrite','annotationtable'])
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
         sys.exit(2)
@@ -397,10 +397,13 @@ if __name__ == "__main__":
     outfolder = ''
     overwrite = False
     lite = False
+    verbose_flag = False
 
     for opt,arg in opts:
         if opt == '-c':
             config_path = arg
+        if opt == '-v':
+            verbose_flag = True
         if opt == '-l':
             lite = True
         if opt == '-i':
@@ -465,6 +468,9 @@ if __name__ == "__main__":
     config_path = os.path.abspath(config_path)
 
     config = Config(config_path,infile,num_of_cores,outfolder,overwrite,annotationtable)
+
+    if verbose_flag:
+        config.verbose = True
 
     if lite:
         config.lite = True
