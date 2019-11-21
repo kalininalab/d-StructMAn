@@ -7,7 +7,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import multiprocessing
 
 def makeViolins(violins,outfile,session_name,add=''):
     fs = 10  # fontsize
@@ -745,7 +744,7 @@ def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False)
         if intertable:
             classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable,processes=proc_n,verbose=verbose)
         else:
-            classfiles = database.classificationOutput(output_path,session_name,session_id,db,cursor,overwrite=overwrite,verbose=verbose)
+            classfiles,interfiles = database.classificationOutput(output_path,session_name,session_id,db,cursor,overwrite=overwrite,verbose=verbose)
         t01 = time.time()
         print("Time for minDistOut: ",t01-t00)
         for classfile in classfiles:
