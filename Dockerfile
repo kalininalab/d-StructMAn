@@ -20,6 +20,8 @@ curl \
 vim \
 less \
 gcc \
+python3 \
+python3-pip \
 python-pip \
 openbabel \
 dssp \
@@ -29,7 +31,7 @@ mysql-client && \
 rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
-RUN pip install numpy biopython matplotlib multiprocess
+RUN pip3 install numpy biopython matplotlib multiprocess pymysql
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/; ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
 
 # Adding the StructMAn source
