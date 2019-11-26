@@ -480,7 +480,7 @@ def liteAnalysis(pdb_id,chain_structure_map,pdb_path,dssp_path,rin_db_path,neigh
     page = pdb.standardParsePDB(pdb_id,pdb_path)
     resolution,homomer_dict = pdb.getInfo(pdb_id,pdb_path)
 
-    if page == '':
+    if page == '' or page == None:
         print("Error while parsing: ",pdb_id)
         return {},{},[]
 

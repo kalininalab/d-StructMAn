@@ -478,6 +478,9 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
 
     buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
 
+    if buf == None:
+        return None
+
     chain_ids = set()
     newlines = []
 
@@ -784,7 +787,7 @@ def getSI(pdb_id,name,res,chain,pdb_path):
 
     return (smiles,inchi)
 
-def getPDBHeaderBuffer(pdb_id,pdb_path):
+def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
 
@@ -797,8 +800,12 @@ def getPDBHeaderBuffer(pdb_id,pdb_path):
             request = urllib.request.Request(url)
             return urllib.request.urlopen(request)
         except:
-            print("Did not find the PDB-header: %s" % pdb_id)
-            return None
+            if tries < 2:
+                print("Unable to connect ot PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
+                return getPDBHeaderBuffer(pdb_id,pdb_path,tries = tries+1)
+            else:
+                print("Unable to connect ot PDB for the Header: %s\n%s'" % (pdb_id,url))
+                return None
     else:
         return gzip.open(path, 'rb')
 

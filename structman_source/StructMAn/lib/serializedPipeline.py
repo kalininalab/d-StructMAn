@@ -1103,6 +1103,8 @@ def paraMap(config,input_queue,out_queue,lock):
         (aaclist,structure_id,pos_res_map,pdb_id,chain,target_seq,template_seq,gene_id) = inp
 
         template_page = pdb.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
+        if template_page == None:
+            continue
         seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,onlySeqResMap = True)
         sub_infos,errors,aaclist,update_map = globalAlignment.getSubPos(target_seq,template_seq,aaclist,seq_res_map)
 

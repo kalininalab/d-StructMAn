@@ -5204,9 +5204,10 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
     f.close()
 
 def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
-    seq_id_threshold = 0.95
-    startline = 'Tag\tTotal proteins\tTotal positions\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold),str(seq_id_threshold))
-    outmap = {'All':[set(),0,0,0,0,0,0]}
+    seq_id_threshold = 0.99
+    startline = 'Tag\tTotal proteins\tTotal positions\tUnmapped proteins\tEntirely disordered proteins\tProteins mapped to at least one corresponding structure (seq-id > %s%%\tProteins mapped only to structure of homologs (seq-id <= %s%%)\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold),str(seq_id_threshold),str(seq_id_threshold),str(seq_id_threshold))
+    outmap = {'All':[{},0,0,0,0,0,0]}
+    
     if stat_dict != None:
         class_dict = stat_dict
         max_seq_key = 1
@@ -5225,9 +5226,10 @@ def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
 
         for tag in tags:
             if not tag in outmap:
-                outmap[tag] = [set(),0,0,0,0,0,0]
+                outmap[tag] = [{},0,0,0,0,0,0]
             g = mutation_dict[m][1]
-            outmap[tag][0].add(g)
+            if not g in outmap[tag][0]:
+                outmap[tag][0][g] = 1
             outmap[tag][1] += 1
             
             if m in class_dict:
@@ -5237,14 +5239,21 @@ def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
                     outmap[tag][2] += 1
                     if max_seq_id > seq_id_threshold:
                         outmap[tag][5] += 1
+                        outmap[tag][0][g] = 2
                     else:
                         outmap[tag][6] += 1
+                        if not outmap[tag][0][g] == 2:
+                            outmap[tag][0][g] = 3
                 elif clas == 'Disorder':
                     outmap[tag][3] += 1
                 else:
                     outmap[tag][4] += 1
+                    if not outmap[tag][0][g] > 1:
+                        outmap[tag][0][g] = 0
             else:
                 outmap[tag][4] += 1
+                if not outmap[tag][0][g] > 1:
+                    outmap[tag][0][g] = 0
     if None in outmap:
         del outmap[None]
 
@@ -5258,9 +5267,25 @@ def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
         mapped_to_corr = outmap[tag][5]
         mapped_to_homolog = outmap[tag][6]
 
+        prot_numbers = [0,0,0,0]
+        for g in outmap[tag][0]:
+            prot_numbers[outmap[tag][0][g]] += 1
+
         if float(tot_pos) == 0.0:
             continue
-        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (tag,str(tot_prot),str(tot_pos),str(mapped),str(100.*float(mapped)/float(tot_pos)),str(mapped_to_corr),str(100.*float(mapped_to_corr)/float(tot_pos)),str(mapped_to_homolog),str(100.*float(mapped_to_homolog)/float(tot_pos)),str(dis),str(100.*float(dis)/float(tot_pos)),str(unmapped),str(100.*float(unmapped)/float(tot_pos)))
+        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (
+            tag,
+            str(tot_prot),
+            str(tot_pos),
+            str(prot_numbers[0]),str(100.*float(prot_numbers[0])/float(tot_prot)),
+            str(prot_numbers[1]),str(100.*float(prot_numbers[1])/float(tot_prot)),
+            str(prot_numbers[2]),str(100.*float(prot_numbers[2])/float(tot_prot)),
+            str(prot_numbers[3]),str(100.*float(prot_numbers[3])/float(tot_prot)),
+            str(mapped),str(100.*float(mapped)/float(tot_pos)),
+            str(mapped_to_corr),str(100.*float(mapped_to_corr)/float(tot_pos)),
+            str(mapped_to_homolog),str(100.*float(mapped_to_homolog)/float(tot_pos)),
+            str(dis),str(100.*float(dis)/float(tot_pos)),
+            str(unmapped),str(100.*float(unmapped)/float(tot_pos)))
         lines.append(line)
     f = open(out_file,'w')
     f.write("\n".join(lines))
