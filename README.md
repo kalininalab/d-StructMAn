@@ -14,6 +14,8 @@
 
 ## Requirements
 
+**NOTE: Before you start, please make sure you have internet connection to use SructMAn**
+
 **NOTE: All the example code/commands here are based on CentOS 7 (everything is executed as root user(denoted by #))**
 
 * Install [docker](https://docs.docker.com/install/) and docker-compose
@@ -51,7 +53,7 @@ Once you pulled the image, use this utility script [setup_structman_docker_conta
 
 ```bash
 
-- Download the script using cURL (you will be prompted for password, since this is a private repo)
+- Download the script using cURL (you will be prompted for password, since this is a private repo).
 
 # curl -u <github_username> -O https://raw.githubusercontent.com/sanjaysrikakulam/structman/master/utility_scripts/setup_structman_docker_container.sh
 
@@ -59,7 +61,7 @@ Once you pulled the image, use this utility script [setup_structman_docker_conta
 
 #  chmod +x <path>/setup_structman_docker_container.sh
 
-- Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>")
+- Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>"), make sure you always use the latest version of the sript, as there might be some updates from time to time.
 
 # ./setup_structman_docker_container.sh -p <path/to/create/the/container_directory> -c <container_name>
 
@@ -99,6 +101,14 @@ Where:
 
 # docker-compose up -d
 ```
+- Wait for a while before you start running the commands. To check if the container has properly started or not, check the logs
+
+```bash
+# docker-compose logs
+```
+
+- If you see the line ''***** Container setup and configuration is done, starting < mysqld > on the container <structman> '' at the end of the output from the above command, then it means the container has started successfully and that it is fully functional now.
+
 ## How to access the StructMAn tool running in the container
 * To list the running docker containers
  
