@@ -4,7 +4,6 @@ import sys
 import getopt
 import time
 import multiprocessing
-from multiprocessing.managers import SyncManager
 import subprocess
 import shutil
 import traceback
@@ -22,72 +21,59 @@ import annovar
 import MMseqs2
 import sdsc
 
-import cProfile
-import pstats
-import io
-try:
-    from memory_profiler import profile
-except:
-    pass
 
 def SQLDateTime():
     return time.strftime('%Y-%m-%d %H:%M:%S',time.localtime())
 
-#@profile
 def sequenceScan(config,proteins):
     pdb_path = config.pdb_path
+    db_adress = config.db_adress
+    db_user_name = config.db_user_name
+    db_password = config.db_password
 
     sequenceScanProteins = {}
     sequenceScanPDB = {}
-
     for u_ac in proteins:
         uni_pos,tags = proteins[u_ac].popNone()
         
         if u_ac.count(':') > 0:
-            sequenceScanPDB[u_ac] = tags,uni_pos #PDB inputs are always processed by the sequence scan, but the positions are only added if uni_pos is true
-        else:
-            sequenceScanProteins[u_ac] = tags,uni_pos #New: process everything to filter input by sanity checks
+            sequenceScanPDB[u_ac] = tags #PDB inputs are always processed by the sequence scan
+        elif uni_pos:
+            sequenceScanProteins[u_ac] = tags
 
+    try:
+        db = MySQLdb.connect(db_adress,db_user_name,db_password,config.mapping_db)
+        cursor = db.cursor()
+    except:
+        db = None
+        cursor = None
 
     if len(sequenceScanProteins) > 0:
-        if config.verbosity >= 1:
-            print("Amount of proteins going into sequenceScan: ",len(sequenceScanProteins))
+        print("Amount of proteins going into sequenceScan: ",len(sequenceScanProteins))
 
-        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(),config,debug=config.verbose)
+        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(),db,cursor,debug=config.verbose)
         for u_ac in gene_sequence_map:
             if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0:
-                config.errorlog.add_error("Error in sequenceScan with gene: %s" % u_ac)
+                print("Error in sequenceScan with gene: ",u_ac)
                 continue
             seq,disorder_scores,disorder_regions_datastruct = gene_sequence_map[u_ac]
             proteins[u_ac].sequence = seq
-            proteins[u_ac].set_disorder_scores(disorder_scores)
-            proteins[u_ac].set_disorder_regions(disorder_regions_datastruct)
-            tags,uni_pos = sequenceScanProteins[u_ac]
-
+            proteins[u_ac].disorder_scores = disorder_scores
+            proteins[u_ac].disorder_regions = disorder_regions_datastruct
+            tags = sequenceScanProteins[u_ac]
             for (pos,aa) in enumerate(seq):
-                seq_pos = pos+1
+                seq_pos = str(pos+1)
                 if seq_pos in proteins[u_ac].positions:
-                    proteins[u_ac].positions[seq_pos].check(aa,overwrite = config.overwrite_incorrect_wt_aa)
                     proteins[u_ac].positions[seq_pos].add_tags(tags)
-                elif uni_pos:
-                    position = sdsc.Position(pos=seq_pos,wt_aa=aa,tags=tags,checked=True)
+                else:
+                    position = sdsc.Position(pos=seq_pos,wt_aa=aa,tags=tags)
                     proteins[u_ac].positions[seq_pos] = position
-            #sanity check filter
-            del_list = []
-            for pos in proteins[u_ac].positions:
-                if not proteins[u_ac].positions[pos].checked:
-                    del_list.append(pos)
-            for pos in del_list:
-                if config.verbosity >= 2:
-                    print('Filtered position through sanity check:',u_ac,pos)
-                del proteins[u_ac].positions[pos]
-
 
     if len(sequenceScanPDB) > 0:
         pdb_sequence_map,pdb_pos_map = pdb.getSequences(sequenceScanPDB.keys(),pdb_path)
         for u_ac in pdb_sequence_map:
             proteins[u_ac].sequence = pdb_sequence_map[u_ac][0]
-            tags,uni_pos = sequenceScanPDB[u_ac]
+            tags = sequenceScanPDB[u_ac]
 
             residue_id_backmap = {}
             res_pos_map = pdb_pos_map[u_ac]
@@ -95,60 +81,29 @@ def sequenceScan(config,proteins):
                 residue_id_backmap[res_pos_map[res_id]] = res_id
 
             for (pos,aa) in enumerate(pdb_sequence_map[u_ac][0]):
-                seq_pos = pos+1
-                if not seq_pos in residue_id_backmap:
-                    continue
+                seq_pos = str(pos+1)
                 res_id = residue_id_backmap[seq_pos]
-                if res_id in proteins[u_ac].res_id_map:
-                    proteins[u_ac].res_id_map[res_id].pos = seq_pos
-                    proteins[u_ac].positions[seq_pos] = proteins[u_ac].res_id_map[res_id]
+                if res_id in proteins[u_ac].positions:
+                    proteins[u_ac].positions[res_id].pos = seq_pos
                     if tags == None:
                         continue
-                    proteins[u_ac].positions[seq_pos].add_tags(tags)
-                elif uni_pos:
+                    proteins[u_ac].positions[res_id].add_tags(tags)
+                else:
                     if tags == None:
                         continue
-                    position = sdsc.Position(pos=seq_pos,pdb_res_nr=res_id,wt_aa=aa,tags=tags)
-                    proteins[u_ac].positions[seq_pos] = position
-                    proteins[u_ac].res_id_map[res_id] = position
+                    position = sdsc.PDB_Position(pos=seq_pos,pdb_res_nr=res_id,wt_aa=aa,tags=tags)
+                    proteins[u_ac].positions[res_id] = position
 
+
+    if db != None:
+        db.close()
     return proteins
 
-def parseFasta(config,nfname):
-    f = open(nfname,'r')
-    lines = f.readlines()
-    f.close()
+def buildQueue(config,db,cursor,filename,junksize,mrna_fasta=None):
+    db_adress = config.db_adress
+    db_user_name = config.db_user_name
+    db_password = config.db_password
 
-    seq_map = {}
-
-    for line in lines:
-        line = line[:-1]
-        if len(line) == 0:
-            continue
-        if line[0] == '>':
-            entry_id = line[1:].split()[0]
-            seq_map[entry_id] = ''
-
-        else:
-            seq_map[entry_id] += line
-
-    proteins = {}
-    for prot_id in seq_map:
-        positions = set()
-        protein = sdsc.Protein(u_ac=prot_id,positions = positions)
-        seq = seq_map[prot_id]
-        protein.sequence = seq
-        for (pos,aa) in enumerate(seq):
-            seq_pos = pos+1
-            if  not seq_pos in protein.positions:
-                position = sdsc.Position(pos=seq_pos,wt_aa=aa)
-                protein.positions[seq_pos] = position
-
-        proteins[prot_id] = protein
-    return [proteins]
-
-#@profile
-def buildQueue(config,filename,junksize,mrna_fasta=None):
     verbose = config.verbose
 
     t0 =time.time()
@@ -156,6 +111,7 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
     proteins = {}
     u_ids = set()
     u_acs = set()
+    nps = set()
     id_map = {}
     ac_map = {}
     np_map = {}
@@ -173,14 +129,12 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
         if line == '':
             continue
         if len(line) < 3:
-            if config.verbosity >= 1:
-                print("Skipped input line:\n%s\nToo short.\n" % line)
+            print("Skipped input line:\n%s\nToo short.\n" % line)
             continue
         line = line.replace(' ','\t')
         words = line.split("\t")
         if len(words) < 1:
-            if config.verbosity >= 1:
-                print("Skipped input line:\n%s\nToo few words.\n" % line)
+            print("Skipped input line:\n%s\nToo few words.\n" % line)
             continue
         sp_id = words[0]#.replace("'","\\'")
 
@@ -191,8 +145,10 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
 
         try:
             if len(words) == 1 or words[1] == '':
-                position = sdsc.Position(tags=tags)
-
+                if not sp_id.count(':') == 1: #this means sp_id is not a pdb-id
+                    position = sdsc.Position(tags=tags)
+                else:
+                    position = sdsc.PDB_Position(tags=tags)
             else:
 
                 aachange = words[1].replace("\n","")
@@ -207,7 +163,7 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
 
                     if ord(aachange[-1]) > 47 and ord(aachange[-1]) < 58: #if last char is a number
 
-                        pos = int(aachange[1:])
+                        pos = aachange[1:]
 
 
                         position = sdsc.Position(pos=pos,wt_aa=aa1,tags=tags)
@@ -220,9 +176,9 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
                 else: #this means sp_id is a pdb-id
                     if aachange.count('_') == 1: #This means a mutant amino acid type is given
                         aachange = aachange.replace('_','')
-                        position = sdsc.Position(pdb_res_nr=aachange[1:-1],wt_aa=aachange[0],mut_aas = set(aachange[-1]),tags=tags)
+                        position = sdsc.PDB_Position(pdb_res_nr=aachange[1:-1],wt_aa=aachange[0],mut_aas = set(aachange[-1]),tags=tags)
                     else:
-                        position = sdsc.Position(pdb_res_nr=aachange[1:],wt_aa=aachange[0],tags=tags)
+                        position = sdsc.PDB_Position(pdb_res_nr=aachange[1:],wt_aa=aachange[0],tags=tags)
 
         except:
             print("File Format Error: ",line)
@@ -231,6 +187,7 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
         if mrna_fasta == None:
 
             if sp_id[2] == "_":
+                nps.add(sp_id)
                 if not sp_id in np_map:
                     np_map[sp_id] = [position]
                 else:
@@ -273,13 +230,10 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
             """
 
     t1 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("buildQueue Part 1: ",str(t1-t0))
 
     try:
-        db_adress = config.db_adress
-        db_user_name = config.db_user_name
-        db_password = config.db_password
         db_uniprot = MySQLdb.connect(db_adress,db_user_name,db_password,config.mapping_db)
         cursor_uniprot = db_uniprot.cursor()
     except:
@@ -292,25 +246,24 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
         db_uniprot.close()
 
     t2 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("buildQueue Part 2: ",str(t2-t1))
 
     proteins = sequenceScan(config,proteins)
 
     t3 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("buildQueue Part 3: ",str(t3-t2))
 
     t4 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("buildQueue Part 4: ",str(t4-t3))
 
 
     outlist = []
 
     s = len(proteins)
-    if config.verbosity >= 1:
-        print("Total proteins: ",s)
+    print("Total proteins: ",s)
 
     if s > junksize:
 
@@ -339,7 +292,7 @@ def buildQueue(config,filename,junksize,mrna_fasta=None):
         outlist.append(proteins)
 
     t5 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("buildQueue Part 5: ",str(t5-t4))
 
     return outlist
@@ -376,10 +329,9 @@ def nToAA(seq):
         i += 1
     return aa_seq
 
-#@profile
-def getSequences(proteins,config,manager,lock,skip_db = False):
-
+def getSequences(proteins,config,manager,lock,db,cursor):
     number_of_processes = config.proc_n
+    human_id_mapping_path = config.human_id_mapping_path
     pdb_path = config.pdb_path
     pdb_input_asymetric_unit = config.pdb_input_asymetric_unit
     blast_processes = config.blast_processes
@@ -387,25 +339,29 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
     verbose = config.verbose
 
     t0 = time.time()
+    try:
+        db_uniprot = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.mapping_db)
+        cursor_uniprot = db_uniprot.cursor()
+    except:
+        db_uniprot = None
+        cursor_uniprot = None
+    
+    
+    uniprot.getSequences(proteins,'%s/human_info_map.tab' % human_id_mapping_path,db_uniprot,cursor_uniprot)
 
-    uniprot.getSequences(proteins,config)
-
+    if db_uniprot != None:
+        db_uniprot.close()
     t1 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("Time for getSequences Part 1: %s" % str(t1-t0))
 
     #pdb_sequence_map,pdb_pos_map = pdb.getSequences(pdb_dict,pdb_path,AU=pdb_input_asymetric_unit)
 
-    if not skip_db:
-        db,cursor = config.getDB()
-        database.addProtInfos(proteins,db,cursor)
-        db.close()
+    database.addProtInfos(proteins,db,cursor)
 
     t2 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("Time for getSequences Part 2: %s" % str(t2-t1))
-
-    u_acs = proteins.get_protein_u_acs()
 
     background_iu_process = None
     if config.iupred_path != '':
@@ -423,18 +379,16 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
         else:
             mobi_list = []
 
-        n_disorder = 0
         stored_disorder_ids = []
-        for u_ac in u_acs:
-            seq = proteins.get_sequence(u_ac)
+        for u_ac in proteins.protein_map:
+            seq = proteins[u_ac].sequence
             if seq == 0 or seq == 1 or seq == None:
                 continue
-            disorder_scores = proteins.get_disorder_scores(u_ac)
-            disorder_regions = proteins.get_disorder_regions(u_ac)
+            disorder_scores = proteins[u_ac].disorder_scores
+            disorder_regions = proteins[u_ac].disorder_regions
             if disorder_scores == None:
                 if not mobi_lite:
                     in_queue.put((u_ac,seq))
-                    n_disorder += 1
                 else:
                     mobi_list.append('>%s\n%s\n' % (u_ac,seq))
             elif disorder_scores != 'Stored':
@@ -442,17 +396,17 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
                 for pos,score in enumerate(disorder_scores):
                     seq_pos = pos + 1
                     if pos >= len(seq):
-                        config.errorlog.add_warning('Warning: illegal position %s for sequence of %s' % (str(pos),u_ac))
+                        if verbose:
+                            print('Warning: illegal position ',pos,' for sequence of ',u_ac)
                         continue
-                    disorder_scores_datastruct[seq_pos] = score
-
-                proteins.set_disorder_scores(u_ac,disorder_scores_datastruct)
-                proteins.set_disorder_regions(u_ac,disorder_regions)
-                proteins.set_disorder_tool(u_ac,'MobiDB3.0')
+                    disorder_scores_datastruct[seq_pos] = (seq[pos],score)
+                proteins[u_ac].disorder_scores = disorder_scores_datastruct
+                proteins[u_ac].disorder_regions = disorder_regions
+                proteins[u_ac].disorder_tool = 'MobiDB3.0'
 
         if not mobi_lite:
             processes = {}
-            for i in range(1,min(blast_processes,n_disorder) + 1):
+            for i in range(1,blast_processes + 1):
                 try:
                     os.stat("%s/%d" %(cwd,i))
                 except:
@@ -469,9 +423,9 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
                 if out == None:
                     break
                 iupred_parts = out
-                proteins.set_disorder_scores(iupred_parts[0],iupred_parts[2])
-                proteins.set_disorder_regions(iupred_parts[0],iupred_parts[1])
-                proteins.set_disorder_tool(iupred_parts[0],'IUpred')
+                proteins[iupred_parts[0]].disorder_scores = iupred_parts[2]
+                proteins[iupred_parts[0]].disorder_regions = iupred_parts[1]
+                proteins[iupred_parts[0]].disorder_tool = 'IUpred'
 
         else:
             mobi_tmp_file = 'mobi_tmp_file.fasta'
@@ -484,13 +438,14 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
             out,err = p.communicate()
             os.remove(mobi_tmp_file)
             if err != '':
-                config.errorlog.add_warning('Warning: mobidb-lite threw an error: %s' % err)
+                print('Warning: mobidb-lite threw an error: ',err)
             else:
                 entries = []
                 for line in out.split('}'):
                     if line.count('{') == 0:
                         continue
                     line = line + '}'
+                    #print(line)
                     mobi_results = json.loads(line)
                     u_ac = mobi_results['acc']
                     raw_scores = mobi_results['p']
@@ -499,28 +454,24 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
                     for a,b in raw_regions:
                         regions.append([a,b,'disorder'])
                     scores = {}
-                    seq = proteins.get_sequence(u_ac)
-                    disorder_scores = proteins.get_disorder_scores(u_ac)
-                    disorder_regions = proteins.get_disorder_regions(u_ac)
+                    seq = proteins[u_ac].sequence
+                    disorder_scores = proteins[u_ac].disorder_scores
+                    disorder_regions = proteins[u_ac].disorder_regions
                     for pos,score in enumerate(raw_scores):
-                        scores[pos+1] = score
-                    proteins.set_disorder_scores(u_ac,scores)
-                    proteins.set_disorder_regions(u_ac,regions)
-                    proteins.set_disorder_tool(u_ac,'mobidb-lite')
-
+                        scores[str(pos+1)] = (seq[pos],score)
+                    proteins[u_ac].disorder_scores = scores
+                    proteins[u_ac].disorder_regions = regions
+                    proteins[u_ac].disorder_tool = 'mobidb-lite'
 
         t1 = time.time()
-        if config.verbosity >= 2:
+        if verbose:
             print("Time for addIupred Part 1: %s" % str(t1-t0))
 
-        if not skip_db:
-            background_iu_process = database.addIupred(proteins,config)
+        background_iu_process = database.addIupred(proteins,config)
 
-            t2 = time.time()
-            if config.verbosity >= 2:
-                print("Time for addIupred Part 2: %s" % str(t2-t1))
-        else:
-            background_iu_process = None
+        t2 = time.time()
+        if verbose:
+            print("Time for addIupred Part 2: %s" % str(t2-t1))
 
     return background_iu_process
 
@@ -536,9 +487,12 @@ def paraIupred(config,in_queue,out_queue,lock):
 
         (u_ac,seq) = inp
 
+        #print seq
+
+
         p = subprocess.Popen(['python3','%s/iupred2a.py' % iupred_path,seq,'glob'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
         out,err = p.communicate()
-
+        #print out
         after_glob = False
         iupred_parts = [u_ac,[],{}]
         for line in out.split('\n'):
@@ -558,7 +512,7 @@ def paraIupred(config,in_queue,out_queue,lock):
             if after_glob:
                 if len(words) < 3:
                     continue
-                iupred_parts[2][int(words[0])] = words[2]
+                iupred_parts[2][words[0]] = (words[1],words[2])
 
         with lock:
             out_queue.put(iupred_parts)
@@ -582,11 +536,14 @@ def paraBlast(config,process_queue_blast,out_queue,lock,i,err_queue):
         try:
             (gene,seq) = inp
             target_name = gene.replace("/","")
+            #print  gene,seq
             structures = blast.blast(seq,target_name,blast_path,blast_db_path,nr=option_number_of_templates,seq_thresh=option_seq_thresh,cov_thresh=option_ral_thresh,cwd = "%s/%d" %(cwd,i))
-
+            #print gene,structures
+            #print "Blast",len(structures)
             structures = templateSelection.selectTemplates(structures,pdb_path)
+            #print "Select",len(structures)
             structures = templateFiltering.filterTemplates(structures,option_seq_thresh,option_res_thresh,option_ral_thresh)
-
+            #print "Filter",len(structures)
             with lock:
                 out_queue.put((gene,structures))
         except:
@@ -595,19 +552,21 @@ def paraBlast(config,process_queue_blast,out_queue,lock,i,err_queue):
             with lock:
                 err_queue.put((e,f,g,gene))
 
-#@profile
-def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
+def autoTemplateSelection(config,db,cursor,manager,lock,proteins,search_tool='MMseqs2'):
 
     blast_processes = config.blast_processes
     option_seq_thresh = config.option_seq_thresh
     option_res_thresh = config.option_res_thresh
     cwd = os.getcwd()
     pdb_path = config.pdb_path
-    errorlog = config.errorlog
+    errorlog = config.errorlog_path
+
+    mmseqs2_path = config.mmseqs2_path
+    mmseqs2_db_path = config.mmseqs2_db_path
 
     verbose = config.verbose
 
-    if config.verbosity >= 1:
+    if verbose:
         print('Sequence search with: ',search_tool)
 
     if search_tool == 'Blast': #Legacy
@@ -619,6 +578,10 @@ def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
         blast_queues = [process_queue_blast]
         n = 0
         gene_error_map = {}
+
+        #seq_map = {}
+
+        #print gene_sequence_map,db,cursor,blast_path,blast_db_path
 
         for gene in new_genes:
             seq = gene_sequence_map[gene][0]
@@ -638,6 +601,7 @@ def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
         t1 = time.time()
 
         #"""paralized blasting of single sequences  
+        #print "before parablast"
         t12 = 0.0
         t3 = 0.0
         t2 = 0.0
@@ -666,9 +630,13 @@ def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
                     break
                 (e,f,g,gene) = err
                 errortext = "BLAST Error: %s\n%s\n\n" % (gene,'\n'.join([str(e),str(f),str(g)]))
-                errorlog.add_error(error_text)
+                f = open(errorlog,'a')
+                f.write(errortext)
+                f.close()
+                No_Errors = False
 
             t2 += time.time()
+            #print "after parablast"
 
             template_map = {}
             out_queue.put(None)
@@ -684,7 +652,7 @@ def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
 
             t3 += time.time()
 
-        if config.verbosity >= 2:
+        if verbose:
             print("Template Selection Part 1: %s" % (str(t1-t0)))
             print("Template Selection Part 2: %s" % (str(t2-t12)))
             print("Template Selection Part 3: %s" % (str(t3-t2)))
@@ -692,128 +660,97 @@ def autoTemplateSelection(config,manager,lock,proteins,search_tool='MMseqs2'):
     elif search_tool == 'MMseqs2':
         t0 = time.time()
 
-        raw_structure_map,pdb_ids = MMseqs2.search(proteins,config)
+        mmseqs_tmp_folder = config.mmseqs_tmp_folder
+        raw_structure_map,pdb_ids = MMseqs2.search(proteins,mmseqs2_db_path,mmseqs2_path,mmseqs_tmp_folder,option_seq_thresh,verbose=verbose)
 
         t1 = time.time()
 
         templateSelection.filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,blast_processes,proteins)
 
         t2 = time.time()
-        if config.verbosity >= 2:
+        if verbose:
             print("Template Selection Part 1: %s" % (str(t1-t0)))
             print("Template Selection Part 2: %s" % (str(t2-t1)))
 
     return
 
-#@profile
-def paraAlignment(config,manager,lock,proteins,skip_db = False):
+def paraAlignment(config,db,cursor,manager,lock,proteins):
 
+    No_Errors = True
     alignment_processes = config.alignment_processes
     pdb_path = config.pdb_path
     smiles_path = config.smiles_path
     inchi_path = config.inchi_path
     verbose = config.verbose
-    errorlog = config.errorlog
+    errorlog = config.errorlog_path
     t0 = time.time()
     input_queue = manager.Queue()
     err_queue = manager.Queue()
 
-    t1 = time.time()
-    if config.verbosity >= 2:
-        print("Alignment Part 1: %s" % (str(t1-t0)))
-
-    if not skip_db:
-        db,cursor = config.getDB()
-        database.getAlignments(proteins,db,cursor,config)
-        db.close()
-
-    in_queues = [input_queue] #partioning the parallized alignment part shall reduce the memory usage, by safing the alignments to the database every 1000 proteins.
+    in_queues = [input_queue] #partioning the parallized alignment part shall reduce the memory usage, by safing the alignments to the database every 1000 genes.
 
     n = 0
-    align_sizes = []
-    u_acs = proteins.get_protein_u_acs()
-
-    for u_ac in u_acs:
-        annotation_list = proteins.get_protein_annotation_list(u_ac)
-        for (pdb_id,chain) in annotation_list:
-
-            if proteins.is_annotation_stored(pdb_id,chain,u_ac):
-                continue
-
-            oligo = proteins.get_oligo(pdb_id,chain)
-            seq = proteins.get_sequence(u_ac)
-            aaclist = proteins.getAACList(u_ac)
-
-            input_queue.put((u_ac,pdb_id,chain,oligo,seq,aaclist))
+    for u_ac in proteins.protein_map:
+        for (pdb_id,chain) in proteins[u_ac].structure_annotations:
+            input_queue.put((u_ac,pdb_id,chain))
 
         if n == 1000:
             input_queue = manager.Queue()
             in_queues.append(input_queue)
-            align_sizes.append(n)
             n = 0
         n += 1
 
-    align_sizes.append(n)
+    t1 = time.time()
+    if verbose:
+        print("Alignment Part 1: %s" % (str(t1-t0)))
+
+    database.getAlignments(proteins,db,cursor,verbose=verbose)
 
     t2 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("Alignment Part 2: %s" % (str(t2-t1)))
 
     input_queue = manager.Queue()
     out_queue = manager.Queue()
 
-    n_mappings = 0
-
-    u_acs = proteins.get_protein_u_acs()
-
-    for u_ac in u_acs:
-        if not proteins.is_protein_stored(u_ac):
+    for u_ac in proteins.protein_map:
+        if not proteins[u_ac].stored:
             continue
 
         all_stored = True
-        positions = proteins.get_position_ids(u_ac)
-
-        for pos in positions:
-            if not proteins.is_position_stored(u_ac,pos):
+        for pos in proteins[u_ac].positions:
+            if not proteins[u_ac].positions[pos].stored:
                 all_stored = False
                 break
         if all_stored:
             continue
 
-        annotation_list = proteins.get_protein_annotation_list(u_ac)
-
-        for (pdb_id,chain) in annotation_list:
-            if not proteins.is_annotation_stored(pdb_id,chain,u_ac):
-                continue
-            structure_id = proteins.get_structure_db_id(pdb_id,chain)
-            target_seq,template_seq = proteins.get_alignment(u_ac,pdb_id,chain)
-            aaclist = proteins.getAACList(u_ac)
-            prot_id = proteins.get_protein_db_id(u_ac)
-            input_queue.put((u_ac,pdb_id,chain,structure_id,target_seq,template_seq,aaclist,prot_id))
-            n_mappings += 1
+        for u_ac in proteins.protein_map:
+            for (pdb_id,chain) in proteins[u_ac].structure_annotations:
+                input_queue.put((u_ac,pdb_id,chain))
 
     processes = {}
-    for i in range(1,min(n_mappings,alignment_processes) + 1):
-        p = multiprocessing.Process(target=paraMap, args=(config,input_queue,out_queue,lock))
+    for i in range(1,alignment_processes + 1):
+        p = multiprocessing.Process(target=paraMap, args=(config,input_queue,out_queue,lock,proteins))
         processes[i] = p
         p.start()
     for i in processes:
         processes[i].join()
 
-    if config.profiling:
-        profile = cProfile.Profile()
-        profile.enable()
+    total_mappings = []
+    mutation_updates = []
 
     out_queue.put(None)
     while True:
         out = out_queue.get()
         if out == None:
             break
-        (u_ac,pdb_id,chain,sub_infos) = out
-        proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
+        (mutation_updates_part,mappings) = out
+        mutation_updates += mutation_updates_part
+        total_mappings += mappings
 
     t3 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("Alignment Part 3: %s" % (str(t3-t2)))
 
     t31 = 0.0
@@ -823,31 +760,23 @@ def paraAlignment(config,manager,lock,proteins,skip_db = False):
     t7 = 0.0
     t8 = 0.0
     t9 = 0.0
+    gene_template_alignment_map = {}
+    template_id_map = {}
+    alignment_insertion_list = []
+    structure_insertion_list = set()
 
-    if config.profiling:
-        align_profile = ['u_ac\tpdb_id\tchain\ttime\tseq_len\tlen(alignment_pir)\tpid']
-
-    for pos,input_queue in enumerate(in_queues):
-
+    for input_queue in in_queues:
         t31 += time.time()
-        alignment_insertion_list = []
-        structure_insertion_list = set()
         out_queue = manager.Queue()
         error_queue = manager.Queue()
         err_queue = manager.Queue()
         processes = {}
-        align_size = align_sizes[pos] #number of todo alignments in input_queue
-
-        if config.profiling:
-            profile.disable()
-        for i in range(1,min(align_size,alignment_processes) + 1):
-            p = multiprocessing.Process(target=align, args=(config,input_queue,out_queue,error_queue,lock,err_queue))
+        for i in range(1,alignment_processes + 1):
+            p = multiprocessing.Process(target=align, args=(config,input_queue,out_queue,error_queue,lock,err_queue,proteins))
             processes[i] = p
             p.start()
         for i in processes:
             processes[i].join()
-        if config.profiling:
-            profile.enable()
             
         err_queue.put(None)
         multiple_errors = set()
@@ -860,8 +789,12 @@ def paraAlignment(config,manager,lock,proteins,skip_db = False):
                 continue
             multiple_errors.add((e,gene))
             errortext = "Alignment Error: %s, %s:%s\n%s\n%s\n%s\n\n" % (gene,pdb_id,chain,'\n'.join([str(e)]),str(f),str(g))
-            errorlog.add_error(errortext)
+            f = open(errorlog,'a')
+            f.write(errortext)
+            f.close()
+            No_Errors = False
 
+        #print "after alignment"
         t4 += time.time()
 
         error_map = {}
@@ -870,43 +803,44 @@ def paraAlignment(config,manager,lock,proteins,skip_db = False):
             err = error_queue.get()
             if err == None:
                 break
-            (error,u_ac,pdb_id,chain) = err
-
-            proteins.remove_annotation(u_ac,pdb_id,chain)
-
-            if not u_ac in error_map:
-                error_map[u_ac] = {}
+            (error,gene,pdb_id,chain) = err
+            if not gene in error_map:
+                error_map[gene] = {}
                 #Only 1 error per gene
-                error_map[u_ac][(pdb_id,chain)] = error
+                error_map[gene][(pdb_id,chain)] = error
 
-        for u_ac in error_map:
-            for (pdb_id,chain) in error_map[u_ac]:
-                errortext = "Parse error during alignment: %s - %s\n\n" % (u_ac,str(error_map[u_ac][(pdb_id,chain)]))
-                errorlog.add_error(errortext)
+        for gene in error_map:
+            for (pdb_id,chain) in error_map[gene]:
+                errortext = "Parse error during alignment: %s - %s\n\n" % (gene,str(error_map[gene][(pdb_id,chain)]))
+                f = open(errorlog,'a')
+                f.write(errortext)
+                f.close()
 
         out_queue.put(None)
+
 
         while True:
             out = out_queue.get()
             if out == None:
                 break
-            (u_ac,pdb_id,chain,alignment_pir,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos,profile_entry) = out
+            (u_ac,pdb_id,chain,sub_infos,alignment_pir,aaclist,update_map,seq_id,coverage,structure) = out
+            proteins[u_ac].structure_annotations[(pdb_id,chain)].sequence_identity = seq_id
+            proteins[u_ac].structure_annotations[(pdb_id,chain)].coverage = coverage
+            proteins.structures[(pdb_id,chain)] = structure
+            for old_aac_base in update_map:
+                pos = old_aac_base[1:]
+                database_pos = pos
+                if int(pos) in pos_res_map:
+                    database_pos = pos_res_map[int(pos)]
+                new_aac_base = '%s%s' % (update_map[old_aac_base][1],pos)
+                database_aac_base = '%s%s' % (update_map[old_aac_base][1],database_pos)
+                mutation_id = aaclist[new_aac_base]
+                mutation_updates.append((mutation_id,database_aac_base))
 
-            if config.profiling:
-                align_profile.append('\t'.join(profile_entry))
-
-            proteins.set_coverage(u_ac,pdb_id,chain,coverage)
-            proteins.set_sequence_id(u_ac,pdb_id,chain,seq_id)
-            proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
-
-            proteins.set_interaction_partners(pdb_id,interaction_partners)
-            proteins.set_chain_type_map(pdb_id,chain_type_map)
-
-            proteins.set_oligo(pdb_id,chain,oligo)
+            proteins[u_ac].structure_annotations[(pdb_id,chain)].sub_infos = sub_infos
 
             structure_insertion_list.add((pdb_id,chain))
-            prot_id = proteins.get_protein_db_id(u_ac)
-            alignment_insertion_list.append((u_ac,prot_id,pdb_id,chain,alignment_pir))
+            alignment_insertion_list.append((proteins[u_ac].database_id,pdb_id,chain,alignment_pir))
 
         del input_queue
         del out_queue
@@ -914,46 +848,35 @@ def paraAlignment(config,manager,lock,proteins,skip_db = False):
 
         t5 += time.time()
 
-        if not skip_db:
-            t6 += time.time()
-            db,cursor = config.getDB()
-            database.insertStructures(structure_insertion_list,db,cursor,smiles_path,inchi_path,pdb_path,proteins)
+    database.updateMutations(mutation_updates,db,cursor)
 
-            t7 += time.time()
+    t6 += time.time()
+    database.insertStructures(structure_insertion_list,db,cursor,smiles_path,inchi_path,pdb_path,proteins)
 
-            t8 += time.time()
-            database.insertAlignments(alignment_insertion_list,proteins,db,cursor,config)
-            db.close()
-            t9 += time.time()
+    t7 += time.time()
 
-    if not skip_db:
-        db,cursor = config.getDB()
-        database.getStoredResidues(proteins,db,cursor,config)
-        db.close()
+    if verbose:
+        print("Amount of mappings based on stored structures: ",len(total_mappings))
 
-    if config.profiling:
-        logfile = '/'.join(config.errorlog_path.split('/')[:-1]) + '/align_profile.tsv'
-        f = open(logfile,'w')
-        f.write('\n'.join(align_profile))
-        f.close()
+    database.getStoredResidues(proteins,db,cursor)
 
-        profile.disable()
-        cum_stats = pstats.Stats(profile)
-        cum_stats.sort_stats('cumulative')
-        cum_stats.print_stats()
+    t8 += time.time()
+    database.insertAlignments(alignment_insertion_list,proteins,db,cursor)
 
-    if config.verbosity >= 2:
+    t9 += time.time()
+
+    #print "Template amounts, before and after: ",temp_amount,after_amount
+    if verbose:
         print("Alignment Part 4: %s" % (str(t4-t31)))
         print("Alignment Part 5: %s" % (str(t5-t4)))
-        if not skip_db:
-            print("Alignment Part 6: %s" % (str(t6-t5)))
-            print("Alignment Part 7: %s" % (str(t7-t6)))
-            print("Alignment Part 8: %s" % (str(t8-t7)))
-            print("Alignment Part 9: %s" % (str(t9-t8)))
+        print("Alignment Part 6: %s" % (str(t6-t5)))
+        print("Alignment Part 7: %s" % (str(t7-t6)))
+        print("Alignment Part 8: %s" % (str(t8-t7)))
+        print("Alignment Part 9: %s" % (str(t9-t8)))
 
-    return
+    return No_Errors
 
-def paraMap(config,input_queue,out_queue,lock):
+def paraMap(config,input_queue,out_queue,lock,proteins):
     pdb_path = config.pdb_path
     with lock:
         input_queue.put(None)
@@ -963,22 +886,50 @@ def paraMap(config,input_queue,out_queue,lock):
         if inp == None:
             return
 
-        (u_ac,pdb_id,chain,structure_id,target_seq,template_seq,aaclist,prot_id) = inp
+        (u_ac,pdb_id,chain) = inp
+        structure_id = proteins.structures[(pdb_id,chain)].database_id
 
         template_page = pdb.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
         if template_page == None:
             continue
         seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,onlySeqResMap = True)
 
+        target_seq,template_seq = proteins[u_ac].structure_annotations[(pdb_id,chain)].alignment
+
+        aaclist = proteins[u_ac].getAACList()
+
         sub_infos,errors,aaclist,update_map = globalAlignment.getSubPos(target_seq,template_seq,aaclist,seq_res_map)
 
+        #structure of sub_infos: {aacbase:(res_id,template_aa)}
+
+        mutation_updates = []
+
+        for old_aac_base in update_map:
+            pos = old_aac_base[1:]
+            database_pos = pos
+            if int(pos) in pos_res_map:
+                database_pos = pos_res_map[int(pos)]
+            new_aac_base = '%s%s' % (update_map[old_aac_base][1],pos)
+            database_aac_base = '%s%s' % (update_map[old_aac_base][1],database_pos)
+            mutation_id = aaclist[new_aac_base]
+            mutation_updates.append((mutation_id,database_aac_base))
+
+        mappings = []
+        for aacbase in aaclist:
+            if not aacbase in sub_infos: #this can happen for given positions > length of the sequence
+                continue
+            m_id = aaclist[aacbase]
+            res_id,t_aa = sub_infos[aacbase]
+            if res_id == None: #This happens, when the position is mapped to a gap in the alignment
+                continue
+            mappings.append((m_id,structure_id,res_id,proteins[u_ac].database_id))
+
         with lock:
-            out_queue.put((u_ac,pdb_id,chain,sub_infos))
+            out_queue.put((mutation_updates,mappings))
 
     return
 
-#@profile
-def align(config,input_queue,out_queue,error_queue,lock,err_queue):
+def align(config,input_queue,out_queue,error_queue,lock,err_queue,proteins):
     pdb_path = config.pdb_path
     option_seq_thresh = config.option_seq_thresh
 
@@ -990,41 +941,35 @@ def align(config,input_queue,out_queue,error_queue,lock,err_queue):
         if inp == None:
 
             return
-        if config.profiling:
-            t0 = time.time()
-        (u_ac,pdb_id,chain,oligo,seq,aaclist) = inp
+
+        (u_ac,pdb_id,chain) = inp
 
         try:
-            (template_page,interaction_partners,chain_type_map,oligo) = pdb.getStandardizedPdbFile(pdb_id,pdb_path,oligo=oligo)
+            (template_page,error,part1_times,structure) = pdb.getStandardizedPdbFile(pdb_id,chain,proteins.structures[(pdb_id,chain)],pdb_path)
+            
+            if error == None:
+                aaclist = proteins[u_ac].getAACList()
+                (coverage,seq_id,sub_infos,alignment_pir,errors,times,aaclist,update_map) = globalAlignment.alignBioPython(u_ac,proteins[u_ac].sequence,pdb_id,template_page,chain,aaclist)
 
-            align_out = globalAlignment.alignBioPython(config,u_ac,seq,pdb_id,template_page,chain,aaclist)
+                if sub_infos == None:
+                    for err in errors:
+                        with lock:
+                            error_queue.put((err,gene,pdb_id,chain))
+                    continue
 
-            if isinstance(align_out, str):
-                with lock:
-                    error_queue.put((align_out,u_ac,pdb_id,chain))
-                continue
-
-            (coverage,seq_id,sub_infos,alignment_pir,errors,times,aaclist,update_map) = align_out
-
-            if sub_infos == None or seq_id == None:
                 for err in errors:
+                    #[e,f,g] = sys.exc_info()
+                    #g = traceback.format_exc()
                     with lock:
-                        error_queue.put((err,u_ac,pdb_id,chain))
-                continue
-            if len(errors) > 0:
-                for err in errors:
-                    with lock:
-                       error_queue.put((err,u_ac,pdb_id,chain))
-                continue
-            if 100.0*seq_id >= option_seq_thresh:
-                with lock:
-                    if config.profiling:
-                        t1 = time.time()
-                        profile_entry = (u_ac,pdb_id,chain,str(t1-t0),str(len(seq)),str(len(alignment_pir)),str(multiprocessing.current_process().pid))
-                    else:
-                        profile_entry = None
-                    out_queue.put((u_ac,pdb_id,chain,alignment_pir,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos,profile_entry))
+                        error_queue.put((err,gene,pdb_id,chain))
+                #print "after alignment"
 
+                if 100.0*seq_id >= option_seq_thresh:
+                    with lock:
+                        out_queue.put((u_ac,pdb_id,chain,sub_infos,alignment_pir,aaclist,update_map,seq_id,coverage,structure))
+            else:
+                with lock:
+                    error_queue.put((error,u_ac,pdb_id,chain))
         except:
             [e,f,g] = sys.exc_info()
             g = traceback.format_exc()
@@ -1032,137 +977,7 @@ def align(config,input_queue,out_queue,error_queue,lock,err_queue):
                 err_queue.put((e,f,g,u_ac,pdb_id,chain))
     
 
-def classification(proteins,config):
-
-    u_acs = proteins.get_protein_u_acs()
-
-    for u_ac in u_acs:
-        package = []
-
-        positions = proteins.get_position_ids(u_ac)
-
-        annotation_list = proteins.get_protein_annotation_list(u_ac)
-
-        iupred_map = proteins.get_disorder_scores(u_ac)
-
-        for (pdb_id,chain) in annotation_list:
-
-            sub_infos = proteins.get_sub_infos(u_ac,pdb_id,chain)
-
-            resolution = proteins.get_resolution(pdb_id)
-            chains = proteins.get_complex_chains(pdb_id)
-
-            seq_id = proteins.get_sequence_id(u_ac,pdb_id,chain)
-            if seq_id == None:
-                continue
-            cov = proteins.get_coverage(u_ac,pdb_id,chain)
-
-            qual = templateFiltering.qualityScore(resolution,cov,seq_id)
-
-            for pos in positions:
-                aacbase = proteins.get_aac_base(u_ac,pos)
-                if not aacbase in sub_infos:
-                    continue
-                sub_info = sub_infos[aacbase]
-                res_nr = sub_info[0]
-
-                if res_nr == None:
-                    continue
-
-                if not proteins.contains_residue(pdb_id,chain,res_nr):
-                    continue
-                res_aa = proteins.get_residue_aa(pdb_id,chain,res_nr)
-
-                identical_aa = res_aa == aacbase[0]
-
-                sld = proteins.get_residue_sld(pdb_id,chain,res_nr)
-                scd = proteins.get_residue_scd(pdb_id,chain,res_nr)
-                homomer_dists = proteins.get_residue_homomer_dists(pdb_id,chain,res_nr)
-                centralities = proteins.get_residue_centralities(pdb_id,chain,res_nr)
-                modres = proteins.get_residue_modres(pdb_id,chain,res_nr)
-                b_factor = proteins.get_residue_b_factor(pdb_id,chain,res_nr)
-                rsa = proteins.get_residue_rsa(pdb_id,chain,res_nr)
-                ssa = proteins.get_residue_ssa(pdb_id,chain,res_nr)
-                profile = proteins.get_residue_interaction_profile(pdb_id,chain,res_nr)
-
-                phi = proteins.get_residue_phi(pdb_id,chain,res_nr)
-                psi = proteins.get_residue_psi(pdb_id,chain,res_nr)
-
-                intra_ssbond, ssbond_length, intra_link, link_length, cis_conformation, cis_follower = proteins.get_residue_link_information(pdb_id,chain,res_nr)
-
-                (inter_chain_median_kd,inter_chain_dist_weighted_kd,
-                inter_chain_median_rsa,inter_chain_dist_weighted_rsa,intra_chain_median_kd,
-                intra_chain_dist_weighted_kd,intra_chain_median_rsa,intra_chain_dist_weighted_rsa) = proteins.get_residue_milieu(pdb_id,chain,res_nr)
-                
-                min_hd,min_ld,min_md,min_id,min_cd,min_rd,min_dd,min_lig,min_metal,min_ion,iacs = proteins.structures[(pdb_id,chain)].residues[res_nr].get_shortest_distances(chains)
-
-                minimal_distances = []
-                if min_cd != None:
-                    minimal_distances.append(min_cd)
-                if min_dd != None:
-                    minimal_distances.append(min_dd)
-                if min_rd != None:
-                    minimal_distances.append(min_rd)
-                if min_ld != None:
-                    minimal_distances.append(min_ld)
-                if min_md != None:
-                    minimal_distances.append(min_md)
-                if min_id != None:
-                    minimal_distances.append(min_id)
-
-                if len(minimal_distances) == 0:
-                    min_minimal_distances = 2.0
-                else:
-                    min_minimal_distances = min(minimal_distances)
-
-                if min_minimal_distances < 1.2:
-                    continue
-
-                if rsa == None:
-                    sc = None
-                else:
-                    if rsa > config.surface_threshold:
-                        sc = "Surface"
-                    else:
-                        sc = "Core"
-
-                raw_rin_class,raw_rin_simple_class = profile.getClass()
-
-                if raw_rin_class == 'No interaction':
-                    rin_class = sc
-                else:
-                    rin_class = raw_rin_class
-
-                if raw_rin_simple_class == 'No interaction':
-                    rin_simple_class = sc
-                else:
-                    rin_simple_class = raw_rin_simple_class
-
-                Class = rin_class
-                simpleClass = rin_simple_class
-
-                proteins.add_residue_classification(pdb_id,chain,res_nr,Class,simpleClass)
-
-                mapping = (qual,seq_id,cov,rsa,ssa,min_ld,min_md,min_id,min_cd,min_rd,min_dd,min_hd,profile,centralities,
-                            phi,psi,intra_ssbond, ssbond_length, intra_link, link_length, cis_conformation, cis_follower,
-                            inter_chain_median_kd,inter_chain_dist_weighted_kd,
-                            inter_chain_median_rsa,inter_chain_dist_weighted_rsa,intra_chain_median_kd,
-                            intra_chain_dist_weighted_kd,intra_chain_median_rsa,intra_chain_dist_weighted_rsa,b_factor,modres,
-                            Class,simpleClass,identical_aa)
-
-                proteins.add_pos_res_mapping(u_ac,pos,pdb_id,chain,res_nr,mapping)
-
-    for u_ac in proteins.get_protein_u_acs():
-        for pos in proteins.get_position_ids(u_ac):
-            proteins.classify(u_ac,pos,config)
-
-    return
-
-#@profile
-def paraAnnotate(config,manager,lock,proteins, lite = False):
-    if config.profiling:
-        profile = cProfile.Profile()
-        profile.enable()
+def paraAnnotate(config,db,cursor,manager,lock,No_Errors,proteins):
     annotation_processes = config.annotation_processes
     anno_session_mapping = config.anno_session_mapping
     error_annotations_into_db = config.error_annotations_into_db
@@ -1171,7 +986,7 @@ def paraAnnotate(config,manager,lock,proteins, lite = False):
     inchi_path = config.inchi_path
     pdb_path = config.pdb_path
     verbose = config.verbose
-    errorlog = config.errorlog
+    errorlog = config.errorlog_path
 
     t0 = time.time()
     
@@ -1191,40 +1006,33 @@ def paraAnnotate(config,manager,lock,proteins, lite = False):
 
     size_map = {}
     max_size = 0
-
-    complex_list = proteins.get_complex_list()
-
-    for pdb_id in complex_list:
-        if proteins.is_complex_stored(pdb_id):
+    for (pdb_id,chain) in proteins.structures:
+        if proteins.structures[(pdb_id,chain)].stored:
             continue
-        s = len(proteins.get_complex_chains(pdb_id))
+        #print(proteins.structures[(pdb_id,chain)].status())
+        s = len(proteins.structures[(pdb_id,chain)].chains)
         if not s in size_map:
-            size_map[s] = set()
+            size_map[s] = []
             if s > max_size:
                 max_size = s
-        size_map[s].add(pdb_id) 
+        size_map[s].append(pdb_id) 
 
     n_of_structs = 0
     while max_size > 0:
         if max_size in size_map:
             for pdb_id in size_map[max_size]:
-                if not lite:
-                    input_queue.put(pdb_id)
-                else:
-                    target_dict = proteins.get_target_dict(pdb_id)
-                    input_queue.put((pdb_id,target_dict))
-
+                input_queue.put(pdb_id)
                 n_of_structs += 1
         max_size -= 1
 
-    if config.verbosity >= 2:
+    if verbose:
         t01 = time.time()
         print("Annotation Part 0.1: %s" % (str(t01-t0)))
     
 
-    total_structural_analysis = {}
-
-    interaction_structures = set()
+    total_annotations = {}
+    interacting_structure_dict = {}
+    complex_profiles = {}
 
     out_queue = manager.Queue()
     error_queue = manager.Queue()
@@ -1232,21 +1040,16 @@ def paraAnnotate(config,manager,lock,proteins, lite = False):
     processes = {}
     if annotation_processes > n_of_structs:
         annotation_processes = n_of_structs
-    if config.verbosity >= 1:
-        print("Going into Annotation with ",annotation_processes,' processes and ',n_of_structs,'structures')
-
-    if config.profiling:
-        profile.disable()
+    if verbose:
+        print("Going into Annotation with ",annotation_processes,' processes')
     for i in range(1,annotation_processes + 1):
-        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue,lite))
+        p = multiprocessing.Process(target=annotate, args=(config,input_queue,out_queue,error_queue,lock,err_queue))
         processes[i] = p
         p.start()
     for i in processes:
         processes[i].join()
-    if config.profiling:
-        profile.enable()
 
-    if config.verbosity >= 2:
+    if verbose:
         t02 = time.time()
         print("Annotation Part 0.2: %s" % (str(t02-t01)))
 
@@ -1257,97 +1060,71 @@ def paraAnnotate(config,manager,lock,proteins, lite = False):
             break
         (e,f,g,pdb_id) = err
         errortext = "Annotation Error: %s\n%s\n\n" % (pdb_id,'\n'.join([str(e),str(f),str(g)]))
-        errorlog.add_error(errortext)
+        f = open(errorlog,'a')
+        f.write(errortext)
+        f.close()
+        No_Errors = False
 
-    if config.verbosity >= 2:
+    if verbose:
         t1 = time.time()
         print("Annotation Part 1: %s" % (str(t1-t02)))
     
     with lock:
         out_queue.put(None)
 
-    structure_list = proteins.get_structure_list()
-    cum_stats = None
-    if config.profiling:
-        anno_profile = ['u_ac\ttime\tlen(anno_chain_dict)\tpid']
-
     while True:
         out = out_queue.get()
         if out == None:
             break
-        (structural_analysis_dict,pdb_id,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,proc_id,profile_entry) = out
-        if config.profiling:
-            anno_profile.append('\t'.join(profile_entry))
-
-            stat_file = 'profile-%s.out' % proc_id
-            if os.path.exists(stat_file):
-                if cum_stats == None:
-                    cum_stats = pstats.Stats(stat_file)
-                else:
-                    cum_stats.add(stat_file)
-                os.remove(stat_file)
+        (annotation_chain_dict,pdb_id,interacting_chain_map,residue_residue_dict,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = out
+        for chain in interacting_chain_map:
+            interacting_structure_dict[(pdb_id,chain)] = interacting_chain_map[chain]
         
-        for chain in structural_analysis_dict:
-            total_structural_analysis[(pdb_id,chain)] = structural_analysis_dict[chain]
+        for chain in annotation_chain_dict:
+            annotations = annotation_chain_dict[chain]
 
-            if not (pdb_id,chain) in structure_list:
-                interaction_structures.add((pdb_id,chain))
+            total_annotations[(pdb_id,chain)] = annotations,residue_residue_dict[chain]
 
-            if lite:
-                for res_id in structural_analysis_dict[chain]:
-                    residue = structural_analysis_dict[chain][res_id]
-                    proteins.add_residue(pdb_id,chain,res_id,residue)
+        complex_profiles[pdb_id] = ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
-        proteins.set_lig_profile(pdb_id,ligand_profiles)
-        proteins.set_ion_profile(pdb_id,ion_profiles)
-        proteins.set_metal_profile(pdb_id,metal_profiles)
-        proteins.set_chain_chain_profile(pdb_id,chain_chain_profiles)
+    if verbose:
+        t11 = time.time()
+        print('Annotation Part 1.1: %s' % (str(t11-t1)))
+    interacting_structure_ids = database.insertInteractingChains(interacting_structure_dict,db,cursor,smiles_path,inchi_path,pdb_path)
 
-    del out_queue
+    if verbose:
+        t12 = time.time()
+        print('Annotation Part 1.2: %s' % (str(t12-t11)))
+    complex_profile = database.insertComplexes(complex_profiles,db,cursor)
 
-    if not lite:
-        db,cursor = config.getDB()
-        interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,db,cursor,smiles_path,inchi_path,pdb_path)
+    if verbose:
+        t2  = time.time()
+        print("Annotation Part 2: %s" % (str(t2-t12)))
 
-        database.insertComplexes(proteins,db,cursor,smiles_path,inchi_path,pdb_path)
+    database.insertResidues(total_annotations,db,cursor,interacting_structure_ids,proteins)
 
-        database.insertResidues(total_structural_analysis,db,cursor,interacting_structure_ids,proteins)
+    if verbose:
+        t21  = time.time()
+        print("Annotation Part 2.1: %s" % (str(t21-t2)))
 
-    if config.verbosity >= 2:
-        t3 = time.time()
-        print("Annotation Part 2: %s" % (str(t3-t1)))
+    if verbose:
+        t3  = time.time()
+        print("Annotation Part 3: %s" % (str(t3-t21)))
 
-    classification(proteins,config)
-
-    if not lite:
-
-        database.insertClassifications(db,cursor,proteins,config)
-
-        db.close()
-
-    if config.verbosity >= 2:
+    if verbose:
         t4 = time.time()
-        print("Annotation Part 3: %s" % (str(t4-t3)))
+        print("Annotation Part 4: %s" % (str(t4-t3)))
 
-    if config.profiling:
-        if cum_stats != None:
-            cum_stats.add(profile)
-            cum_stats.sort_stats('cumulative')
-            cum_stats.print_stats()
+    database.insertClassifications(db,cursor,proteins,config,complex_profiles)
 
-    if config.profiling:
-        logfile = '/'.join(config.errorlog_path.split('/')[:-1]) + '/anno_profile.tsv'
-        f = open(logfile,'w')
-        f.write('\n'.join(anno_profile))
-        f.close()
+    if verbose:
+        t5 = time.time()
+        print("Annotation Part 5: %s" % (str(t5-t4)))
 
-    return
+    return No_Errors
 
-#@profile
-def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,lite):
-    if config.profiling:
-        pr = cProfile.Profile()
-        pr.enable()
+
+def annotate(config,input_queue,out_queue,error_queue,lock,err_queue):
     neighborhood_calculation = config.neighborhood_calculation
     calculate_interaction_profiles = config.calculate_interaction_profiles
     dssp = config.dssp
@@ -1360,38 +1137,12 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,lite):
     while True:
         inp = input_queue.get()
         if inp == None:
-            if config.profiling:
-                pr.disable()
-                stat_file = 'profile-%s.out' % multiprocessing.current_process().pid
-                pr.dump_stats(stat_file)
             return
-        if config.profiling:
-            t0 = time.time()
-
+        pdb_id = inp
         try:
-            if not lite:
-                pdb_id = inp
-
-                (annotation_chain_dict,errorlist,ligand_profiles,
-                metal_profiles,ion_profiles,chain_chain_profiles) = templateFiltering.structuralAnalysis(pdb_id,pdb_path,dssp_path,rin_db_path,
-                    neighborhood_calculation=neighborhood_calculation,dssp=dssp,milieu_threshold=config.milieu_threshold,
-                    calculate_interaction_profiles=calculate_interaction_profiles,verbosity = config.verbosity)
-
-            else:
-                pdb_id,target_dict = inp
-                (annotation_chain_dict,errorlist,ligand_profiles,
-                metal_profiles,ion_profiles,chain_chain_profiles) = templateFiltering.structuralAnalysis(pdb_id,pdb_path,dssp_path,rin_db_path,
-                    neighborhood_calculation=neighborhood_calculation,dssp=dssp,milieu_threshold=config.milieu_threshold,
-                    calculate_interaction_profiles=calculate_interaction_profiles,verbosity = config.verbosity,target_dict = target_dict)
-
+            annotation_chain_dict,interacting_chain_map,residue_residue_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = templateFiltering.structuralAnalysis(pdb_id,pdb_path,dssp_path,rin_db_path,neighborhood_calculation=neighborhood_calculation,dssp=dssp,calculate_interaction_profiles=calculate_interaction_profiles)
             with lock:
-                if config.profiling:
-                    t1 = time.time()
-                    profile_entry = (pdb_id,str(len(annotation_chain_dict)),str(t1-t0),str(multiprocessing.current_process().pid))
-                else:
-                    profile_entry = None
-                out_queue.put((annotation_chain_dict,pdb_id,ligand_profiles,metal_profiles,
-                               ion_profiles,chain_chain_profiles,multiprocessing.current_process().pid,profile_entry))
+                out_queue.put((annotation_chain_dict,pdb_id,interacting_chain_map,residue_residue_dict,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles))
                 if len(errorlist) > 0:
                     for (error,e,f,g) in errorlist:
                         err_queue.put((error,f,g,pdb_id))
@@ -1401,21 +1152,18 @@ def annotate(config,input_queue,out_queue,error_queue,lock,err_queue,lite):
             with lock:
                 err_queue.put((e,f,g,pdb_id))
 
-#@profile
 def main(filename,config,output_path,main_file_path):
     n_of_cores = config.proc_n
+    species = config.species
     mrna_fasta = config.mrna_fasta
     num_of_cores = config.proc_n
     verbose = config.verbose
     search_tool = config.search_tool
-    errorlog = config.errorlog
+    errorlog = config.errorlog_path
     session = 0 #This can later be used, structman.py could give a specific session id and the pipeline can then expand that session
 
     background_process_MS = None
 
-    #SyncManager.register('Proteins',sdsc.Proteins)
-    #baseManager = SyncManager()
-    #baseManager.start()
     manager = multiprocessing.Manager()
     lock = manager.Lock()
 
@@ -1430,8 +1178,7 @@ def main(filename,config,output_path,main_file_path):
     #annovar-pipeline in case of vcf-file
     if filename.rsplit(".",1)[1] == "vcf":
         anno_db = "%s_annovar" % db_name.rsplit("_",1)[0]
-        if config.verbosity >= 1:
-            print('Convert vcf file format using Annovar')
+        print('Convert vcf file format using Annovar')
         if mrna_fasta != None:
             '... and using mrna file: ',mrna_fasta
         nfname = annovar.annovar_pipeline(filename,config.tax_id,config.annovar_path,config.db_adress,config.db_user_name,config.db_password,anno_db,mrna_fasta,ref_id=config.ref_genome_id)
@@ -1443,36 +1190,41 @@ def main(filename,config,output_path,main_file_path):
     if mrna_fasta_for_annovar:
         mrna_fasta = None
 
+    db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
+    cursor = db.cursor()
+
     t01 = time.time()
 
-    if config.verbosity >= 2:
+    if verbose:
         print("Time for preparation before buildQueue: %s" % (str(t01-t0)))
 
     junksize = 500
 
-    if config.verbosity >= 1:
+    if verbose:
         print("Call buildQueue with chunksize: %s and file: %s" % (str(junksize),nfname))
-    if config.fasta_input:
-        proteins_chunks = parseFasta(config,nfname)
-    else:
-        proteins_chunks = buildQueue(config,nfname,junksize,mrna_fasta=mrna_fasta)
+    proteins_chunks = buildQueue(config,db,cursor,nfname,junksize,mrna_fasta=mrna_fasta)
 
     t02 = time.time()
-    if config.verbosity >= 2:
+    if verbose:
         print("Time for buildQueue: %s" % (str(t02-t01)))
-    if config.verbosity >= 1:
-        print("Number of chunks: ",len(proteins_chunks))
+    
+    print("Number of chunks: ",len(proteins_chunks))
 
     newsession = False
-    if session == 0:
-        db,cursor = config.getDB()     
+    if session == 0:     
         starttime = SQLDateTime()
         session = database.insertSession(starttime,nfname,db,cursor)
-        db.close()
         newsession = True
 
-    errorlog.start(nfname,session)
+    date = time.strftime("%a, %d %b %Y %H:%M:%S", time.gmtime())
+    errortext  = "###############################################################################\n%s:\n%s - Session: %s\n" % (date,nfname,str(session))
 
+    f = open(errorlog,'a')
+    f.write(errortext)
+    f.close()
+
+    errors = []
+    print(errorlog)
     junk_nr = 1 
     for proteins in proteins_chunks:
         if len(proteins) == 0:
@@ -1481,11 +1233,7 @@ def main(filename,config,output_path,main_file_path):
         #transform the protein map into a Proteins object
         proteins = sdsc.Proteins(proteins)
 
-        if config.verbosity >= 3:
-            print('Proteins state after object initialization:')
-            proteins.print_protein_state()
-        if config.verbosity >= 1:
-            print("Chunk %s/%s" % (str(junk_nr),str(len(proteins_chunks))))
+        print("Chunk %s/%s" % (str(junk_nr),str(len(proteins_chunks))))
         junk_nr+=1
         try:
             os.stat("%s/tmp_structman_pipeline" %(output_path))
@@ -1496,66 +1244,50 @@ def main(filename,config,output_path,main_file_path):
 
         try:
             t1 = time.time()
-            if config.verbosity >= 1:
-                print("Before protCheck")
+            print("Before protCheck")
             #check for already stored genes and make all the necessary database interactions
             #sets the fields database_id and stored in the protein objects as well as the stored and non stored ids in the proteins object
-            db,cursor = config.getDB()
             database.protCheck(proteins,session,db,cursor)
 
-            if config.verbosity >= 3:
-                print('Proteins state after protCheck:')
-                proteins.print_protein_state()
-
             t2 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for protCheck: %s" % (str(t2-t1)))
             #check for already stored mutations or position twins and make all the necessary database interactions
             #sets the fields database_id and stored in the position objects
             background_process_MS = database.positionCheck(proteins,session,db,cursor,config)
 
-            if config.verbosity >= 3:
-                print('Proteins state after positionCheck:')
-                proteins.print_protein_state()
-
             t3 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for positionCheck: %s" % (str(t3-t2)))
 
-            if config.verbosity >= 1:
-                print("Before getSequences")
-            background_iu_process = getSequences(proteins,config,manager,lock)
-            db.close()
+            print("Before getSequences")
+            background_iu_process = getSequences(proteins,config,manager,lock,db,cursor)
 
             t4 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for getSequences: %s" % (str(t4-t3)))
 
-            if config.verbosity >= 1:
-                print("Before autoTemplateSelection")
-            autoTemplateSelection(config,manager,lock,proteins,search_tool=search_tool)
+            print("Before autoTemplateSelection")
+            autoTemplateSelection(config,db,cursor,manager,lock,proteins,search_tool=search_tool)
 
             t5 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for Template Selection: %s" % (str(t5-t4)))
 
-            if config.verbosity >= 1:
-                print("Before paraAlignment")
-            paraAlignment(config,manager,lock,proteins)
+            print("Before paraAlignment")
+            No_Errors = paraAlignment(config,db,cursor,manager,lock,proteins)
 
             t6 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for Alignment: %s" % (str(t6-t5)))
 
             if background_iu_process != None:
                 background_iu_process.join() #Disorder values have to finished before the classification happens
 
-            if config.verbosity >= 1:
-                print("Before paraAnnotate")
-            paraAnnotate(config,manager,lock,proteins)
-
+            print("Before paraAnnotate")
+            No_Errors = paraAnnotate(config,db,cursor,manager,lock,No_Errors,proteins)
             t7 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print("Time for Annotation: %s" % (str(t7-t6)))
 
             t1 = time.time()
@@ -1567,7 +1299,7 @@ def main(filename,config,output_path,main_file_path):
 
 
             t2 = time.time()
-            if config.verbosity >= 2:
+            if verbose:
                 print('Resttime for background inserts: ',t2-t1)
 
         #Error-Handling for a whole input line
@@ -1577,7 +1309,10 @@ def main(filename,config,output_path,main_file_path):
             g = traceback.format_exc()
             #print "Pipeline Core Error: ",e,f,g
             errortext = '\n'.join([str(e),str(f),str(g)]) + '\n\n'
-            errorlog.add_error(errortext)
+            f = open(errorlog,'a')
+            f.write(errortext)
+            f.close()
+            No_Errors = False
             if background_process_MS != None:
                 background_process_MS.join()
 
@@ -1589,15 +1324,24 @@ def main(filename,config,output_path,main_file_path):
             pass
         #"""
 
-    errorlog.stop()
+    if No_Errors:
+        errortext  = "Finished without any error\n###############################################################################\n"
+        f = open(errorlog,'a')
+        f.write(errortext)
+        f.close()
+    else:
+        errortext  = "###############################################################################\n"
+        f = open(errorlog,'a')
+        f.write(errortext)
+        f.close()
 
-    db,cursor = config.getDB()
+        print("At least one error occured, please check the errorlog.")
+
     if newsession:
         endtime = SQLDateTime()
         database.updateSession(session,endtime,db,cursor)
     db.close()
 
     tend = time.time()
-    if config.verbosity >= 2:
-        print((tend-t0))
+    print((tend-t0))
     return session

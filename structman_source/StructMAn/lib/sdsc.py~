@@ -1,0 +1,220 @@
+#sdsc: structman datastructures and classes
+
+class Position:
+    __slots__ = ['pos','wt_aa','mut_aas','pos_tags','mut_tags_map','stored','database_id']
+
+    type = 'seq'
+
+    def __init__(self,pos = None,wt_aa='X',mut_aas = set(),tags = None):
+        self.pos = pos #the position in a protein sequence, string or None
+        self.wt_aa = wt_aa #wildtype amino acid type in one letter code
+        self.mut_aas = mut_aas #set of mutant amino acid types in one letter code
+        self.mut_tags_map = {}
+        if len(mut_aas) == 0:
+            self.pos_tags = tags
+        else:
+            self.pos_tags = set()
+            for aa in mut_aas:
+                 self.mut_tags_map[aa] = tags
+        self.stored = False
+        self.database_id = None
+
+    def fuse(self,position):
+        if self.pos != position.pos:
+            raise NameError('Cannot fuse positions with differing pos numbers')
+            return
+        if self.wt_aa != position.wt_aa:
+            print('Warning: fuse positions with different WT AAs:',self.pos,self.wt_aa,position.wt_aa)
+        self.mut_aas = self.mut_aas | position.mut_aas
+        self.pos_tags = self.pos_tags | position.pos_tags
+        for aa in position.mut_tags_map:
+            if not aa in self.mut_tags_map:
+                self.mut_tags_map[aa] = position.mut_tags_map[aa]
+            else:
+                self.mut_tags_map[aa] = self.mut_tags_map[aa] | position.mut_tags_map[aa]
+
+    def add_tags(self,tags):
+        self.pos_tags = self.pos_tags | tags
+
+    def getAACBase(self):
+        return '%s%s' % (self.wt_aa,self.pos)
+
+class PDB_Position(Position):
+    __slots__ = ['pos','pdb_res_nr','wt_aa','mut_aas','pos_tags','mut_tag_map','stored','database_id']
+
+    type = 'pdb'
+
+    def __init__(self,pos = None,pdb_res_nr = None,wt_aa='X',mut_aas = set(),tags = None):
+        self.pos = pos #the position in the sequence, string or None
+        self.pdb_res_nr = pdb_res_nr #this is a string, due to insertion-codes
+        self.wt_aa = wt_aa #wildtype amino acid type in one letter code
+        self.mut_aas = mut_aas #set of mutant amino acid types in one letter code
+        self.mut_tags_map = {}
+        if len(mut_aas) == 0:
+            self.pos_tags = tags
+        else:
+            self.pos_tags = set()
+            for aa in mut_aas:
+                 self.mut_tags_map[aa] = tags
+        self.stored = False
+        self.database_id = None
+
+    def fuse(self,position):
+        if self.pos != position.pos:
+            raise NameError('Cannot fuse positions with differing pos numbers')
+            return
+        if self.pdb_res_nr != position.pdb_res_nr:
+            raise NameError('Cannot fuse positions with differing pdb_res_nr')
+            return
+        if self.wt_aa != position.wt_aa:
+            print('Warning: fuse positions with different WT AAs:',self.pos,self.wt_aa,position.wt_aa)
+        self.mut_aas = self.mut_aas | position.mut_aas
+        self.pos_tags = self.pos_tags | position.pos_tags
+        for aa in position.mut_tags_map:
+            if not aa in self.mut_tags_map:
+                self.mut_tags_map[aa] = position.mut_tags_map[aa]
+            else:
+                self.mut_tags_map[aa] = self.mut_tags_map[aa] | position.mut_tags_map[aa]
+
+
+class Protein:
+    __slots__ = ['u_ac','u_id','ref_ids','pdb_id','positions','sequence','stored','go_terms','pathways','disorder_scores','disorder_regions','disorder_tool','structures']
+
+    def __init__(self,u_ac = None,u_id = None,ref_ids = set(),pdb_id = None,positions = []):
+        self.u_ac = u_ac # UNIPROT accession number
+        self.u_id = u_id # UNIPROT ID
+        self.ref_ids = ref_ids #RefSeq IDs
+        self.pdb_id = pdb_id
+        self.positions = {}
+        self.sequence = None
+        self.stored = False #If the protein is stored in the database
+        self.database_id = None #ID in the corresponding database table#
+        self.go_terms = {}
+        self.pathways = {}
+        self.disorder_scores = None
+        self.disorder_regions = None
+        self.disorder_tool = None
+        self.structures = {}
+
+        if pdb_id == None:
+            self.add_positions(positions)
+        else:
+            self.add_PDB_positions(positions)
+
+    def add_positions(self,positions):
+       for position in positions:
+            if not position.pos in self.position_map:
+                self.positions[position.pos] = position
+            else:
+                self.positions[position.pos].fuse(position)
+
+    def add_PDB_positions(self,positions):
+       for position in positions:
+            if not position.pdb_res_nr in self.position_map:
+                self.positions[position.pdb_res_nr] = position
+            else:
+                self.positions[position.pdb_res_nr].fuse(position)
+    
+    def popNone(self):
+        if None in self.position_map:
+            tags = self.position_map[None].pos_tags
+            del self.position_map[None]
+            return tags
+        else:
+            return None
+
+    def getAACList(self):
+        aaclist = {}
+        for pos in self.positions:
+            aac_base = self.positions[pos].getAACBase
+            aaclist[aac_base] = self.positions[pos].database_id
+        return aaclist
+
+class Proteins:
+    __slots__ = ['protein_map','stored_ids','not_stored_ids','id_map','structures','structure_annotations']
+
+    def __init__(self,proteins):
+        self.protein_map = proteins
+        self.stored_ids = set()
+        self.not_stored_ids = set()
+        self.id_map = {}
+        self.structures = {}
+        self.structure_annotations = {}
+
+    def __getitem__(self,key):
+        return self.protein_map[key]
+
+    def __setitem__(self,key,val):
+        self.protein_map[key] = val
+        return
+
+    def __delitem__(self,key):
+        del self.protein_map[key]
+        return
+
+    def generate_id_map(self):
+        for u_ac in self.proteins:
+            self.id_map[self.proteins[u_ac].database_id] = u_ac
+        return
+
+    def getByDbId(self,database_id):
+        return self.protein_map[self.id_map[database_id]]
+
+    def getStoredStructureIds(self):
+        stored_ids = {}
+        for (pdb_id,chain) in self.structures:
+            if self.structures[(pdb_id,chain)].stored:
+                stored_ids[self.structures[(pdb_id,chain)].database_id] = (pdb_id,chain)
+        return stored_ids
+
+class Structure_annotation:
+    __slots__ = ['pdb_id','chain','alignment','coverage','sequence_identity','sub_infos']
+
+    def __init__(self,u_ac,pdb_id,chain):
+        self.u_ac = u_ac
+        self.pdb_id = pdb_id
+        self.chain = chain
+        self.alignment = None
+        self.coverage = None
+        self.sequence_identity = None
+        self.sub_infos = []
+
+class Structure:
+    __slots__ = ['pdb_id','chain','resolution','homomers','sequence_identity','interaction_partners','oligo','database_id','chains','stored','mapped_proteins','residues']
+
+    def __init__(self,pdb_id,chain,resolution = None,homomers = {}, oligo = [],mapped_proteins = []):
+        self.pdb_id = pdb_id
+        self.chain = chain
+        self.chains = None
+        self.resolution = resolution
+        self.homomers = homomers
+        self.database_id = None
+        self.interaction_partners = []
+        self.oligo = oligo
+        self.stored = False
+        self.mapped_proteins = mapped_proteins
+        self.residues = {}
+
+class Residue:
+    __slots__ = ['res_num','aa','lig_dist','chain_distances','RSA','SSA','homomer_distances','interaction_profile_str','centralities','modres','b_factor','database_id','stored']
+
+    def __init__(self,res_num,aa = 'X',lig_dist = None,chain_distances = None,RSA = None,
+                    SSA = None,homomer_distances = None,interaction_profile_str = None,centralities = None,modres = None,b_factor = None,database_id = None,stored = False):
+        self.res_num = res_num
+        self.aa = aa
+        self.lig_dist = lig_dist
+        self.chain_distances = chain_distances
+        self.RSA = RSA #relative surface accessible area
+        self.SSA = SSA #secondary structure assignment
+        self.homomer_distances = homomer_distances
+        self.interaction_profile_str = interaction_profiles_str #interaction profile coded into a string, see rin.py for more information
+        self.centralities = centralites
+        self.modres = modres
+        self.b_factor = b_factor
+        self.database_id = database_id
+        self.stored = stored
+
+
+
+
+

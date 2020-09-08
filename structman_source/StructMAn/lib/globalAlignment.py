@@ -3,6 +3,8 @@ from Bio import pairwise2
 from Bio.SubsMat import MatrixInfo as matlist
 matrix = matlist.blosum62
 
+import sys
+import traceback
 
 threeToOne = {
     "00C": "C", "01W": "X", "02K": "A", "03Y": "C", "07O": "C",
@@ -319,6 +321,7 @@ def createTemplateFasta(template_page,template_name,chain,onlySeqResMap = False,
                     seq_res_map.append(res_nr)
                     used_res.add(res_nr)
     if seq_res_map == []:
+        print('Warning: seq_res_map empty in createTemplateFasta')
         print(template_name)
         print(chain)
         #print template_page
@@ -338,7 +341,7 @@ def createTemplateFasta(template_page,template_name,chain,onlySeqResMap = False,
     return(template_fasta,seq_res_map)
 
 #gets also called by serializedPipeline
-def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=False):
+def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=False,ignore_update=False):
     target_aligned_sequence = target_aligned_sequence.replace("\n","")
     template_aligned_sequence = template_aligned_sequence.replace("\n","")
     
@@ -362,7 +365,10 @@ def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_
                 else:
                     align_map[tar_n] = ((seq_res_map[tem_n-1],tem_char),char)
     except:
-        errors.append('Unknown alignment bug')
+        [e,f,g] = sys.exc_info()
+        g = traceback.format_exc()
+        errortext = '\n'.join([str(e),str(f),str(g)]) + '\n\n'
+        errors.append('Unknown alignment bug: %s' % errortext)
         return sub_infos,errors,aaclist,{}
 
     update_map = {}
@@ -383,21 +389,23 @@ def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_
         if ignore_gaps and sub_info[0] == None:
             continue
         sub_infos[aac_base] = sub_info
-
-    for old_aac_base in update_map:
-        new_aac_base = '%s%s' % (update_map[old_aac_base][1],old_aac_base[1:])
-        aaclist[new_aac_base] = aaclist[old_aac_base]
-        del aaclist[old_aac_base]
-        
-        if old_aac_base in sub_infos:
-            sub_infos[new_aac_base] = update_map[old_aac_base][0]
-            del sub_infos[old_aac_base]
+    if not ignore_update:
+        for old_aac_base in update_map:
+            new_aac_base = '%s%s' % (update_map[old_aac_base][1],old_aac_base[1:])
+            aaclist[new_aac_base] = aaclist[old_aac_base]
+            del aaclist[old_aac_base]
+            
+            if old_aac_base in sub_infos:
+                sub_infos[new_aac_base] = update_map[old_aac_base][0]
+                del sub_infos[old_aac_base]
 
     return(sub_infos,errors,aaclist,update_map)
 
 def getCovSI(full_length,target_seq,template_seq):
     target_length = len(target_seq.replace("-",""))
     template_length = float((target_length - template_seq.count("-")))
+    if template_length == 0.:
+        return None,None
     aln_length = template_length/float(full_length)
     i = 0
     identical = 0
@@ -412,13 +420,19 @@ def getCovSI(full_length,target_seq,template_seq):
 
     return(aln_length,seq_id)
 
-def BPalign(target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=False):
+def BPalign(config,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=False):
     target_seq = target_seq.replace('U','C').replace('O','K').replace('J','I')
+    if config.verbosity >= 4:
+        print('Aligning:')
+        print(target_seq)
+        print(template_seq)
     align_out = pairwise2.align.globalds(target_seq, template_seq,matrix,-10.0,-0.5,one_alignment_only=True,penalize_end_gaps=False)
     if len(align_out) > 0:
         (target_aligned_sequence,template_aligned_sequence,a,b,c) = align_out[0]
     else:
-        raise NameError('Alignment produced no Output')
+        if config.verbosity >= 4:
+            print('Alignment failed')
+        return 'Alignment produced no Output'
 
     sub_infos,errors,aaclist,update_map = getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=ignore_gaps)
 
@@ -448,17 +462,22 @@ def createAlignmentPir(target_name,target_aligned_sequence,template_name,templat
     return page
 
 #called by serializedPipeline
-def alignBioPython(target_name,wildtype_sequence,template_name,template_page,chain,aaclist,ignore_gaps=False):
+def alignBioPython(config,target_name,wildtype_sequence,template_name,template_page,chain,aaclist,ignore_gaps=False):
     #preparing the alignment of the target and the template, by:
     t0 = time.time()
     (seq_res_map,template_seq) = createTemplateFasta(template_page,template_name,chain,seqAndMap = True)
+    if len(seq_res_map) == 0:
+        return 'Unable to create template fasta'
     startres = seq_res_map[0]
     endres = seq_res_map[-1]
-    #print(wildtype_sequence)
-    #print(template_seq)
 
     t1 = time.time()
-    (target_aligned_sequence,template_aligned_sequence,sub_infos,errors,aaclist,update_map) = BPalign(wildtype_sequence,template_seq,aaclist,seq_res_map,ignore_gaps=ignore_gaps)
+    align_out = BPalign(config,wildtype_sequence,template_seq,aaclist,seq_res_map,ignore_gaps=ignore_gaps)
+
+    if isinstance(align_out ,str):
+        return align_out
+
+    (target_aligned_sequence,template_aligned_sequence,sub_infos,errors,aaclist,update_map) = align_out
     t2 = time.time()
     #write the alignment into the pir format, which can be used by the modeller
     (truncated_target_sequence,truncated_template_sequence) = truncateSequences(target_aligned_sequence,template_aligned_sequence)

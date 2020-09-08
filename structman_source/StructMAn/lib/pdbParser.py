@@ -5,6 +5,7 @@ import subprocess
 import time
 import gzip
 import database
+import sdsc
 
 threeToOne = {
     "00C": "C", "01W": "X", "02K": "A", "03Y": "C", "07O": "C",
@@ -318,6 +319,7 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False):
             except:
                 print("Did not find the PDB-file: %s" % pdb_id)
                 return None
+                
         else:
             return gzip.open(path, 'rb')
     else:
@@ -328,13 +330,53 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False):
                 print("Did not find entry in local pdb, searching online: ",url)
             try:
                 request = urllib.request.Request(url)
+                
                 return urllib.request.urlopen(request)
             except:
                 print("Did not find the PDB-file: %s" % pdb_id)
                 return None
+               
         else:
             return gzip.open(path, 'rb')
 
+### Newly Written         
+def getMMCIFBuffer(pdb_id,pdb_path, AU=False, obsolete_check=False):
+    if obsolete_check:
+        pdb_id = getCurrentPDBID(pdb_id, pdb_path)
+        
+    if AU:
+        path = '%s/data/structures/divided/pdb/%s/pdb%s.cif.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+        if not os.path.isfile(path):
+            url = 'https://files.rcsb.org/view/%s.cif' %pdb_id
+            if path != '':
+                print("Did not find asymetric unit entry in local mmcif, searching online: ",url)
+            try:
+                request = urllib.request.Request(url)
+                return urllib.request.urlopen(request)
+            except:
+                print("Did not find the MMCIF-file: %s" % pdb_id)
+                return None
+        else:
+            return gzip.open(path, 'rb')
+    else:
+        path = '%s/data/biounit/PDB/divided/%s/%s.cif.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+        if not os.path.isfile(path):
+            url = 'https://files.rcsb.org/view/%s.cif' %pdb_id
+            
+            if pdb_path != '':
+                print("Did not find entry in local mmcif, searching online: ",url)
+            try:
+                request = urllib.request.Request(url)
+                print('this is request', request)
+                print('this is url open', urllib.request.urlopen(request))
+                return urllib.request.urlopen(request)
+            except:
+                print("Did not find the MMCIF-file: %s" % pdb_id)
+                return None
+        else:
+            return gzip.open(path, 'rb')
+            
+        
 def parsePDBSequence(buf):
     seq = ""
     res_pos_map = {}
@@ -373,24 +415,128 @@ def parsePDBSequence(buf):
                 res_pos_map[res_nr] = i
                 i += 1
 
+    
+    return seq,res_pos_map
+    
+# nucleic acid parser called by mmcif parser with only buf if chain is nuc acid
+
+def nuc_acid_parser(buf):
+    i = 1
+    res_pos_map = {}
+    seq = ""
+    used_res = ()
+    temp = 0
+    
+    x = []
+    for line in open(buf):
+        splitted = line.split()
+        if len(line.strip()) == 0 :
+            continue
+        if splitted[0] == 'ATOM' or splitted[0] == 'HETATM':
+            chain_id = splitted[6]
+            if chain_id != chain:
+                continue
+            if temp == splitted[8]:
+                continue
+            res_name = splitted[5]
+            nuc = res_name
+            seq = seq + nuc
+            temp = splitted[8]
+            res_pos_map[splitted[8]] = i
+            i += 1
+                                   
+    return seq,res_pos_map
+    
+# mmcif parser with only takes buf as an argument
+  
+def parseMMCIFSequence(buf):
+    i = 1
+    res_pos_map = {}
+    seq = ""
+    used_res = ()
+    temp = 0
+
+    x = []
+    for line in open(buf):
+        splitted = line.split()
+        if len(line.strip()) == 0 :
+            continue
+        if splitted[0] == 'ATOM' or splitted[0] == 'HETATM':
+            chain_id = splitted[6]
+            nuc_acid = splitted[17]
+            if nuc_acid == 'T' or nuc_acid == 'C' or nuc_acid == 'G' or nuc_acid == 'U' or nuc_acid == 'A':
+                seq,res_pos_map = nuc_acid_parser(buf)
+                break
+            else:
+                res_name = splitted[5]
+                if res_name not in threeToOne:
+                    continue
+                if temp == splitted[8]:
+                    continue
+                aa = threeToOne[res_name]
+                seq = seq + aa
+                temp = splitted[8]
+                res_pos_map[splitted[8]] = i
+                i += 1
+                                     
     return seq,res_pos_map
 
 def getSequenceAU(pdb_id,chain,pdb_path):
+    isMMCIF_Flag = False
     buf = getPDBBuffer(pdb_id,pdb_path,AU=True,obsolete_check=False)
     if buf == None:
+        print('Trying MMCIF')
+        buf = getMMCIFBuffer(pdb_id,pdb_path,AU=True)
+        if buf != None:
+            isMMCIF_Flag = True
+        if buf == None:
+            return "", {}
+    if isMMCIF_Flag:
+        seq,res_pos_map = parseMMCIFSequence(buf,chain)
+        buf.close()
+    else:
+        seq,res_pos_map = parsePDBSequence(buf,chain)
+        buf.close()
+    return seq,res_pos_map
+
+def getSequencePlain(pdb_id,chain,pdb_path):
+    isMMCIF_Flag = False
+    buf = getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=True)
+    if buf == None:
+        print('Trying MMCIF')
+        buf = getMMCIFBuffer(pdb_id,pdb_path,AU=False)
+        if buf != None:
+            isMMCIF_Flag = True
+        if buf == None:
+            return "", {}
+    if isMMCIF_Flag:
+        seq,res_pos_map = parseMMCIFSequence(buf,chain)
+        buf.close()
+    else:
+        seq,res_pos_map = parsePDBSequence(buf,chain)
+        buf.close()
+    return seq,res_pos_map
+ 
+'''
+##MMCIF duplicates of same codes - Looks like no need, could be deleted if code works well  
+def getSequenceAU_MMCIF(pdb_id, chain, pdb_path):
+    buf = getMMCIFBuffer(pdb_id,pdb_path,AU=True)
+    if buf == None:
         return "", {}
-    seq,res_pos_map = parsePDBSequence(buf,chain)
+    seq, res_pos_map = parseMMCIFSequence(buf,chain)
     buf.close()
     return seq,res_pos_map
 
 def getSequencePlain(pdb_id,chain,pdb_path):
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=True)
+    buf = getMMCIFBuffer(pdb_id,pdb_path,AU=False)
     if buf == None:
         return "", {}
-    seq,res_pos_map = parsePDBSequence(buf,chain)
+    seq,res_pos_map = parseMMCIFSequence(buf,chain)
     buf.close()
     return seq,res_pos_map
+'''
 
+#Start here
 def getSequence(pdb_id,chain,pdb_path,AU=False):
     if AU:
         seq,res_pos_map = getSequenceAU(pdb_id,chain,pdb_path)
@@ -400,19 +546,43 @@ def getSequence(pdb_id,chain,pdb_path,AU=False):
     #Catch empty sequences and try to find the sequence in the asymetric unit
     if not AU and seq == "":
         return getSequenceAU(pdb_id,chain,pdb_path)
-
+    
     return seq,res_pos_map
 
+'''
+#MMCIF Version - Looks like no need, could be deleted if code works well  
+def getMMCIFSequence(pdb_id,chain,pdb_path,AU=False):
+    if AU:
+        seq,res_pos_map = getSequenceAU_MMCIF(pdb_id,chain,pdb_path)
+    else:
+        seq,res_pos_map = getSequencePlain_MMCIF(pdb_id,chain,pdb_path)
+
+    #Catch empty sequences and try to find the sequence in the asymetric unit
+    if not AU and seq == "":
+        return getSequenceAU_MMCIF(pdb_id,chain,pdb_path)
+
+    return seq,res_pos_map
+'''  
+
 #called by serializedPipeline
-def getSequences(pdb_dict,pdb_path,AU=False):
+def getSequences(pdb_dict,pdb_path,AU=False,filtering_db=None):
     pdb_sequence_map = {}
     pdb_pos_map = {}
+    in_db = set()
     for pdb_chain_tuple in pdb_dict:
         [pdb,chain] = pdb_chain_tuple.split(':')
         seq,res_pos_map = getSequence(pdb,chain,pdb_path,AU=AU)
         pdb_sequence_map[pdb_chain_tuple] = seq,None,None
         pdb_pos_map[pdb_chain_tuple] = res_pos_map
-    #print pdb_sequence_map#,pdb_pos_map
+        if filtering_db != None:
+            folder_key = pdb_chain_tuple[1:3]
+            filename = '%s/%s/%s_ref50_gpw.fasta.gz' % (filtering_db,folder_key,pdb_chain_tuple)
+            if os.path.isfile(filename):
+                in_db.add(pdb_chain_tuple)
+                continue
+
+    if filtering_db != None:
+        return pdb_sequence_map,pdb_pos_map,in_db
     return pdb_sequence_map,pdb_pos_map
 
 #called by serializedPipeline
@@ -422,7 +592,7 @@ def getSequencesPlain(pdb_dict,pdb_path):
         [pdb,chain] = pdb_chain_tuple.split(':')
         seq,res_pos_map = getSequencePlain(pdb,chain,pdb_path)
         pdb_sequence_map[pdb_chain_tuple] = seq
-    #print "Plain",pdb_sequence_map
+    #print "Plain",pdb_sequence_map 
     return pdb_sequence_map
 
 def parsePDBSequence(buf,chain):
@@ -433,7 +603,7 @@ def parsePDBSequence(buf,chain):
     firstAltLoc = None
     for line in buf:
         line = line.decode('ascii')
-        #print(line)
+        
         if len(line) > 26:
             record_name = line[0:6].strip()
             if not record_name == 'ATOM' \
@@ -464,7 +634,71 @@ def parsePDBSequence(buf,chain):
                 used_res.add(res_nr)
                 res_pos_map[res_nr] = i
                 i += 1
+    return seq,res_pos_map
+    
+#NewMMCIFParser
 
+def nuc_acid_parser(buf, chain):
+    i = 1
+    res_pos_map = {}
+    seq = ""
+    used_res = ()
+    temp = 0
+    
+    x = []
+    for line in buf:
+        line = line.decode('ascii')
+        splitted = line.split()
+        if len(line.strip()) == 0 :
+            continue
+        if splitted[0] == 'ATOM' or splitted[0] == 'HETATM':
+            chain_id = splitted[6]
+            if chain_id != chain:
+                continue
+            if temp == splitted[8]:
+                continue
+            res_name = splitted[5]
+            nuc = res_name
+            seq = seq + nuc
+            temp = splitted[8]
+            res_pos_map[splitted[8]] = i
+            i += 1
+                                   
+    return seq,res_pos_map
+    
+def parseMMCIFSequence(buf,chain):
+    i = 1
+    res_pos_map = {}
+    seq = ""
+    used_res = ()
+    temp = 0
+
+    x = []
+    for line in buf:
+        line = line.decode('ascii')
+        splitted = line.split()
+        if len(line.strip()) == 0 :
+            continue
+        if splitted[0] == 'ATOM' or splitted[0] == 'HETATM':
+            chain_id = splitted[6]
+            if chain_id != chain:
+                continue
+            nuc_acid = splitted[17]
+            if nuc_acid == 'T' or nuc_acid == 'C' or nuc_acid == 'G' or nuc_acid == 'U' or nuc_acid == 'A':
+                seq,res_pos_map = nuc_acid_parser(buf, chain)
+                break
+            else:
+                res_name = splitted[5]
+                if res_name not in threeToOne:
+                    continue
+                if temp == splitted[8]:
+                    continue
+                aa = threeToOne[res_name]
+                seq = seq + aa
+                temp = splitted[8]
+                res_pos_map[splitted[8]] = i
+                i += 1
+                                     
     return seq,res_pos_map
 
 
@@ -479,7 +713,10 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
     buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
 
     if buf == None:
-        return None
+    # Added automatization here, if pdb file not exist, automatically calls MMCIF version
+        print('PDB file does not exist, trying MMCIF file')
+        return standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False)      
+        
 
     chain_ids = set()
     newlines = []
@@ -496,6 +733,15 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
         if record_name == b'ENDMDL':
             newlines.append(line)
             break
+        elif record_name == b'SSBOND':
+            newlines.append(line)
+            continue
+        elif record_name == b'LINK  ':
+            newlines.append(line)
+            continue
+        elif record_name == b'CISPEP':
+            newlines.append(line)
+            continue
         elif record_name == b'TER':
             # This can happen, if the whole chain consists of boring ligands,
             # which is very boring
@@ -536,11 +782,80 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
     template_page = b'\n'.join(newlines).decode('ascii')
 
     return template_page
+    
+# Called by standardParsePDB if PDB file does not exist
+def standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False):
+    AU = False
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+        AU = True
+
+    buf = getMMCIFBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
+
+    if buf == None:
+        return None
+
+    chain_ids = set()
+    newlines = []
+
+    current_serial = 1
+    firstAltLoc = None
+    for line in buf:
+        if len(line) >= 27:
+            record_name = line[0:6].rstrip()
+            line = line.rstrip(b'\n')
+            splitted = line.split()
+        else:
+            continue
+
+        if record_name == b'ENDMDL':
+            newlines.append(line)
+            break
+        elif record_name == b'TER':
+            # This can happen, if the whole chain consists of boring ligands,
+            # which is very boring
+            if chain_id not in chain_ids:
+                continue
+        elif record_name == b'MODRES':
+            pass
+        elif record_name == b'ATOM' or record_name == b'HETATM':
+            altLoc = chr(line[17])
+            if firstAltLoc == None and altLoc != ' ':
+                firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
+            if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
+                continue
+            res_name = splitted[5]
+            chain_id = splitted[6]
+            res_nr = splitted[8]
+
+            if record_name == b'HETATM':
+                if res_name not in threeToOne and boring(res_name):
+                    continue
+
+            if not chain_id in chain_ids:
+                chain_ids.add(chain_id)
+
+        else:
+            # We are not interested in other record types
+            continue
+
+        # Adjust serials after skipping records
+        if current_serial > 99999:
+            newline = record_name[0:5].ljust(5, b' ') + str(current_serial).encode('ascii').rjust(6, b' ')
+        else:
+            newline = record_name.ljust(6, b' ') + str(current_serial).encode('ascii').rjust(5, b' ')
+        newline += line[11:]
+        newlines.append(newline)
+        current_serial += 1
+
+    template_page = b'\n'.join(newlines).decode('ascii')
+
+
+    return template_page
 
 #called by serializedPipeline
-def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
-    times = [0.0,0.0,0.0]
-    t0 = time.time()
+def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set()):
+
     AU = False
 
     if pdb_id.count('_AU') == 1:
@@ -550,10 +865,9 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
     buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False)
 
     if buf == None:
-        return "",'',"Did not find the PDB-file: %s" % (pdb_id),times
-
-    structure['IAP'] = []
-    t1 = time.time()
+        # Added automatization here, if pdb file not exist, automatically calls MMCIF version
+        print('PDB file does not found, trying MMCIF file')
+        return getStandardizedMMCIFFile(pdb_id=pdb_id,pdb_path=pdb_path)
 
     chain_type_map = {}
     modres_map = {}
@@ -561,6 +875,8 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
     lig_set = {}
 
     newlines = []
+
+    interaction_partners = []
 
     current_serial = 1
     firstAltLoc = None
@@ -595,6 +911,154 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
             res_name = line[17:20].strip()
             chain_id = line[21:22]
             res_nr = line[22:27].strip()
+
+            #occupancy = float(line[54:60].replace(" ",""))
+
+            if chain_id not in chain_type_map:
+                if record_name == 'ATOM':
+                    if len(res_name) == 1:
+                        chain_type = 'RNA'
+                    elif len(res_name) == 2:
+                        chain_type = 'DNA'
+                    elif len(res_name) == 3:
+                        chain_type = 'Protein'
+                    chain_type_map[chain_id] = chain_type
+                elif record_name == 'HETATM':
+                    # For a hetero peptide 'boring' hetero amino acids are
+                    # allowed as well as other non boring molecules not in
+                    # threeToOne, which are hopefully some kind of anormal amino
+                    # acids
+                    if res_name in threeToOne or not boring(res_name):
+                        chain_type = 'Peptide'
+                        chain_type_map[chain_id] = chain_type
+            elif record_name == 'ATOM' and chain_type_map[chain_id] == 'Peptide':
+                if len(res_name) == 1:
+                    chain_type = "RNA"
+                elif len(res_name) == 2:
+                    chain_type = "DNA"
+                elif len(res_name) == 3:
+                    chain_type = "Protein"
+                chain_type_map[chain_id] = chain_type
+
+            if record_name == 'HETATM':
+                # modified residue are not parsed as ligands
+                if res_name not in threeToOne and not boring(res_name):
+                    if chain_id not in lig_set:
+                        lig_set[chain_id] = set()
+                    if not res_nr in lig_set[chain_id]:
+                        lig_set[chain_id].add(res_nr)
+
+                        if (chain_id,res_nr) in modres_map:
+                            continue
+
+                        interaction_partners.append(["Ligand",res_name,res_nr,chain_id])
+
+        else:
+            # We are not interested in other record types
+            continue
+
+        # Adjust serials after skipping records
+        if current_serial > 99999:
+            newline = record_name[0:5].ljust(5, ' ') + str(current_serial).rjust(6, ' ')
+        else:
+            newline = record_name.ljust(6, ' ') + str(current_serial).rjust(5, ' ')
+        newline += line[11:]
+        newlines.append(newline)
+        current_serial += 1
+
+    pep_not_lig = []
+    for chain_id in chain_type_map:
+        chain_type = chain_type_map[chain_id]
+        interaction_partners.append([chain_type,chain_id])
+
+    for chain_id in chain_type_map:
+        chain_type = chain_type_map[chain_id]
+        if chain_type == 'Peptide':
+            for i,iap in enumerate(interaction_partners):
+                if iap[0] == 'Ligand':
+                    if iap[3] == chain_id:
+                        pep_not_lig.append(i)
+
+    pep_not_lig = sorted(pep_not_lig,reverse=True)
+
+    for i in pep_not_lig:
+        del interaction_partners[i]
+
+    # Happens for repeated chains in asymetric units, which do not occur in the
+    # biological assembly
+    irregular_homo_chains = []
+    for homo_chain in oligo:
+        if not homo_chain in chain_type_map:
+            irregular_homo_chains.append(homo_chain)
+
+    for chain in irregular_homo_chains:
+        oligo.remove(chain)
+
+    template_page = '\n'.join(newlines)
+    
+    return template_page,interaction_partners,chain_type_map,oligo
+    
+# Newly written MMCIF version
+# Called by getStandardizedPDBFile if PDB file does not exist
+def getStandardizedMMCIFFile(pdb_id,chain,structure,pdb_path):
+    times = [0.0,0.0,0.0]
+    t0 = time.time()
+    AU = False
+
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+        AU = True
+
+    buf = getMMCIFBuffer(pdb_id,pdb_path,AU)
+
+    if buf == None:
+        return "",'',"Did not find the MMCIF-file: %s" % (pdb_id),times
+
+    structure['IAP'] = []
+    t1 = time.time()
+
+    chain_type_map = {}
+    modres_map = {}
+
+    lig_set = {}
+
+    newlines = []
+
+    current_serial = 1
+    firstAltLoc = None
+    for line in buf:
+        line = line.decode('ascii')
+        if len(line) >= 27:
+            record_name = line[0:6].rstrip()
+            line = line.rstrip('\n')
+            splitted = line.split()
+        else:
+            continue
+
+        if record_name == 'ENDMDL':
+            newlines.append(line)
+            break
+        elif record_name == 'TER':
+            # This can happen, if the whole chain consists of boring ligands,
+            # which is very boring
+            if chain_id not in chain_type_map:
+                continue
+        # No idea id there is modres in mmcif, should check
+        elif record_name == 'MODRES':
+            chain_id = line[16]
+            res_nr = line[18:23].strip()
+            res_name = line[24:27].strip()
+            if (chain_id,res_nr) not in modres_map:
+                modres_map[(chain_id,res_nr)] = res_name
+        elif record_name == 'ATOM' or record_name == 'HETATM':
+            altLoc = line[17] ## Check
+            if firstAltLoc == None and altLoc != ' ':
+                firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
+            if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
+                continue
+            res_name = splitted[5]
+            chain_id = splitted[6]
+            res_nr = splitted[8]
 
             #occupancy = float(line[54:60].replace(" ",""))
 
@@ -686,7 +1150,7 @@ def getStandardizedPdbFile(pdb_id,chain,structure,pdb_path):
     t3 = time.time()
     times = [t1-t0,t2-t1,t3-t2]
 
-    return template_page,structure,None,times
+    return template_page,None,times,interaction_partners,chain_type_map,oligo
 
 #called by database
 def parseLigandDB(smiles_path,inchi_path):
@@ -736,56 +1200,110 @@ def updateLigandDB(new_ligands,smiles_path,inchi_path):
 #get called by database
 def getSI(pdb_id,name,res,chain,pdb_path):
     cwd = os.getcwd()
-
+    
+    MMCIF_Flag = False
     AU = False
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
         AU = True
 
     buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False)
+    
+    #Added automatization here if pdb buffer does not exist, it goes into mmcif buffer
+    
+    if buf == None:
+        buf = getMMCIFBuffer(pdb_id,pdb_path,AU=AU)
+        MMCIF_Flag = True
+        
+    if MMCIF_Flag:
+        newlines = []
 
-    newlines = []
+        for line in buf:
+            splitted = line.split()
+            if len(line) >= 27:
+                record_name = splitted[0]
+            else:
+                continue
+            if record_name == 'ENDMDL':
+                break
 
-    for line in buf:
-        if len(line) >= 27:
-            record_name = line[0:6].rstrip()
+            if record_name == 'HETATM':
+                res_name = splitted[5]
+                chain_id = splitted[6]
+                res_nr = splitted[8]
+                if chain == chain_id and name == res_name and res_nr == res:
+                    newlines.append(line)
+
+        buf.close()
+
+        page = (b''.join(newlines)).decode('ascii')
+
+        FNULL = open(os.devnull, 'w')
+        try:
+            inchiproc = subprocess.Popen(["babel","-i","pdb","-o","inchi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+            inchi,i_err = inchiproc.communicate(page)
+            smilesproc = subprocess.Popen(["babel","-i","pdb","-o","smi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+            smiles,s_err = smilesproc.communicate(page)
+        except:
+            print("[WARNING] Babel Package seems not to be installed")
+            return ("","")
+
+        #print(i_err)
+        #print(s_err)
+        smiles = smiles.split()
+        if len(smiles) > 0:
+            smiles = smiles[0]
         else:
-            continue
-        if record_name == b'ENDMDL':
-            break
+            print("Ligand not found in database and Babel failed: ",name,res,chain,pdb_id,i_err,s_err)
 
-        if record_name == b'HETATM':
-            res_name = line[17:20].strip().decode('ascii')
-            chain_id = line[21:22].decode('ascii')
-            res_nr = line[22:27].strip().decode('ascii')
-            if chain == chain_id and name == res_name and res_nr == res:
-                newlines.append(line)
+        inchi = inchi.replace('\n','')
 
-    buf.close()
-
-    page = (b''.join(newlines)).decode('ascii')
-
-    FNULL = open(os.devnull, 'w')
-    try:
-        inchiproc = subprocess.Popen(["babel","-i","pdb","-o","inchi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-        inchi,i_err = inchiproc.communicate(page)
-        smilesproc = subprocess.Popen(["babel","-i","pdb","-o","smi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-        smiles,s_err = smilesproc.communicate(page)
-    except:
-        print("[WARNING] Babel Package seems not to be installed")
-        return ("","")
-
-    #print(i_err)
-    #print(s_err)
-    smiles = smiles.split()
-    if len(smiles) > 0:
-        smiles = smiles[0]
+        return (smiles,inchi)
+        
     else:
-        print("Ligand not found in database and Babel failed: ",name,res,chain,pdb_id,i_err,s_err)
+    
+        newlines = []
 
-    inchi = inchi.replace('\n','')
+        for line in buf:
+            if len(line) >= 27:
+                record_name = line[0:6].rstrip()
+            else:
+                continue
+            if record_name == b'ENDMDL':
+                break
 
-    return (smiles,inchi)
+            if record_name == b'HETATM':
+                res_name = line[17:20].strip().decode('ascii')
+                chain_id = line[21:22].decode('ascii')
+                res_nr = line[22:27].strip().decode('ascii')
+                if chain == chain_id and name == res_name and res_nr == res:
+                    newlines.append(line)
+
+        buf.close()
+
+        page = (b''.join(newlines)).decode('ascii')
+
+        FNULL = open(os.devnull, 'w')
+        try:
+            inchiproc = subprocess.Popen(["babel","-i","pdb","-o","inchi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+            inchi,i_err = inchiproc.communicate(page)
+            smilesproc = subprocess.Popen(["babel","-i","pdb","-o","smi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+            smiles,s_err = smilesproc.communicate(page)
+        except:
+            print("[WARNING] Babel Package seems not to be installed")
+            return ("","")
+
+        #print(i_err)
+        #print(s_err)
+        smiles = smiles.split()
+        if len(smiles) > 0:
+            smiles = smiles[0]
+        else:
+            print("Ligand not found in database and Babel failed: ",name,res,chain,pdb_id,i_err,s_err)
+
+        inchi = inchi.replace('\n','')
+
+        return (smiles,inchi)
 
 def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
     if pdb_id.count('_AU') == 1:
@@ -808,9 +1326,33 @@ def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
                 return None
     else:
         return gzip.open(path, 'rb')
+        
+# Same thing with mmcif
+def getMMCIFHeaderBuffer(pdb_id,pdb_path,tries = 0):
+    if pdb_id.count('_AU') == 1:
+        pdb_id = pdb_id[0:4]
+
+    path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+    if not os.path.isfile(path):
+        url = 'https://files.rcsb.org/header/%s.cif' % pdb_id
+        if pdb_path != '':
+            print("Did not find asymetric unit entry in local pdb, searching online: ",url)
+        try:
+            request = urllib.request.Request(url)
+            return urllib.request.urlopen(request)
+        except:
+            if tries < 2:
+                print("Unable to connect ot PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
+                return getMMCIFHeaderBuffer(pdb_id,pdb_path,tries = tries+1)
+            else:
+                print("Unable to connect ot PDB for the Header: %s\n%s'" % (pdb_id,url))
+                return None
+    else:
+        return gzip.open(path, 'rb')
+        
 
 def boring(abr):
-    if abr in database.metal_atoms or abr in database.ion_atoms:
+    if abr in sdsc.metal_atoms or abr in sdsc.ion_atoms:
         return False
     if abr in boring_ligands:
         return True
@@ -822,9 +1364,12 @@ def boring(abr):
 #called by templateFiltering
 def getInfo(pdb_id,pdb_path):
     buf = getPDBHeaderBuffer(pdb_id,pdb_path)
-
+    
+    #Added automatization here
     if buf == None:
-        return None,{}
+        buf = getMMCIFHeaderBuffer(pdb_id,pdb_path)
+        if buf == None:
+            return None,{}
     #print(pdb_id)
     abort = False
     resolution = None

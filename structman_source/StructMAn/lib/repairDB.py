@@ -37,6 +37,55 @@ def reclass_null(config):
 
     return
 
+def empty(config):
+    db,cursor = config.getDB()
+    database.reset(cursor)
+    db.close()
+    return
+
+def destroy(config):
+    db,cursor = config.getDB()
+    sql = 'DROP DATABASE %s' % config.db_name
+    cursor.execute(sql)
+    db.close()
+
+def load(config):
+    db,cursor = config.getDB(server_connection = True)
+
+    sql = 'CREATE DATABASE %s' % config.db_name
+
+    try:
+        cursor.execute(sql)
+        db.close()
+    except:
+        db.close()
+        empty(config)
+        return
+
+
+
+    f = open(config.database_source_path,'r')
+    text = f.read()
+    f.close()
+
+    db,cursor = config.getDB()
+
+    for cmd in text.split(';'):
+        if cmd == '':
+            continue
+        try:
+            cursor.execute('%s;' % cmd)
+        except:
+            pass
+
+    db.close()
+
+#destroys and reinitializes the database
+def reinit(config):
+    empty(config)
+    destroy(config)
+    load(config)
+
 def main(config,reclassify_null=False):
     #called with --rcn
     if reclassify_null:

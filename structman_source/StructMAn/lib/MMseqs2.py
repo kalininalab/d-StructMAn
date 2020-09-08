@@ -57,44 +57,53 @@ def parseFasta(path,new_file,lines=None):
             
             seq_map[entry_id] += line
             new_lines.append(line)
-    print(n)
 
     f = open(new_file,'w')
     f.write('\n'.join(new_lines))
     f.close()
 
     return seq_map
+    
+    
+#def parseFastaWithChainId():
 
-def geneSeqMapToFasta(gene_seq_map,outfile,filtering_db=None):
+
+
+def geneSeqMapToFasta(proteins,outfile,config,filtering_db=None):
     lines = []
     n = 0
     m = 0
 
-    for gene in gene_seq_map:
-        seq = gene_seq_map[gene][0]
+    u_acs = proteins.get_not_stored_acs()
+
+    for u_ac in u_acs:
+        seq = proteins.get_sequence(u_ac)
+
         if seq == 0 or seq == 1 or seq == '':
             continue
         if filtering_db != None:
             folder_key = gene.split('-')[0][-2:]
-            filename = '%s/%s/%s_ref50_gpw.fasta.gz' % (filtering_db,folder_key,gene)
+            filename = '%s/%s/%s_ref50_gpw.fasta.gz' % (filtering_db,folder_key,u_ac)
             if os.path.isfile(filename):
                 n += 1
                 continue
 
-        lines.append('>%s' % gene)
+        lines.append('>%s' % u_ac)
         lines.append(seq)
         m += 1
 
     if len(lines) > 0:
-        print('Filtered ',n,' Proteins before mmseqs2')
-        print(m,' sequences going into mmseqs2')
+        if config.verbosity >= 2:
+            print('Filtered ',n,' Proteins before mmseqs2')
+            print(m,' sequences going into mmseqs2')
         f = open(outfile,'w')
         f.write('\n'.join(lines))
         f.close()
         return None
-    else:
+    else: 
         return 'Empty fasta file'
 
+##Ask about that
 def getSequence(u_ac):
     db_adress = 'bioinfodb'
     db_user_name = 'agress'
@@ -168,49 +177,64 @@ def parseHits(temp_outfile,option_seq_thresh,small_genes):
 
     return entries,pdb_ids
 
-def search(gene_seq_map,search_db,mmseqs2_path,mmseqs_tmp_folder,option_seq_thresh,verbose=False):
+#called by serializePipeline
+def search(proteins,config):
+    mmseqs_tmp_folder = config.mmseqs_tmp_folder
+    mmseqs2_path = config.mmseqs2_path
+    search_db = config.mmseqs2_db_path
+    option_seq_thresh = config.option_seq_thresh
 
-    #print gene_seq_map
+    small_proteins = set()
 
-    small_genes = set()
-    for gene in gene_seq_map:
+    u_acs = proteins.get_protein_u_acs()
+    for u_ac in u_acs:
         try:
-            if len(gene_seq_map[gene]) < 100:
-                small_genes.add(gene)
+            if len(proteins.get_sequence(u_ac)) < 100:
+                small_proteins.add(u_ac)
         except:
             continue
 
     t0 = time.time()
 
     temp_fasta = '%s/tmp_%s.fasta' % (mmseqs_tmp_folder,randomString())
-    error_message = geneSeqMapToFasta(gene_seq_map,temp_fasta)
+    error_message = geneSeqMapToFasta(proteins,temp_fasta,config)
 
     if error_message != None:
-        print(error_message,', mmseqs2 skiped')
+        config.errorlog.add_error('%s , mmseqs2 skiped' % (error_message))
         return {},set()
 
-    temp_outfile = '%s/tmp_outifle_%s.fasta' % (mmseqs_tmp_folder,randomString())
+    temp_outfile = '%s/tmp_outfile_%s.fasta' % (mmseqs_tmp_folder,randomString())
 
     t1 = time.time()
 
-    FNULL = open(os.devnull, 'w')
-    if len(small_genes) == 0:
-        p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','--min-aln-len','50'],stdout=FNULL)
+    if config.verbosity >= 1:
+        print(mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder)
+
+    if config.verbosity >= 3:
+        if len(small_proteins) == 0:
+            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','--min-aln-len','50','-s','7.5'])
+        else:
+            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','-s','7.5'])
+        p.wait()
     else:
-        p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999'],stdout=FNULL)
-    p.wait()
+        FNULL = open(os.devnull, 'w')
+        if len(small_proteins) == 0:
+            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','--min-aln-len','50','-s','7.5'],stdout=FNULL)
+        else:
+            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','-s','7.5'],stdout=FNULL)
+        p.wait()
 
     os.remove(temp_fasta)
 
     t2 = time.time()
 
-    hits,pdb_ids = parseHits(temp_outfile,option_seq_thresh,small_genes)
+    hits,pdb_ids = parseHits(temp_outfile,option_seq_thresh,small_proteins)
 
-    for gene in small_genes:
-        if gene.count(':') == 1:
-            if not gene in hits:
-                pdb_id,chain = gene.split(':')
-                hits[gene] = {(pdb_id,chain):{'Seq_Id':100.0,'Length':len(gene_seq_map[gene]),'Coverage':'-','Oligo':set([chain])}}
+    for u_ac in small_proteins:
+        if u_ac.count(':') == 1:
+            if not u_ac in hits:
+                pdb_id,chain = u_ac.split(':')
+                hits[u_ac] = {(pdb_id,chain):{'Seq_Id':100.0,'Length':len(proteins.get_sequence(u_ac)),'Coverage':'-','Oligo':[chain]}}
                 pdb_ids.add(pdb_id)
 
     os.remove(temp_outfile)
@@ -220,12 +244,10 @@ def search(gene_seq_map,search_db,mmseqs2_path,mmseqs_tmp_folder,option_seq_thre
 
     t3 = time.time()
 
-    if verbose:
+    if config.verbosity >= 2:
         print("MMseqs2 Part 1: %s" % (str(t1-t0)))
         print("MMseqs2 Part 2: %s" % (str(t2-t1)))
         print("MMseqs2 Part 3: %s" % (str(t3-t2)))
-
-    #print hits
 
     return hits,pdb_ids
 

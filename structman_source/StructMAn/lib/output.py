@@ -3,10 +3,115 @@ import database
 import os
 import babel
 import time
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+except:
+    pass
 import numpy as np
+
+def create_ppi_network(session,config,outfile):
+
+    verbose = config.verbose
+    proteins = database.proteinsFromDb(session,config)
+
+    #Step 1: build a residue -> position and a position -> residue map
+    r_m_map = {}
+
+    u_acs = proteins.get_protein_u_acs()
+
+    if verbose:
+        print('Amount of proteins:',len(u_acs))
+
+    n_struct_anno = 0
+    n_positions = 0
+    n_sub_infos = 0
+
+    for u_ac in u_acs:
+
+        positions = proteins.get_position_ids(u_ac)
+
+        annotation_list = proteins.get_protein_annotation_list(u_ac)
+
+        n_struct_anno += len(annotation_list)
+        n_positions += len(positions)
+
+        for (pdb_id,chain) in annotation_list:
+
+            sub_infos = proteins.get_sub_infos(u_ac,pdb_id,chain)
+            n_sub_infos += len(sub_infos)
+            for pos in positions:
+                aacbase = proteins.get_aac_base(u_ac,pos)
+                if not aacbase in sub_infos:
+                    continue
+                sub_info = sub_infos[aacbase]
+                res_nr = sub_info[0]
+
+                if not proteins.contains_residue(pdb_id,chain,res_nr):
+                    continue
+                r_id = proteins.get_residue_db_id(pdb_id,chain,res_nr)
+                res_aa = proteins.get_residue_aa(pdb_id,chain,res_nr)
+                if not r_id in r_m_map:
+                    r_m_map[r_id] = []
+                r_m_map[r_id].append((u_ac,aacbase))
+
+    if verbose:
+        print('Size of r_m_map:',len(r_m_map))
+        print('Amount of structure annotations:',n_struct_anno)
+        print('Amount of positions:',n_positions)
+        print('Amount of sub_infos:',n_sub_infos)
+
+    #Step 2: build a residue,chain A - residue,chain B datastructure
+    struct_res_res_dict = {}
+    for (pdb_id,chain) in proteins.structures:
+        struct_res_res_dict[(pdb_id,chain)] = {}
+        for res_nr in proteins.structures[(pdb_id,chain)].residues:
+            scd = proteins.get_residue_scd(pdb_id,chain,res_nr)
+            r_id = proteins.get_residue_db_id(pdb_id,chain,res_nr)
+
+            scds = scd.split(",")
+
+            for sd in scds:
+                sdi = sd.split(":")
+                if len(sdi) > 1:
+                    ichain = sdi[0][0]
+                    res_nr_2 = sdi[0].split('.')[1]
+                    mc_d = float(sdi[1])
+                    if mc_d < 5.0:
+                        if not proteins.contains_structure(pdb_id,ichain):
+                            continue
+                        if not (r_id,res_nr) in struct_res_res_dict[(pdb_id,chain)]:
+                            struct_res_res_dict[(pdb_id,chain)][(r_id,res_nr)] = set([])
+                        struct_res_res_dict[(pdb_id,chain)][(r_id,res_nr)].add((ichain,res_nr_2))
+
+    if verbose:
+        print('Size of struct_res_res_dict:',len(struct_res_res_dict))
+
+    if os.path.exists(outfile):
+        os.remove(outfile)
+
+    f = open(outfile,'a')
+    f.write('u_ac_1\taacbase_1\tpdb_id\tchain_1\tres_nr_1\tu_ac_2\taacbase_2\tchain_2\tres_nr_2\n')
+
+    #Step 3 produce the table
+
+    for pdb_id,chain_1 in struct_res_res_dict:
+        for r_1,res_nr_1 in struct_res_res_dict[(pdb_id,chain_1)]:
+            if not r_1 in r_m_map:
+                continue
+            for (chain_2,res_nr_2) in struct_res_res_dict[(pdb_id,chain_1)][(r_1,res_nr_1)]:
+
+                r_2 = proteins.get_residue_db_id(pdb_id,chain_2,res_nr_2)
+                
+                if not r_2 in r_m_map:
+                    continue
+                
+                for (u_ac_1,aacbase_1) in r_m_map[r_1]:
+                    for (u_ac_2,aacbase_2) in r_m_map[r_2]:
+
+                        f.write('\t'.join([u_ac_1,aacbase_1,pdb_id,chain_1,res_nr_1,u_ac_2,aacbase_2,pdb_id,chain_2,res_nr_2]) + '\n')
+    f.close()
 
 def makeViolins(violins,outfile,session_name,add=''):
     fs = 10  # fontsize
@@ -128,7 +233,7 @@ def plotScatter(scatter_plots,outfile,session_name):
         #print scatter_file
 
 
-def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=False,rin_classes=False):
+def classDistributionFromFile(annotationfile,outfolder,session_name,config,by_conf=False,rin_classes=False):
     #"Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
     outfile = '%s/%s' % (outfolder,session_name)
 
@@ -229,9 +334,13 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
 
         tags = tag.split(',')
         for tag in tags:
+            if tag == '':
+                continue
             if tag[0] == '#':
-                violin_tag,violin_value = tag[1:].split(':')
-
+                if tag.count(':') == 1:
+                    violin_tag,violin_value = tag[1:].split(':')
+                else:
+                    violin_tag,violin_value = tag[1:].split('=')
                 violin_value = float(violin_value)
 
                 if not violin_tag in violins:
@@ -289,16 +398,18 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
                     hc_size += 1
 
     t1 = time.time()
-    print(('Time for classDistribution Part1: %s' % str(t1-t0)))
+    if config.verbosity >= 2:
+        print(('Time for classDistribution Part1: %s' % str(t1-t0)))
 
     makeViolins(violins,outfile,session_name)
     makeViolins(comp_violins,outfile,session_name,add='_complex_classes')
 
     t2 = time.time()
-    print(('Time for classDistribution Part2: %s' % str(t2-t1)))
+    if config.verbosity >= 2:
+        print(('Time for classDistribution Part2: %s' % str(t2-t1)))
 
     classes = list(class_map.keys())
-    outlines = ['\t%s' % '\t'.join(classes)]
+    outlines = ['Tag\t%s' % '\t'.join(classes)]
 
     words = ['total']
     for classification in classes:
@@ -340,7 +451,7 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
             outlines.append('\t'.join(words))
 
     simple_classes = list(simple_class_map.keys())
-    simple_outlines = ['\t%s' % '\t'.join(simple_classes)]
+    simple_outlines = ['Tag\t%s' % '\t'.join(simple_classes)]
 
     words = ['total']
     for classification in simple_classes:
@@ -409,7 +520,10 @@ def classDistributionFromFile(annotationfile,outfolder,session_name,by_conf=Fals
         f.close()
 
     t3 = time.time()
-    print(('Time for classDistribution Part3: %s' % str(t3-t2)))
+    if config.verbosity >= 2:
+       print(('Time for c lassDistribution Part3: %s' % str(t3-t2)))
+
+    return
 
 def InteractionScoreAveragesFromFile(InteractionProfilesfile,outfile,session_name,by_tag=False):
     outfile = "%s/%s" % (outfile,session_name)
@@ -696,7 +810,7 @@ def annoAnnoNetwork(anno_anno_map,m_aac_map,gn_map,outfile,distance_threshold = 
 
 
 #called by structman
-def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False):
+def main(sess_id,output_path,config,overwrite=False,intertable=False):
     db_name = config.db_name
     db_adress = config.db_adress
     db_password = config.db_password
@@ -714,7 +828,7 @@ def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False)
     mod_per_gene = config.mod_per_gene
     infile = ''
     tanimoto_cutoff = config.tanimoto_cutoff
-    distance_threshold = config.distance_threshold
+    distance_threshold = config.milieu_threshold
     ligand_filter = config.ligand_filter
     proteome = config.proteome
     proc_n = config.proc_n
@@ -735,37 +849,32 @@ def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False)
 
     session_name = (infile.rsplit("/",1)[1]).rsplit(".",1)[0]
 
-    #database.updateGeneScores(session_id,db,cursor)
-
     t0 = time.time()
 
     if classification:
         t00 = time.time()
-        if intertable:
-            classfiles,interfiles = database.minDistOut(output_path,session_name,session_id,db,cursor,overwrite=overwrite,intertable=intertable,processes=proc_n,verbose=verbose)
-        else:
-            classfiles,interfiles = database.classificationOutput(output_path,session_name,session_id,db,cursor,overwrite=overwrite,verbose=verbose)
+        classfiles,interfiles = database.classificationOutput(config,output_path,session_name,session_id,db,cursor,overwrite=overwrite)
         t01 = time.time()
-        print("Time for minDistOut: ",t01-t00)
+        if config.verbosity >= 2:
+            print("Time for classificationOutput: ",t01-t00)
         for classfile in classfiles:
-            classDistributionFromFile(classfile,output_path,session_name)
-            classDistributionFromFile(classfile,output_path,session_name,rin_classes=True)
+            classDistributionFromFile(classfile,output_path,session_name,config)
+            classDistributionFromFile(classfile,output_path,session_name,config,rin_classes=True)
         t02 = time.time()
-        print("Time for producing classification distributions: ",t02-t01)
+        if config.verbosity >= 2:
+            print("Time for producing classification distributions: ",t02-t01)
         
         if intertable:
             for interfile in interfiles:
                 InteractionScoreAveragesFromFile(interfile,output_path,session_name,by_tag=True)
             t03 = time.time()
-            print("Time for producing Interaction files: ",t03-t02)
+            if config.verbosity >= 2:
+                print("Time for producing Interaction files: ",t03-t02)
     t1 = time.time()
-    print("Time for producing classification file: ",t1-t0)    
+    if config.verbosity >= 2:
+        print("Time for producing classification file: ",t1-t0)    
 
-    t0 = time.time()
-    if anno:
-        ofile = database.prodAnoOut("%s/%s.anotations.tsv" % (output_path,session_name),session_id,db_name,db_adress,db_user_name,db_password,ligand_filter=ligand_filter,proteome=proteome)
-    t1 = time.time()
-    print("Time for producing annotation file: ",t1-t0)    
+
     if gene:
         database.sortGenes(session_id,"%s/%s.protsort.tsv" % (output_path,session_name),db,cursor)
     if go:
@@ -815,6 +924,6 @@ def main(sess_id,output_path,config,overwrite=False,anno=False,intertable=False)
         t1 = time.time()
         babel.writeReport(anno_dict,"%s/Ligand_Report_%s_%s.tsv" % (output_path,ligand_file.rsplit('/',1)[1].rsplit(".",1)[0],session_name),db_name,db_adress,db_user_name,db_password)
         t2 = time.time()
-
-        print("Time for ligandAnalyzer: ",t1-t0)
-        print("Time for writeReport: ",t2-t1)
+        if config.verbosity >= 2:
+            print("Time for ligandAnalyzer: ",t1-t0)
+            print("Time for writeReport: ",t2-t1)

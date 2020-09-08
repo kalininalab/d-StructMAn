@@ -1,6 +1,8 @@
 import gzip
 import os
 import pdbParser
+import sys
+import traceback
 
 class Ligand_types:
     __slots__ = ['ligand','ion','metal']
@@ -11,9 +13,9 @@ class Ligand_types:
             self.metal = [0,0.0]
         else:
             nd,ns,sd,ss,ld,ls = lig_str.split('(')
-            self.ligand = [int(nd),float(ns)]
-            self.ion = [int(sd),float(ss)]
-            self.metal = [int(ld),float(ls)]
+            self.ligand = [int(float(nd)),float(ns)]
+            self.ion = [int(float(sd)),float(ss)]
+            self.metal = [int(float(ld)),float(ls)]
 
     def addEdge(self,interaction_type,score):
         if interaction_type == 'ligand':
@@ -91,9 +93,9 @@ class Intrachain_types:
             self.long = [0,0.0]
         else:
             nd,ns,sd,ss,ld,ls = intra_str.split('(')
-            self.neighbor = [int(nd),float(ns)]
-            self.short = [int(sd),float(ss)]
-            self.long = [int(ld),float(ls)]
+            self.neighbor = [int(float(nd)),float(ns)]
+            self.short = [int(float(sd)),float(ss)]
+            self.long = [int(float(ld)),float(ls)]
     def addEdge(self,interaction_type,score):
         if interaction_type == 'neighbor':
             self.neighbor[0] += 1
@@ -171,10 +173,10 @@ class Interchain_types:
             self.Peptide = [0,0.0]
         else:
             nd,ns,sd,ss,ld,ls,pd,ps = interchain_str.split('(')
-            self.Protein = [int(nd),float(ns)]
-            self.DNA = [int(sd),float(ss)]
-            self.RNA = [int(ld),float(ls)]
-            self.Peptide = [int(pd),float(ps)]
+            self.Protein = [int(float(nd)),float(ns)]
+            self.DNA = [int(float(sd)),float(ss)]
+            self.RNA = [int(float(ld)),float(ls)]
+            self.Peptide = [int(float(pd)),float(ps)]
             
     def addEdge(self,interaction_type,score):
         if interaction_type == 'Protein':
@@ -522,7 +524,107 @@ class Interaction_profile:
             self.computeClass()
             return self._class,self._simple_class
 
+class Centrality_scores:
+    __slots__ = ['AbsoluteCentrality', 'LengthNormalizedCentrality', 'MinMaxNormalizedCentrality', 'AbsoluteCentralityWithNegative',
+                    'LengthNormalizedCentralityWithNegative', 'MinMaxNormalizedCentralityWithNegative', 'AbsoluteComplexCentrality',
+                    'LengthNormalizedComplexCentrality', 'MinMaxNormalizedComplexCentrality', 'AbsoluteComplexCentralityWithNegative',
+                    'LengthNormalizedComplexCentralityWithNegative', 'MinMaxNormalizedComplexCentralityWithNegative','cent_list']
+
+    def __init__(self, AbsoluteCentrality = None, LengthNormalizedCentrality = None, MinMaxNormalizedCentrality = None,
+                    AbsoluteCentralityWithNegative = None, LengthNormalizedCentralityWithNegative = None, MinMaxNormalizedCentralityWithNegative = None,
+                    AbsoluteComplexCentrality = None, LengthNormalizedComplexCentrality = None, MinMaxNormalizedComplexCentrality = None,
+                    AbsoluteComplexCentralityWithNegative = None, LengthNormalizedComplexCentralityWithNegative = None,
+                    MinMaxNormalizedComplexCentralityWithNegative = None, code_str = None, cent_list = None):
+
+        if code_str != None:
+            self.str_decode(code_str)
+            return
+
+        if cent_list != None:
+            self.cent_list = cent_list
+            self.setAllByCentList(cent_list)
+            return
+
+        self.cent_list = []
+        self.AbsoluteCentrality = AbsoluteCentrality
+        self.cent_list.append(self.AbsoluteCentrality)
+
+        self.LengthNormalizedCentrality = LengthNormalizedCentrality
+        self.cent_list.append(self.LengthNormalizedCentrality)
+
+        self.MinMaxNormalizedCentrality = MinMaxNormalizedCentrality
+        self.cent_list.append(self.MinMaxNormalizedCentrality)
+
+        self.AbsoluteCentralityWithNegative = AbsoluteCentralityWithNegative
+        self.cent_list.append(self.AbsoluteCentralityWithNegative)
+
+        self.LengthNormalizedCentralityWithNegative = LengthNormalizedCentralityWithNegative
+        self.cent_list.append(self.LengthNormalizedCentralityWithNegative)
+
+        self.MinMaxNormalizedCentralityWithNegative = MinMaxNormalizedCentralityWithNegative
+        self.cent_list.append(self.MinMaxNormalizedCentralityWithNegative)
+
+        self.AbsoluteComplexCentrality = AbsoluteComplexCentrality
+        self.cent_list.append(self.AbsoluteComplexCentrality)
+
+        self.LengthNormalizedComplexCentrality = LengthNormalizedComplexCentrality
+        self.cent_list.append(self.LengthNormalizedComplexCentrality)
+
+        self.MinMaxNormalizedComplexCentrality = MinMaxNormalizedComplexCentrality
+        self.cent_list.append(self.MinMaxNormalizedComplexCentrality)
+
+        self.AbsoluteComplexCentralityWithNegative = AbsoluteComplexCentralityWithNegative
+        self.cent_list.append(self.AbsoluteComplexCentralityWithNegative)
+
+        self.LengthNormalizedComplexCentralityWithNegative = LengthNormalizedComplexCentralityWithNegative
+        self.cent_list.append(self.LengthNormalizedComplexCentralityWithNegative)
+
+        self.MinMaxNormalizedComplexCentralityWithNegative = MinMaxNormalizedComplexCentralityWithNegative
+        self.cent_list.append(self.MinMaxNormalizedComplexCentralityWithNegative)
+
+    def str_encode(self):
+        str_code = ';'.join([str(x)[:10] for x in self.cent_list])
+        return str_code
+
+    def str_decode(self,str_code):
+        self.cent_list = []
+        for x in str_code.split(';'):
+            try:
+                self.cent_list.append(float(x))
+            except:
+                self.cent_list.append(None)
+        self.setAllByCentList(self.cent_list)
+        return
+
+    def setAllByCentList(self,cent_list):
+        self.AbsoluteCentrality = self.cent_list[0]
+
+        self.LengthNormalizedCentrality = self.cent_list[1]
+
+        self.MinMaxNormalizedCentrality = self.cent_list[2]
+
+        self.AbsoluteCentralityWithNegative = self.cent_list[3]
+
+        self.LengthNormalizedCentralityWithNegative = self.cent_list[4]
+
+        self.MinMaxNormalizedCentralityWithNegative = self.cent_list[5]
+
+        self.AbsoluteComplexCentrality = self.cent_list[6]
+
+        self.LengthNormalizedComplexCentrality = self.cent_list[7]
+
+        self.MinMaxNormalizedComplexCentrality = self.cent_list[8]
+
+        self.AbsoluteComplexCentralityWithNegative = self.cent_list[9]
+
+        self.LengthNormalizedComplexCentralityWithNegative = self.cent_list[10]
+
+        self.MinMaxNormalizedComplexCentralityWithNegative = self.cent_list[11]
+        return
+
+
 #called by database
+#called by sdsc
 def calculateAverageProfile(profiles):
     average_profile = Interaction_profile()
     for chain_type in chain_types:
@@ -595,6 +697,12 @@ def getIAmap(interaction_score_file):
 
     return IAmap
 
+def float_or_none(string):
+    if string == 'None':
+        return None
+    else:
+        return float(string)
+
 def getCentMap(centrality_file):
     
     f = gzip.open(centrality_file,'rt')
@@ -604,6 +712,9 @@ def getCentMap(centrality_file):
     centrality_map = {}
 
     for line in lines[1:]:
+    #Residue        AbsoluteCentrality      LengthNormalizedCentrality      MinMaxNormalizedCentrality      AbsoluteCentralityWithNegative  LengthNormalizedCentralityWithNegative  MinMaxNormalizedCentralityWithNegative  AbsoluteComplexCentrality       LengthNormalizedComplexCentrality       MinMaxNormalizedComplexCentrality       AbsoluteComplexCentralityWithNegative   LengthNormalizedComplexCentralityWithNegative   MinMaxNormalizedComplexCentralityWithNegative
+    #A:20:_:TYR      1927.0  0.24084489438820147     1.0     1947.0  0.24334458192725908     1.0     2412.0  0.07389705882352941     1.2516865594187856      2260.0  0.06924019607843138     1.1607601438109914
+
         #A:9:_:TYR	1036.0	0.150079675503	0.829463570857
         if line == '':
             continue
@@ -613,24 +724,35 @@ def getCentMap(centrality_file):
             print(centrality_file,line)
             continue
         try:
-            raw_score = float(line.split('\t')[1])
-            score = float(line.split('\t')[2])
-            norm_score = float(line.split('\t')[3])
-            new_raw_score = float(line.split('\t')[4])
-            new_score = float(line.split('\t')[5])
-            new_norm_score = float(line.split('\t')[6])
-            res = line.split('\t')[0]
-            
+            words = line.split('\t')
+            res = words[0]
+
+            cent_scores = Centrality_scores(AbsoluteCentrality = float_or_none(words[1]),
+                LengthNormalizedCentrality = float_or_none(words[2]),
+                MinMaxNormalizedCentrality = float_or_none(words[3]),
+                AbsoluteCentralityWithNegative = float_or_none(words[4]),
+                LengthNormalizedCentralityWithNegative = float_or_none(words[5]),
+                MinMaxNormalizedCentralityWithNegative = float_or_none(words[6]),
+                AbsoluteComplexCentrality = float_or_none(words[7]),
+                LengthNormalizedComplexCentrality = float_or_none(words[8]),
+                MinMaxNormalizedComplexCentrality = float_or_none(words[9]),
+                AbsoluteComplexCentralityWithNegative = float_or_none(words[10]),
+                LengthNormalizedComplexCentralityWithNegative = float_or_none(words[11]),
+                MinMaxNormalizedComplexCentralityWithNegative = float_or_none(words[12]))
+
             [chain,res_nr,insertioncode,res_name] = res.split(':')
             res_nr = "%s%s" % (res_nr,insertioncode.replace('_',''))
 
             if not chain in centrality_map:
                 centrality_map[chain] = {}
             
-            centrality_map[chain][res_nr] = (raw_score,score,norm_score,new_raw_score,new_score,new_norm_score)
+            centrality_map[chain][res_nr] = cent_scores
         except:
             #some of the rins are not updated, this leads to an error here,-> simply update all rins
             print('Error in getCentMap: ',centrality_file)
+            [e,f,g] = sys.exc_info()
+            g = traceback.format_exc()
+            print('\n'.join([str(e),str(f),str(g)]))
             continue
 
     return centrality_map
@@ -742,7 +864,7 @@ def calculateIAPProfiles(interaction_map,chains,ligands,metals,ions):
     return ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
 #called by templateFiltering
-def lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map):
+def lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map, encoded = True):
     pdb_id = pdb_id.replace('_AU','').lower()
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
 
@@ -777,17 +899,20 @@ def lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_pa
                 continue
             if chain in centrality_map:
                 if res in centrality_map[chain]:
-                    centrality_score = centrality_map[chain][res]
+                    centrality_scores = centrality_map[chain][res]
                 else:
-                    centrality_score = (0.,0.,0.,0.,0.,0.)
+                    centrality_scores = None
             else:
-                centrality_score = (None,None,None,None,None,None)
+                centrality_scores = None
 
             profile = getProfile(interaction_map,(chain,res),ligands,metals,ions,res_contig_map,pdb_id,chain_type_map)
             if profile == None:
                 print(pdb_id,res,res_name)
                 continue
-            profile_map[res] = profile.encode(),centrality_score
+            if encoded:
+                profile_map[res] = profile.encode(),centrality_scores
+            else:
+                profile_map[res] = profile,centrality_scores
         profiles_map[chain] = profile_map
     ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = calculateIAPProfiles(interaction_map,chains,ligands,metals,ions)
 

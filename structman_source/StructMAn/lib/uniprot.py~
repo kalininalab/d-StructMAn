@@ -434,23 +434,9 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     return uniprot_ids
 
 #called by serializedPipeline
-def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=None):
+def getSequencesPlain(u_acs,db,cursor,max_seq_len=None,debug=False,filtering_db=None):
     gene_sequence_map = {}
     filtered_set = set()
-
-    missing_set = set()
-
-    try:
-        db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.mapping_db)
-        cursor = db.cursor()
-    except:
-        db = None
-        cursor = None
-        [e,f,g] = sys.exc_info()
-        config.errorlog.add_warning('Connection to mapping DB failed\n%s' % f)
-
-    if filtering_db != None:
-        filtering_db_path,dbs = filtering_db
 
     if db != None:
         if len(u_acs) == 0:
@@ -464,9 +450,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
             db.commit()
         except:
             [e,f,g] = sys.exc_info()
-            config.errorlog.add_warning("Error selecting in getSequencesPlain: %s,%s" % (sql,f))
-
-        db.close()
+            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
 
         if debug:
             t1 = time.time()
@@ -489,7 +473,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
                 disorder_score_list = [float(x) for x in disorder_scores[1:-1].split(',')]
                 disorder_scores = {}
                 for pos,score in enumerate(disorder_score_list):
-                    disorder_scores[pos+1] = score
+                    disorder_scores[str(pos)] = score
                 if len(disorder_regions) == 2: #this happens for completely globular proteins
                     disorder_regions_datastruct = []
                 else:
@@ -506,7 +490,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
 
             gene_sequence_map[u_ac] = seq,disorder_scores,disorder_regions_datastruct
 
-        if n > 0 and debug:
+        if n > 0:
             print('Filtered ',n,' Sequences due to max length: ',max_seq_len)
 
         if debug:
@@ -515,18 +499,15 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
 
     elif debug:
         t2 = time.time()
-        missing_set = u_acs
+
+    missing_set = set()
 
     in_db = set()
     for u_ac in u_acs:
         if filtering_db != None:
-            inside_all = True
-            for db_name in dbs:
-                folder_key = u_ac.split('-')[0][-2:]
-                filename = '%s/%s/%s_%s_gpw.fasta.gz' % (filtering_db_path,folder_key,u_ac,db_name)
-                if not os.path.isfile(filename):
-                     inside_all = False
-            if inside_all:
+            folder_key = u_ac.split('-')[0][-2:]
+            filename = '%s/%s/%s_ref50_gpw.fasta.gz' % (filtering_db,folder_key,u_ac)
+            if os.path.isfile(filename):
                 in_db.add(u_ac)
                 continue
 
@@ -544,11 +525,10 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
     if debug:
         print('Size of missing set: ',len(missing_set))
         print(missing_set)
-
+    #sys.exit()
     for u_ac in missing_set:
         seq_out = getSequence(u_ac,verbose=debug)
         if seq_out == None:
-            config.errorlog.add_warning('getSequence output is None for %s' % u_ac)
             gene_sequence_map[u_ac] = 0,None,None
             continue
         seq,refseqs,go_terms,pathways = seq_out
@@ -563,14 +543,12 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
     return gene_sequence_map
 
 #called by serializePipeline
-def getSequences(proteins,config):
-
+def getSequences(proteins,info_map_path,db,cursor):
     t0 = time.time()
     u_acs = set()
     iso_map = {}
-    protein_map = proteins.get_protein_map()
-    for u_ac in protein_map:
-        if protein_map[u_ac].sequence == None:
+    for u_ac in proteins.protein_map:
+        if proteins[u_ac].sequence == None:
             u_acs.add(u_ac)
 
         if u_ac.count('-') == 1:
@@ -583,9 +561,7 @@ def getSequences(proteins,config):
         else:
             iso_map[base].append(iso)
 
-    gene_sequence_map = getSequencesPlain(u_acs,config)
-
-    info_map_path = '%s/human_info_map.tab' % config.human_id_mapping_path
+    gene_sequence_map = getSequencesPlain(u_acs,db,cursor)
 
     f = open(info_map_path,'r')
     lines = f.readlines()
@@ -593,9 +569,9 @@ def getSequences(proteins,config):
 
         
     for u_ac in u_acs:
-        protein_map[u_ac].sequence = gene_sequence_map[u_ac][0]
-        protein_map[u_ac].disorder_scores = gene_sequence_map[u_ac][1]
-        protein_map[u_ac].disorder_regions = gene_sequence_map[u_ac][2]
+        proteins[u_ac].sequence = gene_sequence_map[u_ac][0]
+        proteins[u_ac].disorder_scores = gene_sequence_map[u_ac][1]
+        proteins[u_ac].disorder_regions = gene_sequence_map[u_ac][2]
 
     for line in lines:
         words = line[:-1].split('\t')
@@ -607,7 +583,7 @@ def getSequences(proteins,config):
             if go_str != '':
                 go_doubles = go_str[:-1].split(';')
                 for go_double in go_doubles:
-                    go_id = (':'.join(go_double.split(':')[:2])).strip()
+                    go_id = ':'.join(go_double.split(':')[:2])
                     go_term = ':'.join(go_double.split(':')[2:])
                     go_terms[go_id] = go_term
             path_str = words[2]
@@ -621,8 +597,8 @@ def getSequences(proteins,config):
                     iso_u_ac = u_ac
                 else:
                     iso_u_ac = '%s-%s' % (u_ac,iso)
-                protein_map[iso_u_ac].go_terms = go_terms
-                protein_map[iso_u_ac].pathways = pathways
+                proteins[iso_u_ac].go_terms = go_terms
+                proteins[iso_u_ac].pathways = pathways
 
     return 
 
@@ -633,11 +609,7 @@ def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
     time.sleep(2.0**tries-1.0)
     if len(uniprot_ac) < 2:
         return (0,"",{},{})
-
-    if not uniprot_ac[0:3] == 'UPI':
-        url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
-    else:
-        url = 'https://www.uniprot.org/uniparc/%s.fasta' %uniprot_ac
+    url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
     try:
         request = urllib.request.Request(url)
         response = urllib.request.urlopen(request)
@@ -659,16 +631,10 @@ def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
 
     wildtype_sequence = ("".join(wildtype_sequences)).replace(" ","").replace("\n","")
 
-    if uniprot_ac[0:3] == 'UPI':
-        if return_id:
-            return (wildtype_sequence,{},{},{},None)
-        return (wildtype_sequence,{},{},{})
-
     #old part, now just for refseqs,go and reactome
     time.sleep(2.0**tries-1.0)
     if len(uniprot_ac) < 2:
         return (0,"",{},{})
-
     url = 'https://www.uniprot.org/uniprot/%s.txt' %uniprot_ac
     try:
         request = urllib.request.Request(url)
@@ -700,7 +666,7 @@ def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
             if len(words) > 1:
                 if words[1] == "GO;":
                     words_ = line.split(";")
-                    go_id = words_[1].strip(";").strip()
+                    go_id = words_[1].strip(";")
                     go_name = words_[2].strip(";")
                     go_terms[go_id] = go_name
                 if words[1] == "Reactome;":

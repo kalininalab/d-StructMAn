@@ -2,45 +2,7 @@ import pdbParser as pdb
 import templateFiltering
 from operator import itemgetter
 import multiprocessing
-
-"""
-def score(entry):
-    #print(entry)
-    score = 1.0
-    try:
-        resolution = float(entry['Resolution'])
-    except:
-        #print("Resolution buggy in template:")
-        #print(entry)
-        resolution = 5.0
-        entry['Resolution'] = resolution
-    try:
-        seq_id = float(entry['Seq_Id'])/100
-    except:
-        #print("Sequence_id buggy in template:")
-        #print(entry)
-        seq_id = 0.35
-        entry['Seq_Id'] = seq_id
-    try:
-        rel_aln_length = float(entry['Coverage'])
-    except:
-        #print("Aln_length buggy in template:")
-        #print(entry)
-        rel_aln_length = 0.35
-        entry['Coverage'] = rel_aln_length
-    
-    score = templateFiltering.qualityScore(resolution,rel_aln_length,seq_id)
-    entry.append(score)
-    #Expand Template by placeholders for ligand distance and anotation
-    entry.append(-0.1)
-    entry.append(0.0)
-    return entry
-"""
-"""
-def sortByScore(entries):
-    entries = sorted(entries, key=itemgetter(7),reverse = True)
-    return entries
-"""
+import sdsc
 
 def selectTemplates(structures,pdb_path):
     if len(structures) == 0:
@@ -77,7 +39,7 @@ def paraGetInfo(lock,input_queue,out_queue,pdb_path):
         with lock:
             out_queue.put((pdb_id,resolution,homomer_dict))
 
-def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n_processes):
+def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n_processes,proteins):
 
     manager = multiprocessing.Manager()
     lock = manager.Lock()
@@ -107,10 +69,12 @@ def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n
         (pdb_id,resolution,homomer_dict) = out
         info_map[pdb_id] = (resolution,homomer_dict)
 
-    filtered_structures = {}
-    for gene in raw_structure_map:
-        filtered_structures[gene] = {}
-        for pdb_id,chain in raw_structure_map[gene]:
+    u_acs = proteins.get_protein_u_acs()
+    structure_list = proteins.get_structure_list()
+    complex_list = proteins.get_complex_list()
+
+    for u_ac in raw_structure_map:
+        for pdb_id,chain in raw_structure_map[u_ac]:
             if not pdb_id in info_map:
                 continue
             resolution,homomer_dict = info_map[pdb_id]
@@ -118,9 +82,18 @@ def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n
                 continue
             if resolution > option_res_thresh:
                 continue
-            filtered_structures[gene][(pdb_id,chain)] = raw_structure_map[gene][(pdb_id,chain)]
-            filtered_structures[gene][(pdb_id,chain)]['Resolution'] = resolution
-            filtered_structures[gene][(pdb_id,chain)]['Oligo'] = homomer_dict[chain]
+            oligo = raw_structure_map[u_ac][(pdb_id,chain)]['Oligo']
+            struct_anno = sdsc.Structure_annotation(u_ac,pdb_id,chain)
+            proteins.add_annotation(u_ac,pdb_id,chain,struct_anno)
 
-    return filtered_structures
+            if not (pdb_id,chain) in structure_list:
+                struct = sdsc.Structure(pdb_id,chain, oligo = oligo,mapped_proteins = [u_ac])
+                proteins.add_structure(pdb_id,chain,struct)
+            else:
+                proteins.add_mapping_to_structure(pdb_id,chain,u_ac)
+
+            if not pdb_id in complex_list:
+                compl = sdsc.Complex(pdb_id,resolution,homomers = homomer_dict)
+                proteins.add_complex(pdb_id,compl)
+    return
 
