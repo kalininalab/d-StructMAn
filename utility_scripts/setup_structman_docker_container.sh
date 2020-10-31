@@ -44,14 +44,10 @@ echo "version: '2'
 services:
     structman_db:
         image: docker.io/sanjaysrikakulam/structman:latest
-        restart: unless-stopped
         container_name: $container_name
-        hostname: structman
+        hostname: structman-container
         ports:
             - 3306
-        cap_add:
-            - NET_ADMIN
-            - NET_RAW
         volumes:
             - ./structman/input_data/:/structman/input_data/:Z
             - ./structman/results/:/structman/results/:Z
