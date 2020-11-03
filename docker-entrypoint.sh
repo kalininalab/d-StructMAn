@@ -116,7 +116,7 @@ initialize_mysql_and_create_users() {
 
     # Start mysql server
     /usr/bin/mysqld_safe >/dev/null 2>&1 &
-    sleep 5
+    sleep 15
 
     # Create a debian-sys-maint user and a StructMAn db user
     echo "===>    Creating a debian system maintenance user and a MySQL StructMAn user  <==="
