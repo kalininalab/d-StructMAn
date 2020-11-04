@@ -112,11 +112,11 @@ socket = /var/run/mysqld/mysqld.sock" > /etc/mysql/mysql.conf.d/mysqld.cnf
 initialize_mysql_and_create_users() {
     echo "===>    Initializing MySQL database server!       <==="
     mysqld --initialize-insecure --user=mysql > /dev/null 2>&1 &
-    sleep 5
+    sleep 60
 
     # Start mysql server
     /usr/bin/mysqld_safe >/dev/null 2>&1 &
-    sleep 15
+    sleep 60
 
     # Create a debian-sys-maint user and a StructMAn db user
     echo "===>    Creating a debian system maintenance user and a MySQL StructMAn user  <==="
@@ -147,7 +147,7 @@ EOF
 configure_database() {
     # Start MySQL server
     /usr/bin/mysqld_safe >/dev/null 2>&1 &
-    sleep 5
+    sleep 60
     
     echo "===>    creating and importing the default database!    <==="
     mysql --user=root < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB.sql
@@ -158,6 +158,8 @@ configure_database() {
         echo "===>    MySQL StructMAn default database could not be created or imported. Aborting the container setup!   <==="
         exit 1
     fi
+
+    sleep 10
 
     # MySQL server shutdown
     /usr/bin/mysqladmin --defaults-file=/etc/mysql/debian.cnf shutdown
