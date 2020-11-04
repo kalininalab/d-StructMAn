@@ -35,7 +35,7 @@ def appendOutput(proteins,outfile):
         for aac_base in aaclist:
             aa2 = aaclist[aac_base]
             pos = int(aac_base[1:])
-            
+
             m = (u_ac,pos)
             aa1 = aac_base[0]
 
@@ -62,7 +62,7 @@ def appendOutput(proteins,outfile):
 
             input_res_id = proteins.get_res_id(u_ac,pos)
             input_pdb_id = ''
-            
+
             if input_res_id != None:
                 input_pdb_id = u_ac
 
@@ -74,7 +74,7 @@ def appendOutput(proteins,outfile):
     f = open(outfile,'a')
     f.write('\n'.join(lines) + '\n')
     f.close()
-    
+
     return
 
 def main(filename,config,output_path,main_file_path):
@@ -117,21 +117,16 @@ def main(filename,config,output_path,main_file_path):
     f.write("Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tIndividual Interactions\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures\n")
     f.close()
 
-    mrna_fasta_for_annovar = True #make this a option, for the case of mrna fasta files with non-standard protein-ids (may include further debugging)
-
-    if mrna_fasta_for_annovar:
-        mrna_fasta = None
-
     t01 = time.time()
 
     if verbose:
         print("Time for preparation before buildQueue: %s" % (str(t01-t0)))
 
-    junksize = 500
+    chunksize = config.chunksize
 
     if verbose:
-        print("Call buildQueue with chunksize: %s and file: %s" % (str(junksize),nfname))
-    proteins_chunks = serializedPipeline.buildQueue(config,nfname,junksize,mrna_fasta=mrna_fasta)
+        print("Call buildQueue with chunksize: %s and file: %s" % (str(chunksize),nfname))
+    proteins_chunks = serializedPipeline.buildQueue(config,nfname,chunksize)
 
     t02 = time.time()
     if verbose:
@@ -140,23 +135,23 @@ def main(filename,config,output_path,main_file_path):
 
     errorlog.start(nfname,session_name)
 
-    junk_nr = 1 
-    for proteins in proteins_chunks:
+    chunk_nr = 1
+    for proteins, indels in proteins_chunks:
         if len(proteins) == 0:
             continue
 
-        print("Chunk %s/%s" % (str(junk_nr),str(len(proteins_chunks))))
-        junk_nr+=1
+        print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
+        chunk_nr+=1
         try:
             os.stat("%s/tmp_structman_pipeline" %(output_path))
         except:
-            os.mkdir("%s/tmp_structman_pipeline" %(output_path))  
+            os.mkdir("%s/tmp_structman_pipeline" %(output_path))
         os.chdir("%s/tmp_structman_pipeline" %(output_path))
         cwd = "%s/tmp_structman_pipeline" %(output_path)
 
         try:
             #transform the protein map into a Proteins object
-            proteins = sdsc.Proteins(proteins, lite = True)
+            proteins = sdsc.Proteins(proteins, indels, lite = True)
 
             if verbose:
                 t3 = time.time()
@@ -192,8 +187,8 @@ def main(filename,config,output_path,main_file_path):
             appendOutput(proteins,outfile)
 
         #Error-Handling for a whole input line
-        except:
-            errorlog.add_error('Litepipeline main loop error')
+        except Exception as e:
+            errorlog.add_error(f'Litepipeline main loop error:\n{str(e)}')
 
 
         os.chdir(output_path)
@@ -206,7 +201,7 @@ def main(filename,config,output_path,main_file_path):
 
     errorlog.stop()
 
-    
+
     tend = time.time()
     print((tend-t0))
     return

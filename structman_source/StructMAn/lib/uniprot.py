@@ -4,6 +4,7 @@ import pymysql as MySQLdb
 import sys
 import os
 import sdsc
+import database
 
 def getUniprotId(query,querytype):
     url = 'https://www.uniprot.org/uploadlists/'
@@ -12,7 +13,7 @@ def getUniprotId(query,querytype):
     'to':'ID',
     'format':'tab',
     'query':'%s' % (query)
-    } 
+    }
     #print params
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
@@ -36,7 +37,7 @@ def getUniprotId(query,querytype):
             return getUniprotId(query,querytype)
         else:
             return "-"
-    
+
     return uniprot_id
 
 def tag_update(tag_map,u_ac,new_entry):
@@ -58,16 +59,16 @@ def tag_update(tag_map,u_ac,new_entry):
             tag_map[u_ac][aac] = ','.join(tags)
     return tag_map
 
-def updateMappingDatabase(u_acs,db,verbose=False):
+def updateMappingDatabase(u_acs,db,config):
     cursor = db.cursor()
     ac_id_values = []
     ac_ref_values = []
     seq_values = []
     for u_ac in u_acs:
-        seq_out = getSequence(u_ac,return_id=True,verbose=verbose)
+        seq_out = getSequence(u_ac,config,return_id=True)
         if seq_out == None:
             continue
-        
+
         seq,refseqs,go_terms,pathways,u_id = seq_out
         if u_id == None: #This can happen for uniprot entries, which got deleted from uniprot
             print("Warning: Uniprot entry:",u_ac," not found, most probably the entry got deleted from uniprot")
@@ -77,45 +78,85 @@ def updateMappingDatabase(u_acs,db,verbose=False):
             ac_ref_values.append("('%s','%s','%s','%s')" % (u_ac,u_ac.split('-')[0][-2:],refseq,refseq[:2]))
         seq_values.append("('%s','%s')" % (u_ac,seq))
 
-    if len(ac_id_values) > 0:
+    # Don't insert into database if in lite mode
+    if config.lite:
+        return
 
-        sql = "INSERT IGNORE INTO AC_ID(Uniprot_Ac,Ac_Hash,Uniprot_Id,Id_Hash) VALUES %s " % (','.join(ac_id_values))
-        try:
-            cursor.execute(sql)
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+    try:
 
-    if len(ac_ref_values) > 0:
+        if len(ac_id_values) > 0:
 
-        sql = "INSERT IGNORE INTO AC_Refseq(Uniprot_Ac,Ac_Hash,Refseq,Refseq_Hash) VALUES %s" % (','.join(ac_ref_values))
-        try:
-            cursor.execute(sql)
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+            sql = "INSERT IGNORE INTO AC_ID(Uniprot_Ac,Ac_Hash,Uniprot_Id,Id_Hash) VALUES %s " % (','.join(ac_id_values))
+            try:
+                cursor.execute(sql)
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
 
-    if len(seq_values) > 0:
 
-        sql = "INSERT IGNORE INTO Sequences(Uniprot_Ac,Sequence) VALUES %s " % (','.join(seq_values))
-        try:
-            cursor.execute(sql)
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+        if len(ac_ref_values) > 0:
+
+            sql = "INSERT IGNORE INTO AC_Refseq(Uniprot_Ac,Ac_Hash,Refseq,Refseq_Hash) VALUES %s" % (','.join(ac_ref_values))
+            try:
+                cursor.execute(sql)
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+
+        if len(seq_values) > 0:
+
+            sql = "INSERT IGNORE INTO Sequences(Uniprot_Ac,Sequence) VALUES %s " % (','.join(seq_values))
+            try:
+                cursor.execute(sql)
+                db.commit()
+            except:
+                [e,f,g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+    except:
+        #this happens for Devs without insert rights to the mapping DB, just ignore for the moment
+        return
 
     return
 
 #called by serializedPipeline
-def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
+def IdMapping(config,ac_map,id_map,np_map,pdb_map):
+    def indel_insert(indels,ac):
+        for indel in indels:
+            indel_protein_name = indel.create_protein_name(ac)
+            if indel_protein_name in proteins:
+                while indel_protein_name in proteins:
+                    indel_protein_name = indel.create_other_protein_name(ac,indel_protein_name)
+                    if indel_protein_name == None:
+                        config.errorlog.add_error('All indel protein names are reserved, duplicate indels in input?')
+                        break
+            indel_mut_protein = sdsc.Protein(u_ac = indel_protein_name)
+            proteins[indel_protein_name] = indel_mut_protein
+            indel.set_proteins(ac,indel_protein_name)
+            indel_map.append(indel)
+        return
+
+    try:
+        db_adress = config.db_adress
+        db_user_name = config.db_user_name
+        db_password = config.db_password
+        db = MySQLdb.connect(db_adress,db_user_name,db_password,config.mapping_db)
+        cursor = db.cursor()
+    except:
+        db = None
+        cursor = None
+
     proteins = {}
+    indel_map = []
 
     for ac in ac_map:
-        protein = sdsc.Protein(u_ac=ac,positions = ac_map[ac])
+        positions = ac_map[ac][0]
+        indels = ac_map[ac][1]
+
+        protein = sdsc.Protein(u_ac=ac,positions = positions)
         proteins[ac] = protein
+        indel_insert(indels,ac)
 
     #Step one: map everything to uniprot-ac
     if len(id_map) > 0:
@@ -126,19 +167,19 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                 results = cursor.fetchall()
                 db.commit()
             except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+                config.errorlog.add_error("Database error in IdMapping")
             stored_ids = set()
             for row in results:
                 u_ac = row[0]
                 u_id = row[1]
                 stored_ids.add(u_id)
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id])
+                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                     proteins[u_ac] = protein
                 else:
                     proteins[u_ac].u_id = u_id
-                    proteins[u_ac].add_positions(id_map[u_id])
+                    proteins[u_ac].add_positions(id_map[u_id][0])
+                indel_insert(id_map[u_id][1],u_ac)
 
             unstored_ids = []
             for u_id in id_map:
@@ -146,44 +187,39 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                     unstored_ids.append(u_id)
             update_acs = []
             if len(unstored_ids) > 0: #whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
-                
+
                 #This part is identical to the part, when no local database is used
                 id_ac_map = getUniprotIds(unstored_ids,'ID',target_type="ACC")
                 for u_id in id_ac_map:
                     u_ac = id_ac_map[u_id]
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id])
+                        protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                         proteins[u_ac] = protein
 
                     else:
                         proteins[u_ac].u_id = u_id
-                        proteins[u_ac].add_positions(id_map[u_id])
+                        proteins[u_ac].add_positions(id_map[u_id][0])
+                    indel_insert(id_map[u_id][1],u_ac)
                     #This part is different
-                    update_acs.append(u_ac)
-                updateMappingDatabase(update_acs,db,verbose=verbose)
+                    if not sdsc.is_mutant_ac(u_ac):
+                        update_acs.append(u_ac)
+                #updateMappingDatabase(update_acs,db,config)
 
         else:
             id_ac_map = getUniprotIds(list(id_map.keys()),'ID',target_type="ACC")
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id])
+                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                     proteins[u_ac] = protein
-
                 else:
                     proteins[u_ac].u_id = u_id
-                    proteins[u_ac].add_positions(id_map[u_id])
+                    proteins[u_ac].add_positions(id_map[u_id][0])
+                indel_insert(id_map[u_id][1],u_ac)
 
     if len(np_map) > 0:
         if db != None:
-            sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Refseq IN ('%s')" % "','".join(list(np_map.keys()))
-            try:
-                cursor.execute(sql)
-                results = cursor.fetchall()
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+            results = database.select(config,['Uniprot_Ac','Refseq'],'AC_Refseq',in_rows={'Refseq':np_map.keys()},from_mapping_db=True)
 
             ref_u_ac_map = {} #different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
             gene_id_snap = set(proteins.keys()) #snapshot of u_acs not originating from refseq-mapping
@@ -194,25 +230,26 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                 u_ac = row[0]
                 ref = row[1]
                 stored_refs.add(ref)
-                if (not ref in ref_u_ac_map):
+                if not ref in ref_u_ac_map:
                     ref_u_ac_map[ref] = u_ac
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref])
+                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
-
                     else:
-                        proteins[u_ac].ref_ids.add(ref)
-                        proteins[u_ac].add_positions(np_map[ref])
-                        
+                        proteins[u_ac].add_ref_id(ref)
+                        proteins[u_ac].add_positions(np_map[ref][0])
+                    indel_insert(np_map[ref][1],u_ac)
+
                 elif u_ac in gene_id_snap:
                     if ref_u_ac_map[ref].count('-') == 0 and u_ac.count('-') > 0:
                         ref_u_ac_map[ref] = u_ac
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref])
+                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
                     else:
-                        proteins[u_ac].ref_ids.add(ref)
-                        proteins[u_ac].add_positions(np_map[ref])
+                        proteins[u_ac].add_ref_id(ref)
+                        proteins[u_ac].add_positions(np_map[ref][0])
+                    indel_insert(np_map[ref][1],u_ac)
 
                 elif ref_u_ac_map[ref].count('-') == 0:
                     if u_ac.count('-') > 0:
@@ -221,11 +258,12 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                         ref_u_ac_map[ref] = u_ac
                         del proteins[old_ac]
                         if not u_ac in proteins:
-                            protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref])
+                            protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                             proteins[u_ac] = protein
                         else:
-                            proteins[u_ac].ref_ids.add(ref)
-                            proteins[u_ac].add_positions(np_map[ref])
+                            proteins[u_ac].add_ref_id(ref)
+                            proteins[u_ac].add_positions(np_map[ref][0])
+                        indel_insert(np_map[ref][1],u_ac)
             #similar to uniprot-id mapping, we have to go to uniprot to get search for unstored refseq entries and if we find them, we have to update the local mapping database
             unstored_refs = []
             for ref in np_map:
@@ -237,24 +275,27 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref])
+                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
                     else:
-                        proteins[u_ac].ref_ids.add(ref)
-                        proteins[u_ac].add_positions(np_map[ref])
-                    update_acs.append(u_ac)
-                updateMappingDatabase(update_acs,db,verbose=verbose)
+                        proteins[u_ac].add_ref_id(ref)
+                        proteins[u_ac].add_positions(np_map[ref][0])
+                    indel_insert(np_map[ref][1],u_ac)
+                    if not sdsc.is_mutant_ac(u_ac):
+                        update_acs.append(u_ac)
+                #updateMappingDatabase(update_acs,db,config)
 
         else:
             np_ac_map = getUniprotIds(list(np_map.keys()),'P_REFSEQ_AC',target_type="ACC")
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref])
+                    protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                     proteins[u_ac] = protein
                 else:
-                    proteins[u_ac].ref_ids.add(ref)
-                    proteins[u_ac].add_positions(np_map[ref])
+                    proteins[u_ac].add_ref_id(ref)
+                    proteins[u_ac].add_positions(np_map[ref][0])
+                indel_insert(np_map[ref][1],u_ac)
 
     #Step two: get uniprot-id and refseqs from uniprot-ac
 
@@ -284,8 +325,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                 results = cursor.fetchall()
                 db.commit()
             except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+                config.errorlog.add_error("Database error in IdMapping")
 
             for row in results:
                 u_ac = row[0]
@@ -294,7 +334,7 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                 stored_u_acs.add(u_ac)
                 if u_ac in proteins:
                     proteins[u_ac].u_id = u_id
-                    
+
                 if u_ac in ac_iso_map:
                     for iso in ac_iso_map[u_ac]:
                         proteins['%s-%s' % (u_ac,iso)].u_id = u_id
@@ -303,10 +343,11 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
             unstored_u_acs = []
             for u_ac in id_search:
                 if not u_ac in stored_u_acs:
-                    unstored_u_acs.append(u_ac)
+                    if not sdsc.is_mutant_ac(u_ac):
+                        unstored_u_acs.append(u_ac)
 
             if len(unstored_u_acs) > 0:
-                updateMappingDatabase(unstored_u_acs,db,verbose=verbose)
+                updateMappingDatabase(unstored_u_acs,db,config)
 
                 sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(unstored_u_acs)
                 try:
@@ -314,13 +355,12 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
                     results = cursor.fetchall()
                     db.commit()
                 except:
-                    [e,f,g] = sys.exc_info()
-                    raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+                    config.errorlog.add_error("Database error in IdMapping")
 
                 for row in results:
                     u_ac = row[0]
                     u_id = row[1]
-                    
+
                     if u_ac in proteins:
                         proteins[u_ac].u_id = u_id
                     if u_ac in ac_iso_map:
@@ -344,24 +384,26 @@ def IdMapping(ac_map,id_map,np_map,db,cursor,pdb_map,verbose=False):
             results = cursor.fetchall()
             db.commit()
         except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in mutationCheck: %s,%s" % (sql,f))
+            config.errorlog.add_error("Database error in IdMapping")
 
         for row in results:
             u_ac = row[0]
             ref = row[1]
-            proteins[u_ac].ref_ids.add(ref)
+            proteins[u_ac].add_ref_id(ref)
     else:
         ac_np_map = getUniprotIds(list(proteins.keys()),'ACC',target_type="P_REFSEQ_AC")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
-            proteins[u_ac].ref_ids.add(ref)
+            proteins[u_ac].add_ref_id(ref)
 
     for pdb_tuple in pdb_map:
         protein = sdsc.Protein(pdb_id=pdb_tuple,positions = pdb_map[pdb_tuple])
         proteins[pdb_tuple] = protein
 
-    return proteins
+    if db != None:
+        db.close()
+
+    return proteins,indel_map
 
 
 #called by serializedPipeline
@@ -373,10 +415,10 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     url = 'https://www.uniprot.org/uploadlists/'
     params = {
     'from':'%s' % (querytype),
-    'to':'%s' % (target_type), 
+    'to':'%s' % (target_type),
     'format':'tab',
     'query':'%s' % (query)
-    } 
+    }
     #print params
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
@@ -385,7 +427,7 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     try:
         response = urllib.request.urlopen(request)
     except:
-        print("ERROR: Uniprot did not answer") 
+        print("ERROR: Uniprot did not answer")
         return {}
     page = response.read(2000000).decode('utf-8')
     uniprot_ids = {}
@@ -441,11 +483,13 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
     missing_set = set()
 
     try:
-        db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.mapping_db)
-        cursor = db.cursor()
+        if config.mapping_db != None:
+            db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.mapping_db)
+            cursor = db.cursor()
+        else:
+            db = None
     except:
         db = None
-        cursor = None
         [e,f,g] = sys.exc_info()
         config.errorlog.add_warning('Connection to mapping DB failed\n%s' % f)
 
@@ -515,7 +559,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
 
     elif debug:
         t2 = time.time()
-        missing_set = u_acs
+        missing_set = set(u_acs)
 
     in_db = set()
     for u_ac in u_acs:
@@ -546,7 +590,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
         print(missing_set)
 
     for u_ac in missing_set:
-        seq_out = getSequence(u_ac,verbose=debug)
+        seq_out = getSequence(u_ac,config)
         if seq_out == None:
             config.errorlog.add_warning('getSequence output is None for %s' % u_ac)
             gene_sequence_map[u_ac] = 0,None,None
@@ -585,17 +629,16 @@ def getSequences(proteins,config):
 
     gene_sequence_map = getSequencesPlain(u_acs,config)
 
+    for u_ac in u_acs:
+        protein_map[u_ac].sequence = gene_sequence_map[u_ac][0]
+        proteins.set_disorder_scores(u_ac,gene_sequence_map[u_ac][1])
+        proteins.set_disorder_regions(u_ac,gene_sequence_map[u_ac][2])
+
     info_map_path = '%s/human_info_map.tab' % config.human_id_mapping_path
 
     f = open(info_map_path,'r')
     lines = f.readlines()
     f.close()
-
-        
-    for u_ac in u_acs:
-        protein_map[u_ac].sequence = gene_sequence_map[u_ac][0]
-        protein_map[u_ac].disorder_scores = gene_sequence_map[u_ac][1]
-        protein_map[u_ac].disorder_regions = gene_sequence_map[u_ac][2]
 
     for line in lines:
         words = line[:-1].split('\t')
@@ -624,15 +667,20 @@ def getSequences(proteins,config):
                 protein_map[iso_u_ac].go_terms = go_terms
                 protein_map[iso_u_ac].pathways = pathways
 
-    return 
+    return
 
-def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
-    if verbose:
+def getSequence(uniprot_ac,config,tries=0,return_id=False):
+    if config.verbosity >= 2:
         print('uniprot.getSequence for ',uniprot_ac)
+
+    if sdsc.is_mutant_ac(uniprot_ac):
+        config.errorlog.add_error('Cannot call getSequence with a mutant protein: %s' % uniprot_ac)
+        return None
+
     #new part just for the sequence
     time.sleep(2.0**tries-1.0)
     if len(uniprot_ac) < 2:
-        return (0,"",{},{})
+        return None
 
     if not uniprot_ac[0:3] == 'UPI':
         url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
@@ -676,7 +724,7 @@ def getSequence(uniprot_ac,tries=0,return_id=False,verbose=False):
         page = response.read(9000000).decode('utf-8')
     except:
         if tries < 4:
-            return getSequence(uniprot_ac,tries=tries+1,verbose=verbose)
+            return getSequence(uniprot_ac,config,tries=tries+1)
 
         else:
             #print uniprot_ac

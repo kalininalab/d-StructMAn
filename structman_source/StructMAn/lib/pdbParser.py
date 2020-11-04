@@ -303,7 +303,7 @@ def getCurrentPDBID(pdb_id,pdb_path):
 
     return pdb_id
 
-def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False):
+def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=False):
     if obsolete_check:
         pdb_id = getCurrentPDBID(pdb_id, pdb_path)
 
@@ -315,12 +315,16 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False):
                 print("Did not find asymetric unit entry in local pdb, searching online: ",url)
             try:
                 request = urllib.request.Request(url)
+                if get_is_local:
+                    return urllib.request.urlopen(request),None
                 return urllib.request.urlopen(request)
             except:
                 print("Did not find the PDB-file: %s" % pdb_id)
                 return None
                 
         else:
+            if get_is_local:
+                return gzip.open(path, 'rb'),path
             return gzip.open(path, 'rb')
     else:
         path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
@@ -330,13 +334,16 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False):
                 print("Did not find entry in local pdb, searching online: ",url)
             try:
                 request = urllib.request.Request(url)
-                
+                if get_is_local:
+                    return urllib.request.urlopen(request),None
                 return urllib.request.urlopen(request)
             except:
                 print("Did not find the PDB-file: %s" % pdb_id)
                 return None
                
         else:
+            if get_is_local:
+                return gzip.open(path, 'rb'),path
             return gzip.open(path, 'rb')
 
 ### Newly Written         
@@ -415,7 +422,7 @@ def parsePDBSequence(buf):
                 res_pos_map[res_nr] = i
                 i += 1
 
-    
+    buf.close() 
     return seq,res_pos_map
     
 # nucleic acid parser called by mmcif parser with only buf if chain is nuc acid
@@ -428,7 +435,7 @@ def nuc_acid_parser(buf):
     temp = 0
     
     x = []
-    for line in open(buf):
+    for line in open(buf): ###What is this?
         splitted = line.split()
         if len(line.strip()) == 0 :
             continue
@@ -444,7 +451,7 @@ def nuc_acid_parser(buf):
             temp = splitted[8]
             res_pos_map[splitted[8]] = i
             i += 1
-                                   
+    buf.close()                               
     return seq,res_pos_map
     
 # mmcif parser with only takes buf as an argument
@@ -478,7 +485,7 @@ def parseMMCIFSequence(buf):
                 temp = splitted[8]
                 res_pos_map[splitted[8]] = i
                 i += 1
-                                     
+    buf.close()                                 
     return seq,res_pos_map
 
 def getSequenceAU(pdb_id,chain,pdb_path):
@@ -704,13 +711,16 @@ def parseMMCIFSequence(buf,chain):
 
 #called by serializedPipeline
 #called by templateFiltering
-def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
+def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = False, get_is_local = False):
     AU = False
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
         AU = True
 
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
+    if get_is_local:
+        buf,path = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check,get_is_local = get_is_local)
+    else:
+        buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
 
     if buf == None:
     # Added automatization here, if pdb file not exist, automatically calls MMCIF version
@@ -720,6 +730,8 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
 
     chain_ids = set()
     newlines = []
+
+    fixed_10k_bug = False
 
     current_serial = 1
     firstAltLoc = None
@@ -772,15 +784,24 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False):
 
         # Adjust serials after skipping records
         if current_serial > 99999:
+            fixed_10k_bug = True
             newline = record_name[0:5].ljust(5, b' ') + str(current_serial).encode('ascii').rjust(6, b' ')
         else:
             newline = record_name.ljust(6, b' ') + str(current_serial).encode('ascii').rjust(5, b' ')
+
         newline += line[11:]
         newlines.append(newline)
         current_serial += 1
-
     template_page = b'\n'.join(newlines).decode('ascii')
 
+    buf.close()
+
+    if return_10k_bool and get_is_local:
+        return template_page,fixed_10k_bug,path
+    elif return_10k_bool:
+        return template_page,fixed_10k_bug
+    elif get_is_local:
+        return template_page,path
     return template_page
     
 # Called by standardParsePDB if PDB file does not exist
@@ -850,6 +871,7 @@ def standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False):
 
     template_page = b'\n'.join(newlines).decode('ascii')
 
+    buf.close()
 
     return template_page
 
@@ -965,6 +987,8 @@ def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set()):
         newline += line[11:]
         newlines.append(newline)
         current_serial += 1
+
+    buf.close()
 
     pep_not_lig = []
     for chain_id in chain_type_map:
@@ -1454,6 +1478,7 @@ def getInfo(pdb_id,pdb_path):
                 and b'CA' in words:
                     resolution = 100.0
                     abort = True
+    buf.close()
 
     if resolution == None:
         resolution = 100.0
@@ -1502,6 +1527,8 @@ def colorStructure(pdb_id,chain,outfile,db,cursor,pdb_path):
                     line = line[:60] + color_code + line[66:]
 
         newlines.append(line)
+
+    buf.close()
 
     f = open(outfile,'wb')
     f.write(b'\n'.join(newlines))

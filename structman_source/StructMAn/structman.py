@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 #This is the wrapper script, including and automatizing all functions StructMAn has to offer
+import configparser
 import sys
 import getopt
 import os
@@ -18,35 +19,46 @@ import database
 import serializedPipeline
 import lite_pipeline
 import resource
+import repairDB
 
 cwd = os.getcwd()
 
-class Config:
-    def __init__(self,config_path,infile = '' ,num_of_cores = 1,output_path = '',overwrite = False,
-                    database_util = False, output_util = False,external_call = True,profiling = False, verbosity = None,
-                    print_all_errors = False):
-        self.db_adress = ""
-        self.db_user_name = ""
-        self.db_password = ""
-        self.db_name = ""
-        self.mapping_db = ''
-        self.config = ''
-        self.infile = ''
-        self.outfolder = output_path
-        self.overwrite = False
-        self.num_of_cores = num_of_cores
-        self.neighborhood_calculation = False
-        self.error_annotations_into_db = True
-        self.anno_session_mapping = True
-        self.calculate_interaction_profiles=False
-        self.verbose = False
 
-        self.verbosity = 0
+class Config:
+    def __init__(self,config_path ,num_of_cores = 1,output_path = '',
+                    database_util = False, output_util = False,external_call = True,profiling = False, verbosity = None,
+                    print_all_errors = False,chunksize = 500):
+        self.prog_start_time = time.time()
+        # read config file, auto add section header so old config files work
+        config = configparser.ConfigParser()
+        try:
+            config.read(config_path)
+        except configparser.MissingSectionHeaderError:
+            with open(config_path, 'r') as f:
+                config.read_string('[user]\n%s' % f.read())
+        cfg = config['user']
+
+        self.db_adress = cfg.get('db_adress', fallback='')
+        self.db_user_name = cfg.get('db_user_name', fallback='')
+        self.db_password = cfg.get('db_password', fallback='')
+        self.db_name = cfg.get('db_name', fallback='')
+        self.mapping_db = cfg.get('mapping_db', fallback='')
+
+        self.outfolder = output_path
+        self.num_of_cores = num_of_cores
+
+        self.neighborhood_calculation = cfg.getboolean('neighborhood_calculation', fallback=False)
+        self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
+        self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
+        self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=False)
+
+        self.verbose = cfg.getboolean('verbose', fallback=False)
+        self.verbosity = cfg.getint('verbosity', fallback=0)
 
         self.profiling = profiling
-        self.skipref = False
+        self.skipref = cfg.getboolean('skipref', fallback=False)
 
-        self.resources = 'manu'
+        self.resources = cfg.getboolean('resources', fallback='manu')
 
         self.proc_n = 48
         self.blast_processes = self.proc_n
@@ -54,66 +66,66 @@ class Config:
         self.annotation_processes = self.proc_n
         self.number_of_processes = self.proc_n
 
-        self.dssp = True
-        self.pdb_input_asymetric_unit = False
-        self.search_tool='MMseqs2'
+        self.dssp = cfg.getboolean('dssp', fallback=True)
+        self.pdb_input_asymetric_unit = cfg.getboolean('pdb_input_asymetric_unit', fallback=False)
+        self.search_tool = cfg.get('search_tool', fallback='MMseqs2')
 
-        #active options
-        self.option_seq_thresh = 35.0
-        self.option_res_thresh = 4.5
-        self.option_ral_thresh = 0.5
-        self.option_seq_wf = 1.0
-        self.option_ral_wf = 0.5
-        self.option_res_wf = 0.25
-        self.option_rval_wf = 0.1
-        self.option_lig_wf = 1.0
-        self.option_chain_wf = 1.0
-        self.option_number_of_templates = 0
-        self.tax_id = None
-        self.ref_genome_id = None
-        self.mrna_fasta = None
+       #active options
+        self.option_seq_thresh = cfg.getfloat('seq_thresh', fallback=35.0)
+        if self.option_seq_thresh <= 1.0:
+            self.option_seq_thresh *= 100.0
+        self.option_res_thresh = cfg.getfloat('res_thresh', fallback=4.5)
+        self.option_ral_thresh = cfg.getfloat('cov_thresh', fallback=0.5)
+        if self.option_ral_thresh > 1.0:
+            self.option_ral_thresh *= 0.01
+        self.option_seq_wf = cfg.getfloat('seq_wf', fallback=1.0)
+        self.option_ral_wf = cfg.getfloat('cov_wf', fallback=0.5)
+        self.option_res_wf = cfg.getfloat('res_wf', fallback=0.25)
+        self.option_rval_wf = cfg.getfloat('rval_wf', fallback=0.1)
+        self.option_lig_wf = cfg.getfloat('lig_wf', fallback=1.0)
+        self.option_chain_wf = cfg.getfloat('chain_wf', fallback=1.0)
+        self.option_number_of_templates = cfg.getint('option_number_of_templates', fallback=0)
+        self.tax_id = cfg.get('tax_id', fallback=None)
+        self.ref_genome_id = cfg.get('ref', fallback=None)
+        self.mrna_fasta = cfg.get('mrna', fallback=None)
 
-        self.surface_threshold = 0.16
-        self.short_distance_threshold = 5.0
-        self.long_distance_threshold = 8.0
+        self.surface_threshold = cfg.getfloat('surface_threshold', fallback=0.16)
+        self.short_distance_threshold = cfg.getfloat('lig_short_dist_thresh', fallback=5.0)
+        self.long_distance_threshold = cfg.getfloat('lig_long_dist_thresh', fallback=8.0)
+        self.ligand_interest_sphere = cfg.getfloat('ligand_interest_sphere', fallback=25.0)
 
-        #Paths to Helper Programs     
-        self.blast_path = ""
+        #Paths to Helper Programs
+        self.blast_path = cfg.get('blast_path', fallback='')
+        self.mmseqs2_path = cfg.get('mmseqs2_path', fallback='')
+        self.output_path = cfg.get('output_path', fallback='')
+        self.pdb_path = cfg.get('pdb_path', fallback='')
+        self.annovar_path = cfg.get('annovar_path', fallback='')
+        self.dssp_path = cfg.get('dssp_path', fallback='')
+        self.rin_db_path = cfg.get('rin_db_path', fallback='')
+        self.iupred_path = cfg.get('iupred_path', fallback='')
+        self.errorlog_path = cfg.get('errorlog_path', fallback=None)
+        self.base_path = cfg.get('base_path', fallback=None)
 
-        self.mmseqs2_path = ""
-        
-        self.output_path = ""
-        self.pdb_path = ""
-        self.annovar_path = ""
-
-        self.dssp_path = ''
-        self.rin_db_path = ''
-        self.iupred_path = ''
-        self.errorlog_path = None
-
-        self.go = False
-        self.anno = False
-        self.classification=True
-        self.gene = False
-        self.path = False
-        self.godiff = False
-        self.pathdiff = False
-        self.do_modelling = False
-        self.multi_modelling = False
-        self.ligand_file = None
-        self.mod_per_mut = 0
-        self.mod_per_gene = 0
-        self.tanimoto_cutoff = 0.05
-        self.milieu_threshold = 10.0
-        self.ligand_filter = None
-        self.proteome = False
-        self.intertable_conf=False
-
-        self.overwrite_incorrect_wt_aa = False
+        self.go = cfg.getboolean('do_goterm', fallback=False)
+        self.anno = cfg.getboolean('do_anno', fallback=False)
+        self.classification=cfg.getboolean('do_classification', fallback=True)
+        self.gene = cfg.getboolean('do_genesort', fallback=False)
+        self.path = cfg.getboolean('do_pathway', fallback=False)
+        self.godiff = cfg.getboolean('do_godiff', fallback=False)
+        self.pathdiff = cfg.getboolean('do_pathdiff', fallback=False)
+        self.do_modelling = cfg.getboolean('do_modelling', fallback=False)
+        self.multi_modelling = cfg.getboolean('multi_modelling', fallback=False)
+        self.ligand_file = cfg.get('ligand_file', fallback=None)
+        self.mod_per_mut = cfg.getint('mod_per_mut', fallback=0)
+        self.mod_per_gene = cfg.getint('mod_per_gene', fallback=0)
+        self.tanimoto_cutoff = cfg.getfloat('tanimoto_cutoff', fallback=0.05)
+        self.milieu_threshold = cfg.getfloat('milieu_threshold', fallback=10.0)
+        self.ligand_filter = cfg.get('ligand_filter', fallback=None)
+        self.proteome = cfg.getboolean('proteome', fallback=False)
+        self.intertable_conf = cfg.getboolean('intertable', fallback=False)
+        self.overwrite_incorrect_wt_aa = cfg.getboolean('overwrite_incorrect_wt_aa', fallback=False)
 
         trunk = os.path.realpath(__file__).rsplit('/',1)[0]
-
-        self.base_path = None
 
         self.database_source_path = '%s/struct_man_db.sql' % trunk
         self.blast_db_path = '%s/lib/base/blast_db/pdbba' % trunk
@@ -121,220 +133,19 @@ class Config:
         self.smiles_path = '%s/lib/base/ligand_bases/Components-smiles-stereo-oe.smi' % trunk
         self.inchi_path = '%s/lib/base/ligand_bases/inchi_base.tsv' % trunk
         self.human_id_mapping_path = '%s/lib/base/id_mapping' % trunk
-        self.mmseqs_tmp_folder = '%s/lib/base/blast_db/tmp' % trunk
+        self.mmseqs_tmp_folder = cfg.get('mmseqs_tmp_folder', '%s/lib/base/blast_db/tmp' % trunk)
 
-        self.fasta_input = False
-        self.lite = False
-
-        f = open(config_path,'r')
-        lines = f.read().split('\n')
-        f.close()
-        
-        # We are defining flags, which stores if the path given or not for check if paths are exists and valide later
-        blast_path_flag = False
-        pdb_path_flag = False
-        annovar_path_flag = False
-        dssp_path_flag = False
-        rin_db_path_flag = False
-        iupred_path_flag = False
-        mmseqs2_path_flag = False
-        base_path_flag = False
-        mmseqs_tmp_folder_flag = False
-
-        for line in lines:
-            if len(line) == 0:
-                continue
-            if line[0] == '#':
-                continue
-            
-            words = line.split('=')
-            if len(words) < 2:
-                continue
-            if words[0] == 'db_adress':
-                self.db_adress = words[1]
-            if words[0] == 'db_user_name':
-                self.db_user_name = words[1]
-            if words[0] == 'db_password':
-                self.db_password = words[1]
-            if words[0] == 'db_name':
-                self.db_name = words[1]
-
-
-            opt = words[0]
-            arg = words[1].replace("\n","")
-            if opt == 'blast_path':
-                self.blast_path = arg
-                blast_path_flag = True
-            elif opt == 'pdb':
-                self.pdb_path = arg
-                pdb_path_flag = True
-            elif opt == 'annovar_path':
-                self.annovar_path = arg
-                annovar_path_flag = True
-            elif opt == 'dssp_path':
-                self.dssp_path = arg
-                dssp_path_flag = True
-            elif opt == 'rin_db_path':
-                self.rin_db_path = arg
-                rin_db_path_flag = True
-                #print ('rin db path given')
-            elif opt == 'iupred_path':
-                self.iupred_path = arg
-                iupred_path_flag = True
-            elif opt == 'mmseqs2_path':
-                self.mmseqs2_path = arg
-                mmseqs2_path_flag = True
-		
-            elif opt == 'base_path':
-                self.base_path = arg
-                base_path_flag = True
-            elif opt == 'mmseqs_tmp_folder':
-                self.mmseqs_tmp_folder = arg
-                mmseqs_tmp_folder_flag = True
-
-            elif opt == 'seq_thresh':
-                self.option_seq_thresh = float(arg)
-                if self.option_seq_thresh <= 1.0:
-                    self.option_seq_thresh *= 100.0
-            elif opt == 'res_thresh':
-                self.option_res_thresh = float(arg)
-            elif opt == 'cov_thresh':
-                self.option_ral_thresh = float(arg)
-                if self.option_ral_thresh > 1.0:
-                    self.option_ral_thresh *= 0.01
-            elif opt == 'seq_wf':
-                self.option_seq_wf = float(arg)
-            elif opt == 'cov_wf':
-                self.option_ral_wf = float(arg)
-            elif opt == 'res_wf':
-                self.option_res_wf = float(arg)
-            elif opt == 'rval_wf':
-                self.option_rval_wf = float(arg)
-            elif opt == 'lig_wf':
-                self.option_lig_wf = float(arg)
-            elif opt == 'chain_wf':
-                self.option_chain_wf = float(arg)
-            elif opt == 'option_number_of_templates':
-                self.option_number_of_templates = int(arg)
-            elif opt == 'db_adress':
-                db_adress = arg
-            elif opt == 'db_user_name':
-                self.db_user_name = arg
-            elif opt == 'db_password':
-                self.db_password = arg
-            elif opt == 'db_name':
-                self.db_name = arg
-            elif opt == 'mapping_db':
-                self.mapping_db = arg
-            elif opt == 'tax_id':
-                self.tax_id = arg
-            elif opt == 'ref':
-                self.ref_genome_id = arg
-            elif opt == 'resources':
-                self.resources = arg
-
-            elif opt == 'error_annotations_into_db':
-                if arg == 'True':
-                    self.error_annotations_into_db = True
-                elif arg == 'False':
-                    self.error_annotations_into_db = False
-            elif opt == 'anno_session_mapping':
-                if arg == 'True':
-                    self.anno_session_mapping = True
-                elif arg == 'False':
-                    self.anno_session_mapping = False
-            elif opt == 'mrna':
-                self.mrna_fasta = arg
-            elif opt == 'neighborhood_calculation':
-                if arg == 'True':
-                    self.neighborhood_calculation = True
-            elif opt == 'calculate_interaction_profiles':
-                if arg == 'True':
-                    self.calculate_interaction_profiles = True
-                elif arg == 'False':
-                    self.calculate_interaction_profiles = False
-            elif opt == 'pdb_input_asymetric_unit':
-                if arg == 'True':
-                    self.pdb_input_asymetric_unit = True
-                elif arg == 'False':
-                    self.pdb_input_asymetric_unit = False
-            elif opt == 'verbose':
-                if arg == 'True':
-                    self.verbose = True
-                elif arg == 'False':
-                    self.verbose = False
-
-            elif opt == 'verbosity':
-               self.verbosity = int(arg)
-
-            elif opt == 'do_anno':
-                if arg == "True":
-                    self.anno = True
-                else:
-                    self.anno = False
-            elif opt == 'do_genesort':
-                if arg == "True":
-                    self.gene = True
-                else:
-                    self.gene = False
-            elif opt == 'do_goterm':
-                if arg == "True":
-                    self.go = True
-                else:
-                    self.go = False
-            elif opt == 'do_godiff':
-                if arg == "True":
-                    self.godiff = True
-                else:
-                    self.godiff = False
-            elif opt == 'do_pathway':
-                if arg == "True":
-                    self.path = True
-                else:
-                    self.path = False
-            elif opt == 'do_pathdiff':
-                if arg == "True":
-                    self.pathdiff = True
-                else:
-                    self.pathdiff = False
-            elif opt == 'multi_modelling':
-                if arg == "True":
-                    self.multi_modelling = True
-                else:
-                    self.multi_modelling = False
-            elif opt == 'mod_per_gene':
-                self.mod_per_gene = arg
-            elif opt == 'mod_per_mut':
-                self.mod_per_mut = arg
-            elif opt == 'do_modelling':
-                if arg == "True":
-                    self.do_modelling = True
-                else:
-                    self.do_modelling = False
-            
-            elif opt == 'tanimoto_cutoff':
-                self.tanimoto_cutoff = float(arg)
-            elif opt == 'lig_dist_thresh':
-                self.distance_threshold = arg
-            elif opt == 'ligand_filter':
-                self.ligand_filter = arg
-            elif opt == 'proteome':
-                if arg == 'True':
-                    self.proteome = True
-            elif opt == 'intertable':
-                if arg == 'True':
-                    self.intertable_conf = True
-            elif opt == 'lite':
-                if arg == 'True':
-                    self.lite = True
+        self.fasta_input = cfg.getboolean('fasta_input', fallback=False)
+        self.lite = cfg.getboolean('lite', fallback=False)
 
         if verbosity != None:
             self.verbosity = verbosity
 
+        self.chunksize = chunksize
         # Checking whether the given paths in config exist or not if it is given and not exist, system gives error message and exits
-        
+
         if self.search_tool=='MMseqs2':
-            if mmseqs2_path_flag:
+            if self.mmseqs2_path:
                 if self.mmseqs2_path == 'mmseqs':
                     cmd = "mmseqs"
                     ret_val = subprocess.getstatusoutput(cmd)[0]
@@ -345,24 +156,24 @@ class Config:
                 else:
                     isExist = os.path.exists(self.mmseqs2_path)
                     if not isExist:
-                        print('MMSEQS2 path is not exist, please check the path')
-                        sys.exit()    
+                        print('MMSEQS2 path does not exist, please check the path')
+                        sys.exit()
         elif self.search_tool=='Blast':
             isExist = os.path.exists(self.blast_path)
             if not isExist:
-                print('Blast path is not exist, please check the path or use mmseqs')
+                print('Blast path does not exist, please check the path or use mmseqs')
                 sys.exit()
-        if pdb_path_flag:
+        if self.pdb_path:
             isExist = os.path.exists(self.pdb_path)
             if not isExist:
-                print('PDB path is not exist, please check the path')
+                print('PDB path does not exist, please check the path')
                 sys.exit()
-        if annovar_path_flag: 
+        if self.annovar_path:
             isExist = os.path.exists(self.annovar_path)
             if not isExist:
-                print('Annovar path is not exist, please check the path')
+                print('Annovar path does not exist, please check the path')
                 sys.exit()
-        if dssp_path_flag:
+        if self.dssp_path:
             if self.dssp_path == 'mkdssp':
                 cmd = "mkdssp"
                 ret_val = subprocess.getstatusoutput(cmd)[0]
@@ -373,27 +184,30 @@ class Config:
             else:
                 isExist = os.path.exists(self.dssp_path)
                 if not isExist:
-                    print('DSSP path is not exist, please check the path')
+                    print('DSSP path does not exist, please check the path')
                     sys.exit()
-        if rin_db_path_flag:
+        if self.rin_db_path:
             isExist = os.path.exists(self.rin_db_path)
             if not isExist:
-                print('RIN DB path is not exist, please check the path')
+                print('RIN DB path does not exist, please check the path')
                 sys.exit()
-        if iupred_path_flag:
+        if self.iupred_path:
             isExist = os.path.exists(self.iupred_path)
             if not isExist:
-                print('IUPred path is not exist, please check the path')
+                print('IUPred path does not exist, please check the path')
                 sys.exit()
-        if base_path_flag:
+        if self.base_path:
             isExist = os.path.exists(self.base_path)
             if not isExist:
-                print('Base path is not exist, please check the path')
+                print('Base path does not exist, please check the path')
                 sys.exit()
-        if mmseqs_tmp_folder_flag:
+        if self.mmseqs_tmp_folder:
             isExist = os.path.exists(self.mmseqs_tmp_folder)
             if not isExist:
-                print('MMSEQS temp folder path is not exist, please check the path')
+                print('MMSEQS temp folder path does not exist, please check the path')
+                sys.exit()
+            if not os.access(self.mmseqs_tmp_folder,os.R_OK):
+                print('Need writing rights in the MMSEQS temp folder, please check the path')
                 sys.exit()
 
         if self.base_path != None and not database_util and not external_call:
@@ -418,7 +232,7 @@ class Config:
 
         if self.num_of_cores != None:
             self.proc_n = self.num_of_cores
-            
+
             self.blast_processes = self.proc_n
             self.alignment_processes = self.proc_n
             self.annotation_processes = self.proc_n
@@ -445,9 +259,27 @@ class Config:
 
         self.errorlog = Errorlog(path = self.errorlog_path)
 
-    def getDB(self,server_connection = False):
+        #Determine maximal package size from database
+        try:
+            db,cursor = self.getDB(server_connection = True)
+        except:
+            if self.verbosity >= 2:
+                print('Database connection failed in config initialization')
+            db = None
+
+        if db != None:
+            cursor.execute("SHOW VARIABLES WHERE variable_name = 'max_allowed_packet'")
+            self.max_package_size = int(cursor.fetchone()[1])*100//99
+            db.close()
+        else:
+            self.max_package_size = None
+
+    def getDB(self,server_connection = False,mapping_db = False):
         if server_connection:
             db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,None)
+            cursor = db.cursor()
+        elif mapping_db:
+            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.mapping_db)
             cursor = db.cursor()
         else:
             db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.db_name)
@@ -472,9 +304,8 @@ class Errorlog:
 
     def add_error(self,error_text):
         self.error_counter += 1
-        [e,f,g] = sys.exc_info()
-        g = traceback.format_exc()
-        error_text = 'Error %s:\n%s\n%s\n%s\n%s' % (str(self.error_counter),error_text,e,f,g)
+        g = ''.join(traceback.format_list(traceback.extract_stack()))
+        error_text = 'Error %s:\n%s\n%s\n' % (str(self.error_counter),error_text,g)
         if self.path == None:
             print(error_text)
             return
@@ -496,23 +327,28 @@ class Errorlog:
             f = open(self.path,'a')
             f.write(errortext)
             f.close()
-            print("At least one error occured, please check the errorlog.")
+            print("\n\nAt least one error occured, please check the errorlog.\n\n")
         return
 
-    def add_warning(self,warn_text):
+    def add_warning(self,warn_text,lock = None):
         self.warning_counter += 1
-        [e,f,g] = sys.exc_info()
-        g = traceback.format_exc()
-        warn_text = 'Warning %s:\n%s\n%s\n%s\n%s' % (str(self.warning_counter),warn_text,e,f,g)
+        g = ''.join(traceback.format_list(traceback.extract_stack()))
+        warn_text = 'Warning %s:\n%s\n%s\n' % (str(self.warning_counter),warn_text,g)
         if self.path == None:
             print(warn_text)
+            return
+        if lock != None:
+            with lock:
+                f = open(self.path,'a')
+                f.write(warn_text)
+                f.close()
             return
         f = open(self.path,'a')
         f.write(warn_text)
         f.close()
         return
 
-def main(infiles,out_folder,main_file_path,config,overwrite=False,intertable=False):
+def main(infiles,out_folder,main_file_path,config,intertable=False):
     db_name = config.db_name
     db_adress = config.db_adress
     db_password = config.db_password
@@ -520,24 +356,25 @@ def main(infiles,out_folder,main_file_path,config,overwrite=False,intertable=Fal
     #resource.setrlimit(resource.RLIMIT_AS,(6442450944,8589934592))
     #resource.setrlimit(resource.RLIMIT_AS,(442450944,589934592))
     for infile in infiles:
-        if config.verbosity >= 1:
-            print('Processing file: ',infile)
-        if not config.lite:
-            #check if the infile got already processed
-            db = MySQLdb.connect(db_adress,db_user_name,db_password,db_name)
-            cursor = db.cursor()
-            session_id = database.getSessionId(infile,db,cursor)
-            db.close()
+        if isinstance(infile,str):
+            if config.verbosity >= 1:
+                print('Processing file: ',infile)
+            if not config.lite:
+                #check if the infile got already processed
+                session_id = database.getSessionId(infile,config)
 
-        #create the output folder
-        [trunk,infilename] = infile.rsplit('/',1)
-        if out_folder == None:
-            out_folder = "%s/Output" % trunk
+            #create the output folder
+            [trunk,infilename] = infile.rsplit('/',1)
+
+            if infilename[-6:] == '.fasta':
+                config.fasta_input = True
+
+            if out_folder == None:
+                out_folder = "%s/Output" % trunk
+
         if not os.path.exists(out_folder):
             os.mkdir(out_folder)
 
-        if infilename[-6:] == '.fasta':
-            config.fasta_input = True
 
         if not config.lite:
             #run the main pipeline
@@ -556,9 +393,9 @@ def main(infiles,out_folder,main_file_path,config,overwrite=False,intertable=Fal
             if not os.path.exists(outpath):
                 os.mkdir(outpath)
 
-            output.main(session_id,outpath,config,overwrite=overwrite,intertable=intertable,)
+            output.main(session_id,outpath,config,intertable=intertable,)
         else:
-            lite_pipeline.main(infile,config,out_folder,main_file_path)
+            session_id = serializedPipeline.main(infile,config,out_folder,main_file_path)
 
 
 if __name__ == "__main__":
@@ -570,6 +407,7 @@ if __name__ == "__main__":
     import database
     import serializedPipeline
     import lite_pipeline
+
 
     multiprocessing.freeze_support()
     multiprocessing.set_start_method('forkserver')
@@ -588,13 +426,17 @@ if __name__ == "__main__":
         argv = argv[1:]
 
     if database_util:
-        reset_db = False
-        out_mode = False
         if argv[0] == 'reset':
-            reset_db = True
+            db_mode = 'reset'
             argv = argv[1:]
         if argv[0] == 'out':
-            out_mode = True
+            db_mode = 'out'
+            argv = argv[1:]
+        if argv[0] == 'create':
+            db_mode = 'create'
+            argv = argv[1:]
+        if argv[0] == 'destroy':
+            db_mode = 'destroy'
             argv = argv[1:]
 
     output_util = False
@@ -607,8 +449,41 @@ if __name__ == "__main__":
             print(disclaimer)
             sys.exit(1)
         argv = argv[2:]
+
+    #Custom single line input preparsing
+    insert_flag_pos = None
+    remove_args = []
+    single_line_inputs = []
+    for pos,arg in enumerate(argv):
+        if insert_flag_pos != None:
+            #If the arg after the -i flag gives us a path, then it is not a single line input
+            if pos == insert_flag_pos + 1:
+                if os.path.exists(arg):
+                    break
+                else:
+                    single_line_inputs.append(arg)
+                    remove_args.append(insert_flag_pos)
+                    remove_args.append(pos)
+            else:
+                if arg[0] == '-':
+                    break
+                else:
+                    single_line_inputs.append(arg)
+                    remove_args.append(pos)
+
+        if arg == '-i':
+            insert_flag_pos = pos
+    #ignore --overwrrite by removing it, there will be a bug if someone combines single line input with overwrite
+    for pos,arg in enumerate(argv):
+        if arg == '--overwrite':
+            remove_args.append(pos)
+
+    remove_args.reverse()
+    for pos in remove_args:
+        del argv[pos]
+    
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lv",['help','overwrite','profile','skipref','rlimit=','verbosity=','printerrors'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lv",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize='])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -618,13 +493,13 @@ if __name__ == "__main__":
     config_path = ''
     num_of_cores = None
     outfolder = ''
-    overwrite = False
     lite = False
     verbose_flag = False
     verbosity = None
     profiling = False
     skipref = False
     print_all_errors = False
+    chunksize = 500
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -643,8 +518,6 @@ if __name__ == "__main__":
             num_of_cores = int(arg)
         if opt == '-o':
             outfolder = arg
-        if opt == '--overwrite':
-            overwrite = True
 
         if opt == '--profile':
             profiling = True
@@ -655,12 +528,16 @@ if __name__ == "__main__":
             rlimit = arg
         if opt == '--verbosity':
             verbosity = int(arg)
-            
+            vebose_flag = True
+
         if opt == '--skipref':
             skipref = True
 
         if opt == '--printerrors':
             print_all_errors = True
+
+        if opt == '--chunksize':
+            chunksize = int(arg)
         '''
         #mmcif option added to call mmcif mode while calling structman
         if opt == '-mmcif':
@@ -668,13 +545,13 @@ if __name__ == "__main__":
         '''
 
     if not database_util and not output_util:
-        if infile == '':
+        if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
             if not os.path.isdir(input_folder):
                 print('Did not find the input path\n\n',disclaimer)
                 sys.exit(2)
             filelist = os.listdir(input_folder)
-            
+
             infiles = []
             for infile in filelist:
                 if infile.split('.')[-1] == 'smlf' or infile.split('.')[-1] == 'vcf':
@@ -683,7 +560,9 @@ if __name__ == "__main__":
                 print('Did not find any file inside the input folder\n\n',disclaimer)
                 sys.exit(2)
 
-
+        elif infile == '' and len(single_line_inputs) != 0:
+            lite = True
+            infiles = [single_line_inputs]
         else:
             #make infile to global path
             infile = os.path.abspath(infile)
@@ -697,9 +576,11 @@ if __name__ == "__main__":
                     outfolder = '%s/Output' % infile.rsplit('/',1)[0]
                     if not os.path.exists(outfolder):
                         os.mkdir(outfolder)
+                elif len(single_line_inputs) != 0:
+                    outfolder = cwd
                 else:
                     outfolder = None
-        
+
 
     if config_path == '':
         if os.path.exists('%s/config.txt' % infile.rsplit('/',1)[0]):
@@ -716,10 +597,10 @@ if __name__ == "__main__":
     config_path = os.path.abspath(config_path)
 
 
-    config = Config(config_path,infile = infile,num_of_cores = num_of_cores,
-                    output_path = outfolder,overwrite = overwrite,
+    config = Config(config_path,num_of_cores = num_of_cores,
+                    output_path = outfolder,
                     database_util = database_util,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
-                    print_all_errors = print_all_errors)
+                    print_all_errors = print_all_errors,chunksize = chunksize)
 
     if verbose_flag:
         config.verbose = True
@@ -733,15 +614,16 @@ if __name__ == "__main__":
 
     config.skipref = skipref
 
+    if len(single_line_inputs) == 0:
+        infile = os.path.abspath(infile)
 
-    infile = os.path.abspath(infile)
     if database_util:
-        if reset_db:
+        if db_mode == 'reset':
             db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
             cursor = db.cursor()
             database.reset(cursor)
             db.close()
-        elif out_mode:
+        elif db_mode == 'out':
             db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
             cursor = db.cursor()
             print(infile)
@@ -750,9 +632,14 @@ if __name__ == "__main__":
             session_name = infilename.rsplit('.',1)[0]
             outfolder = "%s/Output" % trunk
             outfile = '%s/%s_ligandlist.tsv' % (outfolder,session_name)
-            
+
             database.getLigandList(db,cursor,session_id,outfile)
             db.close()
+        elif db_mode == 'create':
+            repairDB.load(config)
+        elif db_mode == 'destroy':
+            repairDB.destroy(config)
+
 
     elif output_util:
         if ppi_output:
@@ -774,5 +661,4 @@ if __name__ == "__main__":
         if lite:
             config.lite = True
 
-        main(infiles,outfolder,main_file_path,config,overwrite=overwrite)
-
+        main(infiles,outfolder,main_file_path,config)

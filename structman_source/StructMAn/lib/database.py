@@ -1,4 +1,3 @@
-#TODO replace all sql query, similiar to first big select in mindistout
 import pymysql as MySQLdb
 import pdbParser as pdb
 import serializedPipeline
@@ -18,6 +17,9 @@ import traceback
 import cProfile
 import pstats
 import io
+import random
+import ray
+import psutil
 
 short_distance_threshold = 5.0
 long_distance_threshold = 8.0
@@ -26,33 +28,65 @@ surface_threshold = 0.16
 chem_dist_matrix =  {'A': {'A': 0.0, 'C': 0.996, 'E': 0.544, 'D': 0.637, 'G': 0.663, 'F': 0.663, 'I': 0.626, 'H': 0.711, 'K': 0.768, 'M': 0.616, 'L': 0.435, 'N': 0.708, 'Q': 0.641, 'P': 0.949, 'S': 0.634, 'R': 0.977, 'T': 0.657, 'W': 0.985, 'V': 0.646, 'Y': 0.973}, 'C': {'A': 0.996, 'C': 0.0, 'E': 1.051, 'D': 0.804, 'G': 0.901, 'F': 0.859, 'I': 0.856, 'H': 0.595, 'K': 1.153, 'M': 0.651, 'L': 1.093, 'N': 0.687, 'Q': 0.753, 'P': 1.184, 'S': 0.744, 'R': 1.028, 'T': 0.737, 'W': 0.97, 'V': 0.82, 'Y': 0.835}, 'E': {'A': 0.544, 'C': 1.051, 'E': 0.0, 'D': 0.416, 'G': 0.923, 'F': 0.743, 'I': 0.892, 'H': 0.545, 'K': 0.647, 'M': 0.578, 'L': 0.724, 'N': 0.647, 'Q': 0.532, 'P': 0.994, 'S': 0.811, 'R': 0.897, 'T': 0.844, 'W': 0.882, 'V': 0.96, 'Y': 0.973}, 'D': {'A': 0.637, 'C': 0.804, 'E': 0.416, 'D': 0.0, 'G': 0.66, 'F': 0.68, 'I': 0.835, 'H': 0.361, 'K': 0.648, 'M': 0.58, 'L': 0.803, 'N': 0.291, 'Q': 0.385, 'P': 0.747, 'S': 0.555, 'R': 0.793, 'T': 0.64, 'W': 0.76, 'V': 0.886, 'Y': 0.744}, 'G': {'A': 0.663, 'C': 0.901, 'E': 0.923, 'D': 0.66, 'G': 0.0, 'F': 0.813, 'I': 0.814, 'H': 0.82, 'K': 0.974, 'M': 0.902, 'L': 0.827, 'N': 0.576, 'Q': 0.78, 'P': 0.629, 'S': 0.452, 'R': 1.081, 'T': 0.601, 'W': 1.017, 'V': 0.812, 'Y': 0.875}, 'F': {'A': 0.663, 'C': 0.859, 'E': 0.743, 'D': 0.68, 'G': 0.813, 'F': 0.0, 'I': 0.414, 'H': 0.53, 'K': 0.775, 'M': 0.442, 'L': 0.439, 'N': 0.656, 'Q': 0.607, 'P': 0.732, 'S': 0.723, 'R': 0.871, 'T': 0.666, 'W': 0.379, 'V': 0.625, 'Y': 0.509}, 'I': {'A': 0.626, 'C': 0.856, 'E': 0.892, 'D': 0.835, 'G': 0.814, 'F': 0.414, 'I': 0.0, 'H': 0.673, 'K': 0.741, 'M': 0.602, 'L': 0.382, 'N': 0.717, 'Q': 0.611, 'P': 0.9, 'S': 0.602, 'R': 0.754, 'T': 0.469, 'W': 0.733, 'V': 0.239, 'Y': 0.578}, 'H': {'A': 0.711, 'C': 0.595, 'E': 0.545, 'D': 0.361, 'G': 0.82, 'F': 0.53, 'I': 0.673, 'H': 0.0, 'K': 0.669, 'M': 0.346, 'L': 0.758, 'N': 0.365, 'Q': 0.299, 'P': 0.883, 'S': 0.598, 'R': 0.684, 'T': 0.586, 'W': 0.602, 'V': 0.736, 'Y': 0.579}, 'K': {'A': 0.768, 'C': 1.153, 'E': 0.647, 'D': 0.648, 'G': 0.974, 'F': 0.775, 'I': 0.741, 'H': 0.669, 'K': 0.0, 'M': 0.844, 'L': 0.702, 'N': 0.604, 'Q': 0.412, 'P': 0.883, 'S': 0.656, 'R': 0.383, 'T': 0.605, 'W': 0.879, 'V': 0.777, 'Y': 0.71}, 'M': {'A': 0.616, 'C': 0.651, 'E': 0.578, 'D': 0.58, 'G': 0.902, 'F': 0.442, 'I': 0.602, 'H': 0.346, 'K': 0.844, 'M': 0.0, 'L': 0.639, 'N': 0.639, 'Q': 0.534, 'P': 1.024, 'S': 0.762, 'R': 0.903, 'T': 0.725, 'W': 0.637, 'V': 0.698, 'Y': 0.745}, 'L': {'A': 0.435, 'C': 1.093, 'E': 0.724, 'D': 0.803, 'G': 0.827, 'F': 0.439, 'I': 0.382, 'H': 0.758, 'K': 0.702, 'M': 0.639, 'L': 0.0, 'N': 0.8, 'Q': 0.682, 'P': 0.867, 'S': 0.729, 'R': 0.894, 'T': 0.665, 'W': 0.778, 'V': 0.53, 'Y': 0.786}, 'N': {'A': 0.708, 'C': 0.687, 'E': 0.647, 'D': 0.291, 'G': 0.576, 'F': 0.656, 'I': 0.717, 'H': 0.365, 'K': 0.604, 'M': 0.639, 'L': 0.8, 'N': 0.0, 'Q': 0.304, 'P': 0.675, 'S': 0.339, 'R': 0.635, 'T': 0.418, 'W': 0.744, 'V': 0.735, 'Y': 0.555}, 'Q': {'A': 0.641, 'C': 0.753, 'E': 0.532, 'D': 0.385, 'G': 0.78, 'F': 0.607, 'I': 0.611, 'H': 0.299, 'K': 0.412, 'M': 0.534, 'L': 0.682, 'N': 0.304, 'Q': 0.0, 'P': 0.849, 'S': 0.446, 'R': 0.447, 'T': 0.413, 'W': 0.737, 'V': 0.628, 'Y': 0.57}, 'P': {'A': 0.949, 'C': 1.184, 'E': 0.994, 'D': 0.747, 'G': 0.629, 'F': 0.732, 'I': 0.9, 'H': 0.883, 'K': 0.883, 'M': 1.024, 'L': 0.867, 'N': 0.675, 'Q': 0.849, 'P': 0.0, 'S': 0.734, 'R': 1.034, 'T': 0.805, 'W': 0.734, 'V': 1.021, 'Y': 0.676}, 'S': {'A': 0.634, 'C': 0.744, 'E': 0.811, 'D': 0.555, 'G': 0.452, 'F': 0.723, 'I': 0.602, 'H': 0.598, 'K': 0.656, 'M': 0.762, 'L': 0.729, 'N': 0.339, 'Q': 0.446, 'P': 0.734, 'S': 0.0, 'R': 0.662, 'T': 0.189, 'W': 0.924, 'V': 0.539, 'Y': 0.639}, 'R': {'A': 0.977, 'C': 1.028, 'E': 0.897, 'D': 0.793, 'G': 1.081, 'F': 0.871, 'I': 0.754, 'H': 0.684, 'K': 0.383, 'M': 0.903, 'L': 0.894, 'N': 0.635, 'Q': 0.447, 'P': 1.034, 'S': 0.662, 'R': 0.0, 'T': 0.555, 'W': 0.939, 'V': 0.735, 'Y': 0.626}, 'T': {'A': 0.657, 'C': 0.737, 'E': 0.844, 'D': 0.64, 'G': 0.601, 'F': 0.666, 'I': 0.469, 'H': 0.586, 'K': 0.605, 'M': 0.725, 'L': 0.665, 'N': 0.418, 'Q': 0.413, 'P': 0.805, 'S': 0.189, 'R': 0.555, 'T': 0.0, 'W': 0.883, 'V': 0.389, 'Y': 0.56}, 'W': {'A': 0.985, 'C': 0.97, 'E': 0.882, 'D': 0.76, 'G': 1.017, 'F': 0.379, 'I': 0.733, 'H': 0.602, 'K': 0.879, 'M': 0.637, 'L': 0.778, 'N': 0.744, 'Q': 0.737, 'P': 0.734, 'S': 0.924, 'R': 0.939, 'T': 0.883, 'W': 0.0, 'V': 0.932, 'Y': 0.474}, 'V': {'A': 0.646, 'C': 0.82, 'E': 0.96, 'D': 0.886, 'G': 0.812, 'F': 0.625, 'I': 0.239, 'H': 0.736, 'K': 0.777, 'M': 0.698, 'L': 0.53, 'N': 0.735, 'Q': 0.628, 'P': 1.021, 'S': 0.539, 'R': 0.735, 'T': 0.389, 'W': 0.932, 'V': 0.0, 'Y': 0.695}, 'Y': {'A': 0.973, 'C': 0.835, 'E': 0.973, 'D': 0.744, 'G': 0.875, 'F': 0.509, 'I': 0.578, 'H': 0.579, 'K': 0.71, 'M': 0.745, 'L': 0.786, 'N': 0.555, 'Q': 0.57, 'P': 0.676, 'S': 0.639, 'R': 0.626, 'T': 0.56, 'W': 0.474, 'V': 0.695, 'Y': 0.0}}
 
 
-def binningSelect(keys,rows,table,db,cursor):
+def binningSelect(keys,rows,table,config,binning_function = 'median_focus',density=0.5):
     #Use this for huge selects, the first entry of rows has to be the key by which the entries are selected
     key_name = rows[0]
-    singletons,bins = binning(keys)
+    t0 = time.time()
+    if binning_function == 'split_fusion':
+        singletons,bins = split_fusion_binning(keys,density=density,fusion = True)
+    elif binning_function == 'split':
+        singletons,bins = split_fusion_binning(keys,density=density,fusion = False)
+    elif binning_function == 'median_focus':
+        singletons,bins = median_focus_binning(keys)
+    else:
+        config.errorlog.add_error('Unknown binning function:',binning_function)
+        return []
+
+    if config.verbosity >= 4:
+        print('\nbinningSelect keys:\n',keys,'and binning results:\n',singletons,'\n',bins)
+
+    t1 = time.time()
+    if config.verbosity >= 3:
+        print('Time for binning in binnbingSelect:',t1-t0)
 
     if len(singletons) > 0:
         if len(singletons) == 1:
-            equals_rows = {key_name:singletons.pop()}
-            total_results = list(select(db,cursor,rows,table,equals_rows=equals_rows))
+            equals_rows = {key_name:singletons[0]}
+            total_results = list(select(config,rows,table,equals_rows=equals_rows))
         else:
             in_rows = {key_name:singletons}
-            total_results = list(select(db,cursor,rows,table,in_rows=in_rows))
+            total_results = list(select(config,rows,table,in_rows=in_rows))
     else:
         total_results = []
 
+    t2 = time.time()
+    if config.verbosity >= 3:
+        print('Time for singleton select in binnbingSelect:',t2-t1,'Amount of singletons:',len(singletons))
+
+    t3 = 0.
+    t4 = 0.
+    t5 = 0.
     for ids,min_id,max_id in bins:
+        t3 += time.time()
         between_rows = {key_name:(min_id,max_id)}
 
-        results = select(db,cursor,rows,table,between_rows=between_rows)
+        results = select(config,rows,table,between_rows=between_rows)
+
+        t4 += time.time()
         for row in results:
             if not row[0] in ids:
                 continue
             total_results.append(row)
+        t5 += time.time()
+
+
+    if config.verbosity >= 3:
+        print('Time for between select in binningSelect:',t4-t3,'Amount of bins:',len(bins))
+        print('Time for id check in binningSelect:',t5-t4)
 
     return total_results
 
-def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={},null_columns=set(),n_trials=5):
+def select(config,rows,table,between_rows={},in_rows={},equals_rows={},null_columns=set(),n_trials=3,from_mapping_db = False):
     if len(rows) == 0:
         row_str = '*'
     else:
@@ -89,39 +123,72 @@ def select(db,cursor,rows,table,between_rows={},in_rows={},equals_rows={},null_c
 
     n = 0
     while n < n_trials: #Repeat the querry if fails for n_trials times
+        db,cursor = config.getDB(mapping_db = from_mapping_db)
         try:
             cursor.execute(statement,params)
             results = cursor.fetchall()
             db.commit()
             break
         except:
-            [e,f,g] = sys.exc_info()
-            g = traceback.format_exc()
+            if n == 0:
+                [e,f,g] = sys.exc_info()
+                g = traceback.format_exc()
             n+=1
+        db.close()
     if n == n_trials:
-        
-        raise NameError('Invalid Select: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500],str(len(params)),str(params[:50]),e,f,g))
+        raise NameError('Invalid Select: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500],str(len(params)),str(params[:50]),e,str(f),g))
     return results
 
-def insert(db,cursor,table,columns,values,value_threshold=10000,n_trials=5):
+def size_estimation(config,values):
+    max_package_size = config.max_package_size
+    #Select 100 random rows and calculate their str size
+    n_of_r_values = 100
+    if len(values) <= n_of_r_values:
+        #size_of_values = sys.getsizeof(str(values))
+        size_of_values = sdsc.total_size(values)
+    else:
+        #size_of_values = (sys.getsizeof(str(random.sample(values,n_of_r_values)))*len(values))/n_of_r_values
+        size_of_values = (sdsc.total_size(random.sample(values,n_of_r_values))*len(values))/n_of_r_values
+
+    #Add X% too the size estimation, just to be sure
+    size_of_values = size_of_values*2.5
+    return size_of_values
+
+def insert(table,columns,values,config,n_trials=3):
     params = []
 
     columns_str = ','.join(columns)
 
     parts = []
-    n=0
     value_strs = []
 
     if len(values) == 0:
         return
 
+    max_package_size = config.max_package_size
+    size_of_values = size_estimation(config,values)
+
+    number_of_packages = (size_of_values//max_package_size)
+    if not size_of_values%max_package_size == 0:
+        number_of_packages += 1
+
+    package_length = (len(values)//number_of_packages)
+    if not len(values)%number_of_packages == 0:
+        package_length += 1
+
+    if config.verbosity >= 2:
+        print('Insert with total estimated size',size_of_values/1024./1024.,'Mb,since max size is',
+                max_package_size/1024./1024.,'Mb this makes',number_of_packages,
+                'packages in total (size per package:',size_of_values/1024./1024./number_of_packages,')')
+
+    n=0
     for value_list in values:
         for value in value_list:
             params.append(value)
         value_str_part = '(%s)' % ','.join(['%s']*len(value_list))
         value_strs.append(value_str_part)
         n+=1
-        if n == value_threshold:
+        if n == package_length:
             n = 0
             value_str = ','.join(value_strs)
             parts.append((value_str,params))
@@ -134,21 +201,30 @@ def insert(db,cursor,table,columns,values,value_threshold=10000,n_trials=5):
     for value_str,params in parts:
         statement = 'INSERT IGNORE INTO %s (%s) VALUES %s' % (table,columns_str,value_str)
 
+        if config.verbosity >= 2:
+            print('Insert with',len(params),'paramaters')
+
+        if config.verbosity >= 3:
+            print('Better size estimation of the package:',sys.getsizeof(str(params))+sys.getsizeof(statement))
+
         n = 0
         while n < n_trials: #Repeat the querry if fails for n_trials times
+            db,cursor = config.getDB()
             try:
                 cursor.execute(statement,params)
                 db.commit()
                 break
             except:
-                [e,f,g] = sys.exc_info()
-                g = traceback.format_exc()
+                if n == 0:
+                    [e,f,g] = sys.exc_info()
+                    g = traceback.format_exc()
                 n+=1
+            db.close()
         if n == n_trials:
-            raise NameError('Invalid Insert: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500],str(len(params)),str(params[:500]),e,f,g))
+            raise NameError('Invalid Insert: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500],str(len(params)),str(params[:500]),e,str(f),g))
     return
 
-def update(db,cursor,table,columns,values,value_threshold=10000):
+def update(config,table,columns,values):
     #Updating with an insert statement (see: https://stackoverflow.com/questions/20255138/sql-update-multiple-records-in-one-query)
     params = []
 
@@ -167,28 +243,39 @@ def update(db,cursor,table,columns,values,value_threshold=10000):
     if len(values) == 0:
         return
 
-    for value_list in values:
+    max_package_size = config.max_package_size
+    size_of_values = size_estimation(config,values)
 
+    number_of_packages = (size_of_values//max_package_size)
+    if not size_of_values%max_package_size == 0:
+        number_of_packages += 1
+
+    package_length = (len(values)//number_of_packages)
+    if not len(values)%number_of_packages == 0:
+        package_length += 1
+
+    n = 0
+    for value_list in values:
         for value in value_list:
             params.append(value)
         value_str_part = '(%s)' % ','.join(['%s']*len(value_list))
         value_strs.append(value_str_part)
         n+=1
-        if n == value_threshold:
+        if n == package_length:
             n = 0
             value_str = ','.join(value_strs)
             parts.append((value_str,params))
             value_strs = []
             params = []
-            min_primary_value = None
-            max_primary_value = None
-    value_str = ','.join(value_strs)
-    parts.append((value_str,params))
+    if value_strs != []:
+        value_str = ','.join(value_strs)
+        parts.append((value_str,params))
 
     for value_str,params in parts:
         if len(params) == 0:
             continue
         statement = 'INSERT IGNORE INTO %s (%s) VALUES %s ON DUPLICATE KEY UPDATE %s' % (table,column_str,value_str,update_str)
+        db,cursor = config.getDB()
         try:
             cursor.execute(statement,params)
             db.commit()
@@ -196,8 +283,11 @@ def update(db,cursor,table,columns,values,value_threshold=10000):
             [e,f,g] = sys.exc_info()
             g = traceback.format_exc()
             raise NameError('Invalid Update: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500],str(len(params)),str(params[:500]),e,f,g))
+        db.close()
 
-#called by reapirDB
+    return
+
+#called by repairDB
 def reset(cursor):
 
     sql_commands = ['SET FOREIGN_KEY_CHECKS=0;', 
@@ -233,11 +323,14 @@ def reset(cursor):
             print("Error: ",e,f,g)
     return
 
-def getGeneScoreDict(gene_id_list,session_id,db,cursor,includeSequence=False):
+#called by Output
+def getGeneScoreDict(gene_id_list,session_id,config,includeSequence=False):
     if len(gene_id_list) == 0:
         return {}
     max_g = max(gene_id_list)
     min_g = min(gene_id_list)
+
+    db,cursor = config.getDB()
 
     sql = "SELECT Gene,Gene_Score,Session FROM RS_Gene_Session WHERE Session = '%s' AND Gene <= %s AND Gene >= %s" % (str(session_id),str(max_g),str(min_g))
     try:
@@ -248,6 +341,8 @@ def getGeneScoreDict(gene_id_list,session_id,db,cursor,includeSequence=False):
         raise NameError("NameError in getGeneScoreDict: %s" % sql)
     score_dict = {}
 
+    db.close()
+
     for row in results:
         if row[2] != session_id:
             continue
@@ -256,29 +351,32 @@ def getGeneScoreDict(gene_id_list,session_id,db,cursor,includeSequence=False):
             score_dict[g_id] = row[1]
 
     if not includeSequence:
-        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error','Species']
+        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error']
     else:
-        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error','Species','Sequence']
+        rows = ['Gene_Id','Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Error_Code','Error','Sequence']
     table = 'Gene'
-    results = binningSelect(gene_id_list,rows,table,db,cursor)
+    results = binningSelect(gene_id_list,rows,table,config)
     
     gene_score_dict = {}
     for row in results:
         g_id = row[0]
-        if g_id in gene_id_list and g_id in score_dict:
+        if g_id in score_dict:
             if not includeSequence:
-                gene_score_dict[g_id] = (row[1],row[2],row[3],row[4],row[5],row[6],score_dict[g_id])
+                gene_score_dict[g_id] = (row[1],row[2],row[3],row[4],row[5],score_dict[g_id])
             else:
-                gene_score_dict[g_id] = (row[1],row[2],row[3],row[4],row[5],row[6],score_dict[g_id],row[7])
+                gene_score_dict[g_id] = (row[1],row[2],row[3],row[4],row[5],score_dict[g_id],row[6])
 
     return gene_score_dict
 
 
-#called from serializedPipeline
-def geneScan(genes_aac_list,db,cursor):
+#called from ???
+def geneScan(genes_aac_list,config):
     #Scan the database for stored Genes
     if len(genes_aac_list) == 0:
         return {},{}
+
+    db,cursor = config.getDB()
+
     sql = "SELECT Uniprot_Ac FROM Gene"
     try:
         cursor.execute(sql)
@@ -287,7 +385,8 @@ def geneScan(genes_aac_list,db,cursor):
     except:
         [e,f,g] = sys.exc_info()
         raise NameError("Error in geneScan: %s,\n%s" % (sql,f))
-    
+    db.close()
+
     t1 = time.time()
     stored_genes = {}
     new_genes = {}
@@ -305,17 +404,18 @@ def geneScan(genes_aac_list,db,cursor):
 
 
 #called from serializedPipeline
-def protCheck(proteins,session_id,db,cursor):
-    t0 = time.time()
+def protCheck(proteins,session_id,config):
     #Scan the database for stored Proteins
     if proteins.isEmpty():
         return {},{}
 
-    results = select(db,cursor,['Gene_Id','Uniprot_Ac','Sequence'],'Gene')
-    
-    t1 = time.time()
-    
+    results = select(config,['Gene_Id','Uniprot_Ac','Sequence'],'Gene')
+
+    if config.verbosity >= 3:
+        print('Just after protCheck selection')
+
     prot_id_list = set([])
+    prot_ids_mutants_excluded = set()
 
     max_p_id = 0
 
@@ -329,10 +429,13 @@ def protCheck(proteins,session_id,db,cursor):
         proteins.set_protein_sequence(u_ac,row[2])
 
         prot_id_list.add(p_id)
+        if not sdsc.is_mutant_ac:
+            prot_ids_mutants_excluded.add(p_id)
+
         if p_id > max_p_id:
             max_p_id = p_id
 
-    proteins.set_stored_ids(prot_id_list)
+    proteins.set_stored_ids(prot_id_list,prot_ids_mutants_excluded)
 
     #Insert the new proteins into the database
     new_prots = set()
@@ -348,9 +451,11 @@ def protCheck(proteins,session_id,db,cursor):
             u_id = proteins.get_u_id(u_ac)
             values.append((u_ac.replace("'","\\'"),','.join(ref_ids),u_id,session_id))
 
-        insert(db,cursor,'Gene',['Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Original_Session'],values)
+        insert('Gene',['Uniprot_Ac','Genbank_Protein_Accession_Number','Uniprot_Id','Original_Session'],values,config)
             
         #Retrieve the Protein-Ids from the new added proteins
+
+        db,cursor = config.getDB()
 
         sql = "SELECT Gene_Id,Uniprot_Ac FROM Gene WHERE Gene_Id > %s" % str(max_p_id)
         try:
@@ -360,6 +465,7 @@ def protCheck(proteins,session_id,db,cursor):
         except:
             [e,f,g] = sys.exc_info()
             raise NameError("Error in protCheck: %s,\n%s" % (sql,f))
+        db.close()
     else:
         results = ()
 
@@ -384,7 +490,7 @@ def protCheck(proteins,session_id,db,cursor):
         prot_id = proteins.get_protein_database_id(u_ac)
         values.append((prot_id,session_id))
 
-    insert(db,cursor,'RS_Gene_Session',['Gene','Session'],values)
+    insert('RS_Gene_Session',['Gene','Session'],values,config)
 
     return
 
@@ -402,22 +508,6 @@ def getLastAutoInc(db,cursor):
         db.rollback()
     return auto_id
 
-def getUniprotFromId(gene_id,db,cursor):
-    sql = "SELECT Uniprot_Id FROM Gene WHERE Gene_Id = '%s'" % (str(gene_id))
-         
-    try:
-        cursor.execute(sql)
-        results = cursor.fetchall()
-        db.commit()
-    except:
-        raise NameError("NameError in getUniprotFromId")
-        db.rollback()
-    
-    if results == ():
-        return 0 
-    row = results[0]
-    return row[0]
-
 #called by babel
 def getUniprotAcFromId(gene_id,db,cursor):
     sql = "SELECT Uniprot_Ac FROM Gene WHERE Gene_Id = '%s'" % (str(gene_id))
@@ -434,88 +524,6 @@ def getUniprotAcFromId(gene_id,db,cursor):
         return 0 
     row = results[0]
     return row[0]
-
-
-def getLigandDict(s_ids,db,cursor):
-    if s_ids != None:
-        if len(s_ids) == 0:
-            return {}
-        max_s = max(s_ids)
-        min_s = min(s_ids)
-        sql = "SELECT Ligand,Complex,Chain,Residue FROM RS_Ligand_Structure WHERE Structure BETWEEN %s AND %s" % (str(min_s),str(max_s))
-             
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("Error in getLigands: %s" % sql)
-            db.rollback()
-
-        if results == ():
-            return {}
-
-        structure_dict = {}
-        ligand_id_list = set()
-        for row in results:
-            s_id = row[1]
-            if not s_id in s_ids:
-                continue
-            if not s_id in structure_dict:
-                structure_dict[s_id] = {row[0]:["Ligand","",row[3],row[2]]}
-            elif not row[0] in structure_dict[s_id]:
-                structure_dict[s_id][row[0]] = ["Ligand","",row[3],row[2]]
-            ligand_id_list.add(row[0])
-    else:
-        sql = "SELECT Ligand,Complex,Chain,Residue FROM RS_Ligand_Structure"
-             
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("Error in getLigands: %s" % sql)
-            db.rollback()
-
-        if results == ():
-            return {}
-
-        structure_dict = {}
-        ligand_id_list = set()
-        for row in results:
-            s_id = row[1]
-            if not s_id in structure_dict:
-                structure_dict[s_id] = {row[0]:["Ligand","",row[3],row[2]]}
-            elif not row[0] in structure_dict[s_id]:
-                structure_dict[s_id][row[0]] = ["Ligand","",row[3],row[2]]
-            ligand_id_list.add(row[0])
-
-    max_l = max(ligand_id_list)
-    min_l = min(ligand_id_list)
-
-    if len(ligand_id_list) > 0:
-        sql = "SELECT Ligand_Id,Name FROM Ligand WHERE Ligand_Id BETWEEN %s AND %s" % (str(min_l),str(max_l))
-             
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("Error in getLigands: %s" % sql)
-            db.rollback()
-        
-        lig_map = {}
-        for row in results:
-            lig_id = row[0]
-            if lig_id in ligand_id_list:
-                lig_map[lig_id] = row[1]
-
-
-        for s_id in structure_dict:
-            for lig_id in structure_dict[s_id]:
-                structure_dict[s_id][lig_id][1] = lig_map[lig_id]
-
-    return structure_dict
 
 #called by babel
 def getAAChange(mutation_id,db,cursor):
@@ -536,19 +544,72 @@ def getAAChange(mutation_id,db,cursor):
     return ""
 
 #called by serializedPipeline
-def positionCheck(proteins,database_session,db,cursor,config):
+def indelCheck(proteins,session,config):
+    if len(proteins.indels) == 0:
+        return
+    stored_wt_ids = proteins.get_stored_ids(exclude_indel_mutants = True)
+
+    if len(stored_wt_ids) > 0:
+        rows = ['Wildtype_Protein','Indel_Notation','Indel_Id']
+        table = 'Indel'
+
+        results = binningSelect(stored_wt_ids,rows,table,config)
+
+        for row in results:
+            indel_notation = row[1]
+            database_id = row[2]
+            proteins.indels[indel_notation].set_database_id(database_id)
+            proteins.indels[indel_notation].set_stored(True)
+
+    values = []
+    all_wt_ids = set()
+    for indel_notation in proteins.indels:
+        if proteins.indels[indel_notation].stored:
+            continue
+        wt_prot_id = proteins.get_protein_database_id(proteins.indels[indel_notation].wt_prot)
+        mut_prot_id = proteins.get_protein_database_id(proteins.indels[indel_notation].mut_prot)
+        if wt_prot_id == None:
+            config.errorlog.add_error('Wildtype protein id is not allowed to be None')
+            continue
+        values.append((wt_prot_id,mut_prot_id,indel_notation))
+        all_wt_ids.add(wt_prot_id)
+
+    if len(values) > 0:
+        columns = ['Wildtype_Protein','Mutant_Protein','Indel_Notation']
+        insert('Indel',columns,values,config)
+
+    session_values = []
+
+    if len(all_wt_ids) > 0:
+        rows = ['Wildtype_Protein','Indel_Notation','Indel_Id']
+        table = 'Indel'
+        results = binningSelect(all_wt_ids,rows,table,config)
+        for row in results:
+            indel_notation = row[1]
+            if not indel_notation in proteins.indels:
+                continue
+            database_id = row[2]
+            proteins.indels[indel_notation].set_database_id(database_id)
+            session_values.append((session,database_id,','.join(proteins.indels[indel_notation].tags)))
+
+    if len(session_values) > 0:
+        columns = ['Session','Indel','Tags']
+        insert('RS_Indel_Session',columns,session_values,config)
+
+    return
+
+#called by serializedPipeline
+def positionCheck(proteins,database_session,config):
     verbose = config.verbose
 
     if len(proteins.get_stored_ids()) > 0:
         rows = ['Gene','Amino_Acid_Change','Mutation_Id']
         table = 'Mutation'
 
-        results = binningSelect(proteins.get_stored_ids(),rows,table,db,cursor)
+        results = binningSelect(proteins.get_stored_ids(),rows,table,config)
 
         for row in results:
             prot_id = row[0]
-            if not proteins.isStored(prot_id):
-                continue
             aacs = row[1].split(",")
             aacbase = aacs[0]
             pos = int(aacbase[1:])
@@ -574,7 +635,7 @@ def positionCheck(proteins,database_session,db,cursor,config):
 
     if len(values) > 0:
         columns = ['Gene','Amino_Acid_Change','Residue_Id']
-        insert(db,cursor,'Mutation',columns,values)
+        insert('Mutation',columns,values,config)
 
 
     rows = ['Gene','Amino_Acid_Change','Mutation_Id']
@@ -582,12 +643,11 @@ def positionCheck(proteins,database_session,db,cursor,config):
 
     fused_prot_ids = proteins.get_not_stored_ids() | proteins.get_stored_ids()
 
-    results = binningSelect(fused_prot_ids,rows,table,db,cursor)
+    results = binningSelect(fused_prot_ids,rows,table,config)
 
     for row in results:
         prot_id = row[0]
-        if not (prot_id in fused_prot_ids):
-            continue
+
         aacbase = row[1]
         pos = int(aacbase[1:])
 
@@ -622,24 +682,17 @@ def positionCheck(proteins,database_session,db,cursor,config):
             raise NameError("Error in mutationCheck: %s" % (f))
         return process
     else:
-        insert(db,cursor,'RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,value_threshold=1000)
+        insert('RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,config)
         return None
 
 def backgroundInsertMS(values,config):
-    db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
-    cursor = db.cursor()
-    insert(db,cursor,'RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,value_threshold=1000)
-    db.close()
+
+    insert('RS_Mutation_Session',['Session','Mutation','New_AA','Tag'],values,config)
+
     return
 
 #called by serializedPipeline
 def addIupred(proteins,config):
-    process = multiprocessing.Process(target = backgroundIU,args=(proteins,config))
-    process.start()
-    return process
-
-def backgroundIU(proteins,config):
-    #structure of iupred_map: {Uniprot_Ac:([regions],{Position:(aa1,iupred_score)})}
 
     values = []
     u_acs = proteins.get_protein_u_acs()
@@ -670,180 +723,14 @@ def backgroundIU(proteins,config):
             iupred_score = scores[pos]
             values.append((pos_id,iupred_score,pos_region_type))
 
+    process = multiprocessing.Process(target = backgroundIU,args=(values,config))
+    process.start()
+    return process
+
+def backgroundIU(values,config):
     if not len(values) == 0:
-        db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
-        cursor = db.cursor()
-        update(db,cursor,'Mutation',['Mutation_Id','IUPRED','IUPRED_Glob'],values)
-        db.close()
+        update(config,'Mutation',['Mutation_Id','IUPRED','IUPRED_Glob'],values)
     return
-
-#called by serializedPipeline
-def updateMutations(mutation_updates,db,cursor):
-    '''
-    binsize = 100
-    bins = set()
-    max_mut_id = 0
-    min_mut_id = None
-
-    value_strs = {}
-    m_ids = []
-    for (m_id,new_aac_base) in mutation_updates:
-        
-        m_ids.append(str(m_id))
-        bin_number = m_id//binsize
-        bins.add(bin_number)
-
-        if not bin_number in value_strs:
-            value_strs[bin_number] = []
-        value_strs[bin_number].append("WHEN '%s' THEN '%s'" % (str(m_id),str(new_aac_base)))
-
-        if m_id > max_mut_id:
-            max_mut_id = m_id
-        if min_mut_id == None or m_id < min_mut_id:
-            min_mut_id = m_id
-    '''
-    table = 'Mutation'
-    columns = ['Mutation_Id','Amino_Acid_Change']
-
-    update(db,cursor,table,columns,mutation_updates)
-
-    return
-    '''
-    if not len(m_ids) == 0:
-        min_max_tuples = []
-
-        for bin_number in bins:
-            min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-
-        
-        for (min_mut_id,max_mut_id) in min_max_tuples:
-            bin_number = min_mut_id//binsize
-            part = value_strs[bin_number]
-        
-            sql = "UPDATE Mutation SET Amino_Acid_Change = CASE Mutation_Id %s ELSE Amino_Acid_Change END WHERE Mutation_Id BETWEEN %s AND %s" % (" ".join(part),str(min_mut_id),str(max_mut_id))
-            try:
-                cursor.execute(sql)
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in updateMutations: %s,%s" % (sql[:1000],f))
-    '''
-
-#called by serializedPipeline
-def getTemplates(gene_id_list,db,cursor):
-    gene_template_map = {}
-    if len(gene_id_list) > 0:
-        sql = "SELECT Template_Id,Name,Sequence_Identity,Alignment_Length,Target_Chain,Resolution,R_Value,Quality_Score,Original_Target_Chain,Original_Chains,Chains,Homooligomer,Gene  FROM Template"
-             
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in getTemplates: %s,%s" % (sql,f))
-
-        if results == ():
-            return gene_template_map
-        for row in results:
-            template_id = row[0]
-            pdb_id = row[1]
-            seq_id = row[2]
-            coverage = row[3]
-            target_chain = row[4]
-            resolution = row[5]
-            r_value = row[6]
-            score = row[7]
-            original_target_chain = row[8]
-            original_chains = row[9]
-            chains = row[10]
-            oligos = row[11]
-            gene_id = row[12]
-            if not gene_id in gene_id_list:
-                continue
-            (sub_lig_dist,sub_ano) = (-0.1,0.0)
-            template = [pdb_id,seq_id,target_chain,coverage,resolution,[],r_value,score,sub_lig_dist,sub_ano,original_target_chain,original_chains]
-            oligo_set = set([])
-            for oligo in oligos:
-                oligo_set.add(oligo)
-            if not gene_id in gene_template_map:
-                gene_template_map[gene_id] = ({template_id:template},{pdb_id:oligo_set})
-            else:
-                gene_template_map[gene_id][0][template_id] = template
-                gene_template_map[gene_id][1][pdb_id] = oligo_set
-    return gene_template_map
-
-def getStructureDict(s_ids,db,cursor):
-    t0 = time.time()
-    structure_ligand_dict = getLigandDict(s_ids,db,cursor)
-    if not s_ids == None:
-        if len(s_ids) == 0:
-            return {}
-
-    if not s_ids == None:
-        sql = "SELECT Structure_Id,PDB,Chain,Resolution,Homooligomer,Chains FROM Structure WHERE Structure_Id BETWEEN %s AND %s" % (str(min(s_ids)),str(max(s_ids)))
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("NameError in getTemplatesFromIdList: %s" % sql)
-        structure_results = {}
-        for row in results:
-            s_id = row[0]
-            if not s_id in s_ids:
-                continue
-            pdb_id = row[1]
-            chain = row[2]
-            resolution = row[3]
-            oligos = row[4]
-            chains = row[5]
-            if s_id in structure_ligand_dict:
-                ligands = list(structure_ligand_dict[s_id].values())
-            else:
-                ligands = []
-            """
-            iaps = chains.split(";")
-            for iap in iaps:
-                iap_info = iap.split(":")
-                if len(iap_info) > 1:
-                    ligands.append([iap_info[1],iap_info[0]])
-            """
-
-            structure = [pdb_id,chain,resolution,ligands,oligos,chains]
-            structure_results[s_id] = structure
-
-    else:
-        sql = "SELECT Structure_Id,PDB,Chain,Resolution,Homooligomer,Chains FROM Structure"
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            raise NameError("NameError in getTemplatesFromIdList: %s" % sql)
-        structure_results = {}
-        for row in results:
-            s_id = row[0]
-            pdb_id = row[1]
-            chain = row[2]
-            resolution = row[3]
-            oligos = row[4]
-            chains = row[5]
-            if s_id in structure_ligand_dict:
-                ligands = list(structure_ligand_dict[s_id].values())
-            else:
-                ligands = []
-            """
-            iaps = chains.split(";")
-            for iap in iaps:
-                iap_info = iap.split(":")
-                if len(iap_info) > 1:
-                    ligands.append([iap_info[1],iap_info[0]])
-            """
-
-            structure = [pdb_id,chain,resolution,ligands,oligos,chains]
-            structure_results[s_id] = structure
-    return structure_results
 
 #called by babel
 def getPDB(template_id,db,cursor):
@@ -913,14 +800,14 @@ def getAnnoIds(db,cursor,template_id=0,mutation_id=0):
         ids.append(row[0])
     return ids
 
-def getMutationDict(mutation_id_list,db,cursor):
+#called by output
+def getMutationDict(mutation_id_list,config):
     if len(mutation_id_list) == 0:
         return {}
 
     rows = ['Mutation_Id','Amino_Acid_Change','Gene','IUPRED','IUPRED_Glob','Residue_Id']
     table = 'Mutation'
-    results = binningSelect(mutation_id_list,rows,table,db,cursor)
-
+    results = binningSelect(mutation_id_list,rows,table,config)
 
     mutation_dict= {}
 
@@ -931,7 +818,8 @@ def getMutationDict(mutation_id_list,db,cursor):
     return mutation_dict
 
 #called by serializedPipeline
-def updateSession(session_id,time,db,cursor):
+def updateSession(session_id,time,config):
+    db,cursor = config.getDB()
     sql = "UPDATE IGNORE Session SET End = '%s' WHERE Session_Id = '%s'" % (str(time),str(session_id))
     try:
         # Execute the SQL command
@@ -942,9 +830,12 @@ def updateSession(session_id,time,db,cursor):
         print(("Couldn't update Session '%s'") % (str(session_id)))
         # Rollback in case there is any NameError
         db.rollback()
+    db.close()
+    return
 
 #called by serializedPipeline
-def insertSession(time,ori_filename,db,cursor):
+def insertSession(time,ori_filename,config):
+    db,cursor = config.getDB()
     sql = "INSERT IGNORE INTO Session(Input_File,Start) VALUES ('%s','%s')" % (ori_filename,str(time))
     try:
         # Execute the SQL command
@@ -956,12 +847,13 @@ def insertSession(time,ori_filename,db,cursor):
         # Rollback in case there is any NameError
         db.rollback()
     session_id = getLastAutoInc(db,cursor)
+    db.close()
     return session_id
 
 #called by output
-#called by serializedPipeline
 #called by structman
-def getSessionId(infile,db,cursor):
+def getSessionId(infile,config):
+    db,cursor = config.getDB()
     sql = "SELECT Session_Id FROM Session WHERE Input_File = '%s'" % infile
     try:
         cursor.execute(sql)
@@ -970,6 +862,8 @@ def getSessionId(infile,db,cursor):
     except:
         raise NameError("Error in getSessionId: %s" % sql)
         # Rollback in case there is any NameError
+    db.close()
+
     if results == ():
         return None
     try:
@@ -979,6 +873,7 @@ def getSessionId(infile,db,cursor):
     return results[0][0]
 
 #called by babel
+#called by output
 def getSessionFile(session_id,db,cursor):
     sql = "SELECT Input_File FROM Session WHERE Session_Id = '%s'" % str(session_id)
     try:
@@ -994,7 +889,7 @@ def getSessionFile(session_id,db,cursor):
     return results[0][0]
 
 #called by serializedPipeline
-def addProtInfos(proteins,db,cursor):
+def addProtInfos(proteins,config):
     ref_value_strs = []
     go_term_ids = set()
     reac_ids = set()
@@ -1016,14 +911,14 @@ def addProtInfos(proteins,db,cursor):
 
     stored_go_terms = {}
     if len(go_term_ids) > 0:
-        results = select(db,cursor,['Id','GO_Term_Id'],'GO_Term',in_rows={'ID':go_term_ids})
+        results = select(config,['Id','GO_Term_Id'],'GO_Term',in_rows={'ID':go_term_ids})
         
         for row in results:
             stored_go_terms[row[0]] = row[1]
 
     stored_pathways = {}
     if len(reac_ids) > 0:
-        results = select(db,cursor,['Reactome_Id','Pathway_Id'],'Pathway',in_rows={'Reactome_Id':reac_ids})
+        results = select(config,['Reactome_Id','Pathway_Id'],'Pathway',in_rows={'Reactome_Id':reac_ids})
         
         for row in results:
             stored_pathways[row[0]] = row[1]
@@ -1049,21 +944,21 @@ def addProtInfos(proteins,db,cursor):
                 stored_pathways[reac_id] = None
 
     if len(go_values) > 0:
-        insert(db,cursor,'GO_Term',['Name','Id'],go_values)
+        insert('GO_Term',['Name','Id'],go_values,config)
 
     if len(pathway_values) > 0:
-        insert(db,cursor,'Pathway',['Name','Reactome_Id'],pathway_values)
+        insert('Pathway',['Name','Reactome_Id'],pathway_values,config)
         
     stored_go_terms = {}
     if len(go_term_ids) > 0:
-        results = select(db,cursor,['Id','GO_Term_Id',],'GO_Term',in_rows={'Id':go_term_ids})
+        results = select(config,['Id','GO_Term_Id',],'GO_Term',in_rows={'Id':go_term_ids})
         
         for row in results:
             stored_go_terms[row[0]] = row[1]
 
     stored_pathways = {}
     if len(reac_ids) > 0:
-        results = select(db,cursor,['Reactome_Id','Pathway_Id'],'Pathway',in_rows={'Reactome_Id':reac_ids})
+        results = select(config,['Reactome_Id','Pathway_Id'],'Pathway',in_rows={'Reactome_Id':reac_ids})
         
         for row in results:
             stored_pathways[row[0]] = row[1]
@@ -1082,154 +977,25 @@ def addProtInfos(proteins,db,cursor):
             pathway_values.append((prot_id,stored_pathways[reac_id]))
     
     if len(go_values) > 0:
-        insert(db,cursor,'RS_Gene_GO_Term',['Gene','GO_Term'],go_values)
+        insert('RS_Gene_GO_Term',['Gene','GO_Term'],go_values,config)
 
     if len(pathway_values) > 0:
-        insert(db,cursor,'RS_Gene_Pathway',['Gene','Pathway'],pathway_values)
+        insert('RS_Gene_Pathway',['Gene','Pathway'],pathway_values,config)
 
     if len(seq_values) > 0:
-        update(db,cursor,'Gene',['Gene_Id','Sequence'],seq_values)
+        update(config,'Gene',['Gene_Id','Sequence'],seq_values)
 
     return
 
 #called by serializedPipeline
-def getSequences(stored_genes,sequence_map,db,cursor):
-    gene_id_gene_map = {}
-    stored_gene_ids = set([])
-    for gene in stored_genes:
-        stored_gene_ids.add(stored_genes[gene])
-        gene_id_gene_map[stored_genes[gene]] = gene
-    gene_id_sequence_map = {}
-    if len(stored_gene_ids) > 0:
-        sql = "SELECT Gene_Id,Sequence FROM Gene"
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in getSequences: %s,%s" % (sql,f))
-        for row in results:
-            gene_id = row[0]
-            if not gene_id in stored_gene_ids:
-                continue
-            gene_id_sequence_map[gene_id] = row[1]
+def insertComplexes(proteins,config):
 
-    for gene_id in gene_id_sequence_map:
-        sequence_map[gene_id_gene_map[gene_id]] = gene_id_sequence_map[gene_id],'Stored','Stored'
-
-    return sequence_map
-
-#called by serializedPipeline
-def addErrorCodeToGene(gene_error_map,db,cursor):
-    #structure of gene_error_map: {gene_id:error-id}
-    error = {0:"Illegal uniprot ID",1:"Illegal uniprot ID or uniprot connection error",2:"Received empty wt-sequence",3:"Found no usable template",4:"Unknown Error"}
-    value_strs_c = []
-    value_strs_e = []
-    for gene_id in gene_error_map:
-        error_id = gene_error_map[gene_id]
-        value_strs_c.append("WHEN %s THEN %d" % (str(gene_id),error_id))
-        value_strs_e.append("WHEN %s THEN '%s'" % (str(gene_id),error[error_id]))
-    if len(value_strs_c) > 0:
-        gene_id_string = ','.join([str(x) for x in list(gene_error_map.keys())])
-        sql = "UPDATE IGNORE Gene SET Error_Code = CASE Gene_Id %s ELSE Error_Code END , ERROR = CASE Gene_Id %s ELSE Error END WHERE Gene_Id IN (%s)" % (" ".join(value_strs_c)," ".join(value_strs_e),gene_id_string)
-        try:
-            cursor.execute(sql)
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Couldn't update Gene-Error: %s,%s" % (sql,f))
-    return
-
-def backgroundInsertAS(value_strings,max_m,min_m,db,anno_anno_calculation):
-    cursor = db.cursor()
-    size = len(value_strings)
-    if size > 0:
-        bound = 2000
-        if size > bound:
-            m = size//bound
-            rest = size%bound
-            if rest == 0:
-                part_size = size//m
-            else:
-                m += 1
-                part_size = size//m
-            parts = []
-            for i in range(0,m-1):
-                parts.append(value_strings[(i*part_size):((i+1)*part_size)])
-            parts.append(value_strings[(m-1)*part_size:])
-        else:
-            parts = [value_strings]
-        for part in parts:
-            sql = "INSERT IGNORE INTO RS_Annotation_Session(Session,Mutation,Template) VALUES %s;" % ",".join(part)
-            try:
-                cursor.execute(sql)
-                db.commit()
-            except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in MultipleAnnotationSession: %s,%s" % (sql,f))
-    else:
-        return {}
-
-    if anno_anno_calculation:
-
-        sql = 'SELECT Template_1,Template_2,Mutation_1,Mutation_2,Chain_1,Chain_2,Distance,Atompair FROM RS_Annotation_Annotation WHERE Mutation_1 <= %s AND Mutation_1 >= %s' % (str(max_m),str(min_m))
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in backgroundInsertAS: %s\n%s" % (sql,f))
-
-        anno_anno_value_strs = []
-        dupl_set = set()
-        for row in results:
-            t_1 = row[0]
-            t_2 = row[1]
-            m_1 = row[2]
-            m_2 = row[3]
-            c_1 = row[4]
-            c_2 = row[5]
-            d = str(row[6])
-            ap = row[7]
-            if t_1 in t_m_map and t_2 in t_m_map:
-                if m_1 in t_m_map[t_1] and m_2 in t_m_map[t_2]:
-                    if not (m_1,m_2) in dupl_set:
-                        anno_anno_value_strs.append("('%s','%s','%s','%s','%s','%s','%s','%s','%s')" % (str(t_1),str(t_2),str(m_1),str(m_2),c_1,c_2,str(session_id),d,ap))
-                        dupl_set.add((m_1,m_2))
-        size = len(anno_anno_value_strs)
-        if size > 0:
-            bound = 2000
-            if size > bound:
-                m = size//bound
-                rest = size%bound
-                if rest == 0:
-                    part_size = size//m
-                else:
-                    m += 1
-                    part_size = size//m
-                parts = []
-                for i in range(0,m-1):
-                    parts.append(anno_anno_value_strs[(i*part_size):((i+1)*part_size)])
-                parts.append(anno_anno_value_strs[(m-1)*part_size:])
-            else:
-                parts = [anno_anno_value_strs]
-            for part in parts:
-                sql = "INSERT IGNORE INTO RS_Annotation_Annotation(Template_1,Template_2,Mutation_1,Mutation_2,Chain_1,Chain_2,Session,Distance,Atompair) VALUES %s" % ','.join(part)
-                try:
-                    cursor.execute(sql)
-                    db.commit()
-                except:
-                    [e,f,g] = sys.exc_info()
-                    raise NameError("Error in MultipleAnnotationSession: %s,%s" % (sql,f))
-    return
-
-#called by serializedPipeline
-def insertComplexes(proteins,db,cursor,smiles_path,inchi_path,pdb_path):
+    smiles_path = config.smiles_path
+    inchi_path = config.inchi_path
+    pdb_path = config.pdb_path
 
     stored_ligands = {}        
-    results = select(db,cursor,['Ligand_Id','Name'],'Ligand')
+    results = select(config,['Ligand_Id','Name'],'Ligand')
     for row in results:
         ligand_name = row[1]
         stored_ligands[ligand_name] = row[0]
@@ -1290,19 +1056,19 @@ def insertComplexes(proteins,db,cursor,smiles_path,inchi_path,pdb_path):
         pdb.updateLigandDB(update_ligands,smiles_path,inchi_path)
 
     if len(lig_values) > 0:
-        insert(db,cursor,'Ligand',['Name','Smiles','Inchi'],lig_values)
+        insert('Ligand',['Name','Smiles','Inchi'],lig_values,config)
 
     if len(values) > 0:
-        insert(db,cursor,'Complex',['PDB','Resolution','Chains','Homooligomers','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile'],values,value_threshold=20)
+        insert('Complex',['PDB','Resolution','Chains','Homooligomers','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile'],values,config)
 
     stored_ligands = {}        
-    results = select(db,cursor,['Ligand_Id','Name'],'Ligand')
+    results = select(config,['Ligand_Id','Name'],'Ligand')
     for row in results:
         ligand_name = row[1]
         stored_ligands[ligand_name] = row[0]
 
     values = []
-    results = select(db,cursor,['Complex_Id','PDB'],'Complex')
+    results = select(config,['Complex_Id','PDB'],'Complex')
     for row in results:
         if not proteins.contains_complex(row[1]):
             continue
@@ -1325,15 +1091,15 @@ def insertComplexes(proteins,db,cursor,smiles_path,inchi_path,pdb_path):
             values.append((lig_id,row[0],chain,res))
 
     if len(values) > 0:
-        insert(db,cursor,'RS_Ligand_Structure',['Ligand','Complex','Chain','Residue'],values)
+        insert('RS_Ligand_Structure',['Ligand','Complex','Chain','Residue'],values,config)
 
     return
 
-def getComplexMap(db,cursor,pdb_ids=None):
+def getComplexMap(config,pdb_ids=None):
     table = 'Complex'
     rows = ['Complex_Id','PDB','Resolution','Chains','Homooligomers','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile']
 
-    results = select(db,cursor,rows,table)
+    results = select(config,rows,table)
 
     complex_map = {}
     for row in results:
@@ -1395,11 +1161,11 @@ def getComplexMap(db,cursor,pdb_ids=None):
 
 
 #called by serializedPipeline
-def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,proteins):
+def insertStructures(structurelist,proteins,config):
 
     table = 'Structure'
     rows = ['Structure_Id','PDB','Chain','Homooligomer']
-    results = select(db,cursor,rows,table)
+    results = select(config,rows,table)
     
     stored_complexes = set()
 
@@ -1416,7 +1182,7 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,pro
         if (pdb_id,chain) in structurelist:
             structurelist.remove((pdb_id,chain))
 
-    results = select(db,cursor,['Complex_Id','PDB','Resolution','Chains','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile','Homooligomers'],'Complex')
+    results = select(config,['Complex_Id','PDB','Resolution','Chains','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile','Homooligomers'],'Complex')
 
     for row in results:
         pdb_id = row[1]
@@ -1437,12 +1203,12 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,pro
         values.append((pdb_id,chain,oligos))
 
     if len(values) > 0:
-        insert(db,cursor,'Structure',['PDB','Chain','Homooligomer'],values)
+        insert('Structure',['PDB','Chain','Homooligomer'],values,config)
 
     if len(structurelist) > 0:
         table = 'Structure'
         rows = ['Structure_Id','PDB','Chain']
-        results = select(db,cursor,rows,table)
+        results = select(config,rows,table)
 
         for row in results:
             s_id = row[0]
@@ -1457,14 +1223,14 @@ def insertStructures(structurelist,db,cursor,smiles_path,inchi_path,pdb_path,pro
     return
 
 #called by serializedPipeline
-def insertInteractingChains(interaction_structures,proteins,db,cursor,smiles_path,inchi_path,pdb_path):
+def insertInteractingChains(interaction_structures,proteins,config):
     if len(interaction_structures) == 0:
 
        return {}
 
     interacting_structure_ids = {}
 
-    results = select(db,cursor,['Structure_Id','PDB','Chain'],'Structure')
+    results = select(config,['Structure_Id','PDB','Chain'],'Structure')
 
     for row in results:
         pdb_id = row[1]
@@ -1487,10 +1253,10 @@ def insertInteractingChains(interaction_structures,proteins,db,cursor,smiles_pat
         values.append((pdb_id,chain,oligos))
 
     if len(values) > 0:
-        insert(db,cursor,'Structure',['PDB','Chain','Homooligomer'],values)
+        insert('Structure',['PDB','Chain','Homooligomer'],values,config)
 
     if len(interaction_structures) > 0:
-        results = select(db,cursor,['Structure_Id','PDB','Chain'],'Structure')
+        results = select(config,['Structure_Id','PDB','Chain'],'Structure')
 
         for row in results:
             pdb_id = row[1]
@@ -1504,7 +1270,7 @@ def insertInteractingChains(interaction_structures,proteins,db,cursor,smiles_pat
     return interacting_structure_ids
 
 #called by serializedPipeline
-def insertAlignments(alignment_list,proteins,db,cursor,config):
+def insertAlignments(alignment_list,proteins,config):
     values = []
     if config.verbosity >= 2:
         t0 = time.time()
@@ -1517,13 +1283,25 @@ def insertAlignments(alignment_list,proteins,db,cursor,config):
         t1 = time.time()
         print('Time for insertAlignments, part 1: ',t1-t0)
     if len(values) > 0:
-        insert(db,cursor,'Alignment',['Gene','Structure','Sequence_Identity','Coverage','Alignment'],values)
+        insert('Alignment',['Gene','Structure','Sequence_Identity','Coverage','Alignment'],values,config)
     if config.verbosity >= 2:
         t2 = time.time()
         print('Time for insertAlignments, part 2: ',t2-t1)
 
+def background_insert_residues(values,config):
+    columns = ['Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment',
+                'Homomer_Distances','Interaction_Profile','Centralities','B_Factor','Modres','PHI','PSI','Intra_SSBOND','SSBOND_Length',
+                'Intra_Link','Link_Length','CIS_Conformation','CIS_Follower','Inter_Chain_Median_KD','Inter_Chain_Dist_Weighted_KD','Inter_Chain_Median_RSA',
+                'Inter_Chain_Dist_Weighted_RSA','Intra_Chain_Median_KD','Intra_Chain_Dist_Weighted_KD','Intra_Chain_Median_RSA','Intra_Chain_Dist_Weighted_RSA']
+
+    insert('Residue',columns,values,config)
+    return
+
 #called by serializedPipeline
-def insertResidues(structural_analysis,db,cursor,interacting_structure_ids,proteins):
+def insertResidues(structural_analysis,interacting_structure_ids,proteins,config):
+
+    if config.verbosity >= 2:
+        t0 = time.time()
 
     values = []
 
@@ -1573,80 +1351,49 @@ def insertResidues(structural_analysis,db,cursor,interacting_structure_ids,prote
             if not (pdb_id,chain) in interacting_structure_ids:
                 proteins.add_residue(pdb_id,chain,res_id,residue)
 
-    columns = ['Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access','Secondary_Structure_Assignment',
-                'Homomer_Distances','Interaction_Profile','Centralities','B_Factor','Modres','PHI','PSI','Intra_SSBOND','SSBOND_Length',
-                'Intra_Link','Link_Length','CIS_Conformation','CIS_Follower','Inter_Chain_Median_KD','Inter_Chain_Dist_Weighted_KD','Inter_Chain_Median_RSA',
-                'Inter_Chain_Dist_Weighted_RSA','Intra_Chain_Median_KD','Intra_Chain_Dist_Weighted_KD','Intra_Chain_Median_RSA','Intra_Chain_Dist_Weighted_RSA']
+    if config.verbosity >= 2:
+        t1 = time.time()
+        print('Time for insertResidues part 1:',t1-t0)
 
-    insert(db,cursor,'Residue',columns,values,value_threshold=500)
+    process = multiprocessing.Process(target = background_insert_residues,args=(values,config))
+    process.start()
 
+    return process
+
+
+    #Theory: database ids of residues are not needed, try running the pipeline without this part:
+    '''
     if len(structure_ids) > 0:
         rows = ['Structure','Residue_Id','Number']
         table = 'Residue'
 
-        results = binningSelect(structure_ids.keys(),rows,table,db,cursor)
+        results = binningSelect(structure_ids.keys(),rows,table,config)
         
+        if config.verbosity >= 2:
+            t3 = time.time()
+            print('Time for insertResidues part 3:',t3-t2)
+
         for row in results:
             s_id = row[0]
             r_id = row[1]
-            
-            if not s_id in structure_ids:
-                continue
+
             res_nr = row[2]
             pdb_id,chain = structure_ids[s_id]
             proteins.set_residue_db_id(pdb_id,chain,res_nr,r_id)
-    return
-
-
-def processAlignmentData(alignment):
-    lines = alignment.split("\n")
-    nextline = False
-    target_start = False
-    template_start = False
-    target_lines = []
-    template_lines = []
-    target_name = ""
-    for line in lines:
-        if len(line) > 0:
-            if line[0] == ">":
-                ids = line.split(";")
-                if target_name == "":
-                    target_name = ids[1]
-                    target_name = target_name.replace(" ","")
-                    target_name = target_name.replace("\n","")
-                nextline = True
-            elif nextline:
-                if not target_start:
-                    target_start = True
-                else:
-                    target_start = False
-                    template_start = True
-                    words = line.split(":")
-                    startres = words[2]
-                    endres = words[4]
-                    chain = words[3]
-                nextline = False
-            elif line[0] == "\n":
-                template_start = False
-            elif target_start:
-                target_lines.append(line)
-            elif template_start:
-                template_lines.append(line)
-
-    target_seq = "".join(target_lines)
-    target_seq = target_seq.replace("*","")
-    template_seq = "".join(template_lines)
-    template_seq = template_seq.replace("*","")
-    return target_seq,template_seq
+        
+        if config.verbosity >= 2:
+            t4 = time.time()
+            print('Time for insertResidues part 4:',t4-t3)
+    '''
 
 #called by serializedPipeline
-def getAlignments(proteins,db,cursor,config):
+def getAlignments(proteins,config):
     if config.verbosity >= 2:
         t0 = time.time()
 
     rows = ['Gene','Structure','Sequence_Identity','Coverage','Alignment']
     table = 'Alignment'
-    results = binningSelect(proteins.get_stored_ids(),rows,table,db,cursor)
+    results = binningSelect(proteins.get_stored_ids(),rows,table,config)
 
     if config.verbosity >= 2:
         t1 = time.time()
@@ -1658,8 +1405,7 @@ def getAlignments(proteins,db,cursor,config):
     for row in results:
 
         prot_id = row[0]
-        if not proteins.isStored(prot_id):
-            continue
+
         structure_id =row[1]
         seq_id = row[2]
         coverage = row[3]
@@ -1667,7 +1413,7 @@ def getAlignments(proteins,db,cursor,config):
 
         structure_ids.add(structure_id)
 
-        target_seq,template_seq = processAlignmentData(alignment)
+        target_seq,template_seq = sdsc.processAlignmentData(alignment)
 
         if not prot_id in gene_structure_alignment_map:
             gene_structure_alignment_map[prot_id] = {}
@@ -1678,12 +1424,12 @@ def getAlignments(proteins,db,cursor,config):
         t2 = time.time()
         print("Time for part 2 in getAlignments: %s" % (str(t2-t1)))
 
-    structure_map,id_structure_map = getStructure_map(structure_ids,db,cursor)
+    structure_map,id_structure_map = getStructure_map(structure_ids,config)
     pdb_ids = set()
     for (pdb_id,chain) in structure_map:
         pdb_ids.add(pdb_id)
 
-    complex_map = getComplexMap(db,cursor,pdb_ids=pdb_ids)
+    complex_map = getComplexMap(config,pdb_ids=pdb_ids)
 
     for prot_id in gene_structure_alignment_map:
         u_ac = proteins.getByDbId(prot_id).get_u_ac()
@@ -1721,16 +1467,15 @@ def getAlignments(proteins,db,cursor,config):
 
     return
 
-def getStructure_map(structure_ids,db,cursor):
+def getStructure_map(structure_ids,config):
     structure_map = {}
     id_structure_map = {}
     if len(structure_ids) > 0:
-        results = binningSelect(structure_ids,['Structure_Id','PDB','Chain','Homooligomer'],'Structure',db,cursor)
+        results = binningSelect(structure_ids,['Structure_Id','PDB','Chain','Homooligomer'],'Structure',config)
         
         for row in results:
             s_id = row[0]
-            if not s_id in structure_ids:
-                continue
+
             pdb_id = row[1]
             chain = row[2]
             oligo = row[3]
@@ -1738,43 +1483,8 @@ def getStructure_map(structure_ids,db,cursor):
             id_structure_map[s_id] = (pdb_id,chain)
     return structure_map,id_structure_map
 
-
-def getSeqIds(s_ids,g_ids,db,cursor):
-    seq_id_map = {}
-    if len(s_ids) > 0 and len(g_ids) > 0:
-        min_s = min(s_ids)
-        max_s = max(s_ids)
-        min_g = min(g_ids)
-        max_g = max(g_ids)
-
-        sql = "SELECT Structure,Gene,Sequence_Identity,Coverage FROM Alignment WHERE Structure BETWEEN %s AND %s AND Gene BETWEEN %s AND %s" % (min_s,max_s,min_g,max_g)
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e,f,g] = sys.exc_info()
-            raise NameError("Error in getAlignments: %s,\n%s" % (sql,f))
-
-        for row in results:
-            s_id = row[0]
-            if not s_id in s_ids:
-                continue
-            g_id = row[1]
-            if not g_id in g_ids:
-                continue
-
-            seq_id = row[2]
-            cov = row[3]
-
-            if not g_id in seq_id_map:
-                seq_id_map[g_id] = {}
-            seq_id_map[g_id][s_id] = (seq_id,cov)
-
-    return seq_id_map
-
 #called by serializedPipeline
-def insertClassifications(db,cursor,proteins,config):
+def insertClassifications(proteins,config):
 
     if config.verbosity >= 2:
         t1 = time.time()
@@ -1782,7 +1492,7 @@ def insertClassifications(db,cursor,proteins,config):
     table = 'Mutation'
     rows = ['Mutation_Id','Amino_Acid_Change','Gene','Location','Class','RIN_Class','Simple_Class','RIN_Simple_Class','Interactions','Confidence',
             'Secondary_Structure','Recommended_Structure','Max_Seq_Structure','Mapped_Structures','RIN_Profile','Modres_Score',
-            'Modres_Propensity','B_Factor','Weighted_Centrality_Scores','Weighted_Phi','Weighted_Psi','Intra_SSBOND_Propensity',
+            'B_Factor','Weighted_Centrality_Scores','Weighted_Phi','Weighted_Psi','Intra_SSBOND_Propensity',
             'Inter_SSBOND_Propensity','Intra_Link_Propensity','Inter_Link_Propensity','CIS_Conformation_Propensity','CIS_Follower_Propensity',
             'Weighted_Inter_Chain_Median_KD', 'Weighted_Inter_Chain_Dist_Weighted_KD', 'Weighted_Inter_Chain_Median_RSA',
             'Weighted_Inter_Chain_Dist_Weighted_RSA', 'Weighted_Intra_Chain_Median_KD', 'Weighted_Intra_Chain_Dist_Weighted_KD',
@@ -1792,21 +1502,17 @@ def insertClassifications(db,cursor,proteins,config):
 
     if config.verbosity >= 2:
         t2 = time.time()
-        print('insertClassifications part 4: %s' % (t2-t1))
+        print('insertClassifications part 1: %s' % (t2-t1),'Update Classifications of',len(values),'positions')
 
-    update(db,cursor,table,rows,values,value_threshold=1000)
+    update(config,table,rows,values)
 
     if config.verbosity >= 2:
         t3 = time.time()
-        print('insertClassifications part 5: %s' % (t3-t2))
+        print('insertClassifications part 2: %s' % (t3-t2))
 
     return
 
 def createClassValues(proteins,config):
-    if config.profiling:
-        profile = cProfile.Profile()
-        profile.enable()
-
     values = []
 
     for u_ac in proteins.get_protein_u_acs():
@@ -1820,13 +1526,9 @@ def createClassValues(proteins,config):
             position = proteins.get_position(u_ac,pos)
             mappings = position.mappings
 
-            recommended_structure = mappings.get_recommended_res_str(proteins)
-
-            max_seq_structure = mappings.get_max_seq_structure_res_str(proteins)
-
             values.append((m,aachange,prot_id,mappings.weighted_location,mappings.Class,mappings.rin_class,mappings.simple_class,mappings.rin_simple_class,
-                    str(mappings.interaction_recommendations),mappings.classification_conf,mappings.weighted_ssa,recommended_structure,
-                    max_seq_structure,len(mappings.qualities),mappings.weighted_profile.encode(),mappings.weighted_modres,
+                    str(mappings.interaction_recommendations),mappings.classification_conf,mappings.weighted_ssa,mappings.recommended_res,
+                    mappings.max_seq_res,len(mappings.qualities),mappings.get_weighted_profile_str(),
                     mappings.weighted_modres,mappings.weighted_b_factor,mappings.get_weighted_centralities_str(),
                     mappings.weighted_phi,mappings.weighted_psi,mappings.weighted_intra_ssbond,mappings.weighted_inter_ssbond,
                     mappings.weighted_intra_link,mappings.weighted_inter_link,mappings.weighted_cis_conformation,
@@ -1836,15 +1538,10 @@ def createClassValues(proteins,config):
                     mappings.weighted_intra_chain_dist_weighted_kd, mappings.weighted_intra_chain_median_rsa,
                     mappings.weighted_intra_chain_dist_weighted_rsa))
 
-    if config.profiling:
-        if cum_stats != None:
-            cum_stats.add(profile)
-            cum_stats.sort_stats('cumulative')
-            cum_stats.print_stats()
-
     return values
 
-def getStoredResiduesByIds(stored_ids,db,cursor,verbose = False):
+#called by ???
+def getStoredResiduesByIds(stored_ids,config):
     stored_ids = proteins.getStoredStructureIds()
 
     residue_dict = {}
@@ -1857,21 +1554,50 @@ def getStoredResiduesByIds(stored_ids,db,cursor,verbose = False):
                 'Intra_Link','Link_Length','CIS_Conformation','CIS_Follower','Inter_Chain_Median_KD','Inter_Chain_Dist_Weighted_KD','Inter_Chain_Median_RSA',
                 'Inter_Chain_Dist_Weighted_RSA','Intra_Chain_Median_KD','Intra_Chain_Dist_Weighted_KD','Intra_Chain_Median_RSA','Intra_Chain_Dist_Weighted_RSA']
         table = 'Residue'
-        results = binningSelect(stored_ids.keys(),rows,table,db,cursor)
+        results = binningSelect(stored_ids.keys(),rows,table,config)
         
         for row in results:
             s_id = row[0]
-            if not s_id in stored_ids:
-                continue
 
             residue_dict[row[1]] = row
     return residue_dict
 
+@ray.remote(num_cpus = 1)
+def para_residue_init_remote_wrapper(rows):
+    #hack proposed by the devs of ray to prevent too many processes being spawned
+    resources = ray.ray.get_resource_ids() 
+    cpus = [v[0] for v in resources['CPU']]
+    psutil.Process().cpu_affinity(cpus)
+
+    return para_residue_init(rows)
+
+def para_residue_init(rows):
+    t0 = time.time()
+    outs = []
+    for row in rows:
+        #Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
+        residue = sdsc.Residue(row[2],aa = row[3],lig_dist_str = row[4],chain_dist_str = row[5],RSA = row[6],
+                SSA = row[7],homo_dist_str = row[8],interaction_profile_str = row[9],centrality_score_str = row[10],
+                modres = row[11],b_factor = row[12],database_id = row[1],stored = True,phi = row[13],psi = row[14],
+                intra_ssbond = row[15], ssbond_length = row[16], intra_link = row[17], link_length = row[18],
+                cis_conformation = row[19], cis_follower = row[20],inter_chain_median_kd = row[21],
+                inter_chain_dist_weighted_kd = row[22], inter_chain_median_rsa = row[23],
+                inter_chain_dist_weighted_rsa = row[24], intra_chain_median_kd = row[25],
+                intra_chain_dist_weighted_kd = row[26], intra_chain_median_rsa = row[27],
+            intra_chain_dist_weighted_rsa = row[28])
+        outs.append((row[0],row[2],residue))
+    t1 = time.time()
+    return outs,t1-t0
+
 #called by serializedPipeline
-def getStoredResidues(proteins,db,cursor,config):
+def getStoredResidues(proteins,config):
     t0 = time.time()
 
     stored_ids = proteins.getStoredStructureIds()
+
+    if config.verbosity >= 2:
+        t1 = time.time()
+        print("Time for getstoredresidues 1: %s" % str(t1-t0))
 
     if len(stored_ids) > 0:
 
@@ -1881,28 +1607,73 @@ def getStoredResidues(proteins,db,cursor,config):
                 'Intra_Link','Link_Length','CIS_Conformation','CIS_Follower','Inter_Chain_Median_KD','Inter_Chain_Dist_Weighted_KD','Inter_Chain_Median_RSA',
                 'Inter_Chain_Dist_Weighted_RSA','Intra_Chain_Median_KD','Intra_Chain_Dist_Weighted_KD','Intra_Chain_Median_RSA','Intra_Chain_Dist_Weighted_RSA']
         table = 'Residue'
-        results = binningSelect(stored_ids.keys(),rows,table,db,cursor)
+        results = binningSelect(stored_ids.keys(),rows,table,config)
         
-        for row in results:
-            s_id = row[0]
-            if not s_id in stored_ids:
-                continue
+        if config.verbosity >= 2:
+            t10 = time.time()
+            print("Time for getstoredresidues 2.1: %s" % str(t10-t1))
 
+        '''
+        package_size = (len(results)//config.annotation_processes) + 1
+        para_results = []
+
+        if config.verbosity >= 2:
+            t11 = time.time()
+            print("Time for getstoredresidues 2.2: %s" % str(t11-t10))
+
+        pointer = 0
+        while pointer < len(results):
+            para_results.append(para_residue_init_remote_wrapper.remote(results[pointer:pointer+package_size]))
+            pointer += package_size
+
+        if config.verbosity >= 2:
+            t12 = time.time()
+            print("Time for getstoredresidues 2.3: %s" % str(t12-t11))
+
+        para_outs = ray.get(para_results)
+
+        if config.verbosity >= 2:
+            t13 = time.time()
+            print("Time for getstoredresidues 2.4: %s" % str(t13-t12))
+
+        max_comp_time = 0
+        amount_of_packages = 0
+        total_comp_time = 0.
+
+        for outs,comp_time in para_outs:
+            for s_id,res_nr,residue in outs:
+                pdb_id,chain = stored_ids[s_id]
+                proteins.add_residue(pdb_id,chain,res_nr,residue)
+            if comp_time > max_comp_time:
+                max_comp_time = comp_time
+
+            total_comp_time += comp_time
+            amount_of_packages += 1
+
+        if config.verbosity >= 2:
+            t14 = time.time()
+            print("Time for getstoredresidues 2.5: %s" % str(t14-t13))
+            print('Longest computation with:',max_comp_time,'In total',amount_of_packages,'residue packages','Accumulated time:',total_comp_time)
+        '''
+        for row in results:
+            #Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
             residue = sdsc.Residue(row[2],aa = row[3],lig_dist_str = row[4],chain_dist_str = row[5],RSA = row[6],
                     SSA = row[7],homo_dist_str = row[8],interaction_profile_str = row[9],centrality_score_str = row[10],
-                    modres = row[11],b_factor = row[12],database_id = row[1],stored = True,phi = row[13],psi = row[14],
-                    intra_ssbond = row[15], ssbond_length = row[16], intra_link = row[17], link_length = row[18],
-                    cis_conformation = row[19], cis_follower = row[20],inter_chain_median_kd = row[21],
-                    inter_chain_dist_weighted_kd = row[22], inter_chain_median_rsa = row[23],
-                    inter_chain_dist_weighted_rsa = row[24], intra_chain_median_kd = row[25],
-                    intra_chain_dist_weighted_kd = row[26], intra_chain_median_rsa = row[27],
-                    intra_chain_dist_weighted_rsa = row[28])
+                modres = row[11],b_factor = row[12],database_id = row[1],stored = True,phi = row[13],psi = row[14],
+                intra_ssbond = row[15], ssbond_length = row[16], intra_link = row[17], link_length = row[18],
+                cis_conformation = row[19], cis_follower = row[20],inter_chain_median_kd = row[21],
+                inter_chain_dist_weighted_kd = row[22], inter_chain_median_rsa = row[23],
+                inter_chain_dist_weighted_rsa = row[24], intra_chain_median_kd = row[25],
+                intra_chain_dist_weighted_kd = row[26], intra_chain_median_rsa = row[27],
+            intra_chain_dist_weighted_rsa = row[28])
+            s_id = row[0]
+            res_nr = row[2]
             pdb_id,chain = stored_ids[s_id]
-            proteins.add_residue(pdb_id,chain,row[2],residue)
+            proteins.add_residue(pdb_id,chain,res_nr,residue)
 
     if config.verbosity >= 2:
-        t1 = time.time()
-        print("Time for getstoredresidues: %s" % str(t1-t0))
+        t2 = time.time()
+        print("Time for getstoredresidues 2: %s" % str(t2-t1))
 
     return
 
@@ -2410,7 +2181,7 @@ def split(id_set,min_id,max_id):
                 min_r = i
     return [(l,min_l,max_l),(r,min_r,max_r)]
 
-def binning(id_set,tablesize=None,binsize=500000,density=0.5):
+def split_fusion_binning(id_set,tablesize=None,binsize=500000,density=0.5,fusion = True):
     if tablesize == 0:
         return set(),[]
 
@@ -2439,234 +2210,129 @@ def binning(id_set,tablesize=None,binsize=500000,density=0.5):
         dense_enough = True
         split_bins = []
         for (id_set,min_id,max_id) in sorted_bins:
-            if len(id_set) < ((max_id - min_id)*density):
+            min_amount = ((1 + max_id - min_id)*density)
+            #split set if smaller than min_amount 
+            if len(id_set) < min_amount:
                 for (iset,mi,ma) in split(id_set,min_id,max_id):
-                    split_bins.append((iset,mi,ma))
+                    if len(iset) > 0:
+                        split_bins.append((iset,mi,ma))
                     dense_enough = False
             else:
                 split_bins.append((id_set,min_id,max_id))
 
         sorted_bins = split_bins
 
-    fusion_done = False
-    while not fusion_done:
-        fusion_done = True
-        fused_bins = []
-        last_bin_fused = False
-        for pos,(id_set,min_id,max_id) in enumerate(sorted_bins):
-            if pos == 0 or last_bin_fused:
-                last_bin_fused = False
-                if pos == (len(sorted_bins) -1):
-                    fused_bins.append((id_set,min_id,max_id))
-                continue
-            pre_id_set,pre_min_id,pre_max_id = sorted_bins[pos-1]
-            if ((len(id_set)+len(pre_id_set))) > ((max_id - pre_min_id)*density*2*factor):
+    if fusion:
 
-                fused_bins.append(((pre_id_set | id_set),pre_min_id,max_id))
-                last_bin_fused = True
-                fusion_done = False
-            else:
-                fused_bins.append((pre_id_set,pre_min_id,pre_max_id))
-                last_bin_fused = False
-                if pos == (len(sorted_bins) -1):
-                    fused_bins.append((id_set,min_id,max_id))
+        fusion_done = False
+        while not fusion_done:
+            fusion_done = True
+            fused_bins = []
+            last_bin_fused = False
+            for pos,(id_set,min_id,max_id) in enumerate(sorted_bins):
+                if pos == 0 or last_bin_fused:
+                    last_bin_fused = False
+                    if pos == (len(sorted_bins) -1):
+                        fused_bins.append((id_set,min_id,max_id))
+                    continue
+                pre_id_set,pre_min_id,pre_max_id = sorted_bins[pos-1]
+                if ((len(id_set)+len(pre_id_set))) > ((max_id - pre_min_id)*density*2*factor):
 
-        sorted_bins = fused_bins
+                    fused_bins.append(((pre_id_set | id_set),pre_min_id,max_id))
+                    last_bin_fused = True
+                    fusion_done = False
+                else:
+                    fused_bins.append((pre_id_set,pre_min_id,pre_max_id))
+                    last_bin_fused = False
+                    if pos == (len(sorted_bins) -1):
+                        fused_bins.append((id_set,min_id,max_id))
 
-    singletons = set()
+            sorted_bins = fused_bins
+
+    singletons = []
     non_singleton_bins = []
     for (id_set,min_id,max_id) in sorted_bins:
         if min_id == max_id:
-            singletons.add(min_id)
+            singletons.append(min_id)
         else:
             non_singleton_bins.append((id_set,min_id,max_id))
     return singletons,non_singleton_bins
 
-def process_recommend_structure_str(recommended_structure_str):
-    if recommended_structure_str != None and recommended_structure_str != '-':
-        words = recommended_structure_str.split(';')
-        if len(words) < 4:
-            resolution = '-'
-            cov = '-'
-            seq_id = '-'
-            recommended_structure = '-'
+def median_focus_binning(id_set,density_thresh = 0.5):
+    #small sets are returned as a list of singletons
+    if len(id_set) < 10:
+        return list(id_set),[]
+
+    sorted_ids = sorted(id_set)
+
+    #If the given set is dense enough, just return it as one interval
+    density = len(sorted_ids)/(1 + sorted_ids[-1] - sorted_ids[0])
+    if density > density_thresh:
+        return [],[(id_set,sorted_ids[0],sorted_ids[-1])]
+
+    l_quartile_pos = len(id_set)//4
+    r_quartile_pos = 3*l_quartile_pos
+
+    avg_quartile_dist = 1 + (2*(1 + sorted_ids[r_quartile_pos] - sorted_ids[l_quartile_pos])/len(sorted_ids))
+
+    median_pos = len(id_set)//2
+    median = sorted_ids[median_pos]
+
+    id_set = set([median])
+    singletons = []
+
+    l_minus_1_value = median
+    r_plus_1_value = median #needed for giving the boundaries of the set if only median is in the set
+    for i in range(median_pos):
+        l_value = sorted_ids[median_pos-i]
+        l_minus_1_value = sorted_ids[median_pos-i-1]
+        if (l_value - l_minus_1_value) < avg_quartile_dist:
+            id_set.add(l_minus_1_value)
         else:
-            recommended_structure,seq_id,cov,resolution = words
-    else:
-        resolution = '-'
-        cov = '-'
-        seq_id = '-'
-        recommended_structure = '-'
-    return recommended_structure,seq_id,cov,resolution
+            l_minus_1_value = l_value #needed for giving the boundaries of the set
+            break
 
-#called by output.py
-def classificationOutput(config,outfolder,session_name,session_id,db,cursor,ligand_filter=None,overwrite=False):
-    outfile = '%s/%s' % (outfolder,session_name)
-    if config.verbosity >= 2:
-        t0 = time.time()
+    for j in range(median_pos-i):
+        singletons.append(sorted_ids[j])
 
-    if os.path.isfile("%s.classification.tsv" % outfile):
-        if config.verbosity >= 1:
-            print("A classification file already exists:\n%s.classification.tsv\n" % outfile)
-            if overwrite:
-                print("Overwrite flag is active, classification gets recalculated and old files will be overwritten.")
+    for i in range(median_pos,len(sorted_ids)-1):
+        r_value = sorted_ids[i]
+        r_plus_1_value = sorted_ids[i+1]
+        if (r_plus_1_value - r_value) < avg_quartile_dist:
+            id_set.add(r_plus_1_value)
         else:
-            if config.verbosity >= 1:
-                print("The classification gets skipped, if you wish to reclassify, use the --overwrite flag.")
-            files = os.listdir(outfolder)
-            class_files = []
-            for fname in files:
-                if fname.count('.classification') > 0:
-                    class_files.append('%s/%s' % (outfolder,fname))
-            return class_files,[]
+            r_plus_1_value = r_value
+            break
 
-    if ligand_filter != None:
-        f = open(ligand_filter,'r')
-        lines = f.readlines()
-        f.close()
-        ligand_filter = set()
-        for line in lines:
-            ligand_filter.add(line.replace('\n','').replace(' ',''))
+    for j in range(i+1,len(sorted_ids)):
+        singletons.append(sorted_ids[j])
 
-    if config.verbosity >= 2:
-        t1 = time.time()
-        print("Time for classificationOutput part 1: ",t1-t0)
+    if l_minus_1_value == r_plus_1_value:
+        singletons.append(l_minus_1_value)
+        return singletons,[]
 
-    table = 'RS_Mutation_Session'
-    rows = ['Mutation','New_AA','Tag']
-    eq_rows = {'Session':session_id}
-    results = select(db,cursor,rows,table,equals_rows=eq_rows)
+    return singletons,[(id_set,l_minus_1_value,r_plus_1_value)]
 
-    if config.verbosity >= 2:
-        t2 = time.time()
-        print("Time for classificationOutput part 2: ",t2-t1)
-
-    new_aa_map = {}
-    tag_map = {}
-    for row in results:
-        new_aa_map[row[0]] = row[1]
-        tag_map[row[0]] = row[2]
-
-    mutation_dict = getMutationDict(set(tag_map.keys()),db,cursor)
-    gene_id_list = set()
-    for m in mutation_dict:
-        gene_id_list.add(mutation_dict[m][1])
-
-    gene_score_dict = getGeneScoreDict(gene_id_list,session_id,db,cursor)
-
-    class_files = []
-
-    class_file = "%s.classification.tsv" % (outfile)
-    class_files.append(class_file)
-    if overwrite and os.path.isfile(class_file):
-        os.remove(class_file)
-
-    stat_file = "%s.statistics.tsv" % (outfile)
-    if overwrite and os.path.isfile(stat_file):
-        os.remove(stat_file)
-
-    if config.verbosity >= 2:
-        t3 = time.time()
-        print("Time for classificationOutput part 3: ",t3-t2)
-
-    rows = ['Mutation_Id','Amino_Acid_Change','Gene','Location','Class','Simple_Class','RIN_Class','RIN_Simple_Class','Interactions','Confidence','Secondary_Structure','Recommended_Structure','Max_Seq_Structure','Mapped_Structures','IUPRED_Glob']
-    table = 'Mutation'
-    results = binningSelect(mutation_dict.keys(),rows,table,db,cursor)
-
-    if config.verbosity >= 2:
-        t4 = time.time()
-        print("Time for classificationOutput part 4: ",t4-t3)
-
-    startline = "Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tRIN Class\tRIN Simple Class\tIndividual Interactions\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
-
-    lines = [startline]
-
-    stat_dict = {}
-    for row in results:
-        m = row[0]
-        aac = row[1]
-        gene_id = row[2]
-        weighted_sc = row[3]
-        Class =row[4]
-        simple_class = row[5]
-        rin_class = row[6]
-        rin_simple_class = row[7]
-        interaction_str = row[8]
-        conf = row[9]
-        mv_sec_ass = row[10]
-        recommended_structure_str = row[11]
-        max_seq_structure_str = row[12]
-        amount_of_structures = row[13]
-        disorder_state = row[14]
-
-        input_res_id = mutation_dict[m][4]
-        if input_res_id == None:
-            input_res_id = ''
-
-        recommended_structure,seq_id,cov,resolution = process_recommend_structure_str(recommended_structure_str)
-
-        if disorder_state != None:
-            if Class == None and (disorder_state == 'disorder' or disorder_state[0] == 'D'):
-                Class = 'Disorder'
-                simple_class = 'Disorder'
-                rin_class = 'Disorder'
-                rin_simple_class = 'Disorder'
-
-        max_seq_structure,max_seq_seq_id,max_seq_cov,max_seq_resolution = process_recommend_structure_str(max_seq_structure_str)
-        if max_seq_seq_id == '-':
-            stat_dict[m] = (Class,0.)
-        else:
-            stat_dict[m] = (Class,float(max_seq_seq_id))
-
-
-        (u_ac,gpan,u_id,error_code,error,species,gene_score) = gene_score_dict[gene_id]
-
-        input_pdb_id = ''
-        if len(u_ac) == 6 and u_ac[4] == ':':
-            input_pdb_id = u_ac
-            u_ac = ''
-        if config.skipref:
-            gpan = ''
-
-        lines.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (u_ac,u_id,gpan,input_pdb_id,input_res_id,aac[0],aac[1:],species,tag_map[m],weighted_sc,Class,simple_class,rin_class,rin_simple_class,interaction_str,str(conf),mv_sec_ass,recommended_structure,seq_id,cov,resolution,max_seq_structure,max_seq_seq_id,max_seq_cov,max_seq_resolution,str(amount_of_structures)))
-    f = open(class_file,'a')
-    f.write("\n".join(lines))
-    f.close()
-
-    if config.verbosity >= 2:
-        t5 = time.time()
-        print("Time for classificationOutput part 5: ",t5-t4)
-
-    writeStatFile(stat_file,mutation_dict,{},tag_map,stat_dict=stat_dict)
-
-    if config.verbosity >= 2:
-        t6 = time.time()
-        print("Time for classificationOutput part 6: ",t6-t5)
-
-    return class_files,[]
-
-def getProtIdsFromSession(session_id,db,cursor):
+def getProtIdsFromSession(session_id,config):
     table = 'RS_Gene_Session'
     cols = ['Gene']
     eq_cols = {'Session':session_id}
-    results = select(db,cursor,cols,table,equals_rows=eq_cols)
+    results = select(config,cols,table,equals_rows=eq_cols)
     prot_ids = set()
     for row in results:
         prot_ids.add(row[0])
     return prot_ids
 
+#called by output
 def proteinsFromDb(session,config):
     proteins = sdsc.Proteins({}) #create empty Proteins object
 
-    db,cursor = config.getDB()
-    prot_ids = getProtIdsFromSession(session,db,cursor)
+    prot_ids = getProtIdsFromSession(session,config)
 
     cols = ['Gene_Id','Uniprot_Ac']
-    results = binningSelect(prot_ids,cols,'Gene',db,cursor)
+    results = binningSelect(prot_ids,cols,'Gene',config)
     id_ac_map = {}
     for row in results:
-        if not row[0] in prot_ids:
-            continue
         id_ac_map[row[0]] = row[1]
         prot_obj = sdsc.Protein(u_ac = row[1],database_id = row[0])
         proteins[row[1]] = prot_obj
@@ -2674,14 +2340,10 @@ def proteinsFromDb(session,config):
     rows = ['Gene','Amino_Acid_Change','Mutation_Id']
     table = 'Mutation'
 
-    results = binningSelect(prot_ids,rows,table,db,cursor)
-
-    db.close()
+    results = binningSelect(prot_ids,rows,table,config)
 
     for row in results:
         p_id = row[0]
-        if not p_id in prot_ids:
-            continue
         aac = row[1]
         m_id = row[2]
         pos = int(aac[1:])
@@ -2764,10 +2426,10 @@ def createStructureDicts(proteins,config):
             qual = templateFiltering.qualityScore(resolution,cov,seq_id)
 
             for pos in positions:
-                aacbase = proteins.get_aac_base(u_ac,pos)
-                if not aacbase in sub_infos:
+                if not pos in sub_infos:
                     continue
-                sub_info = sub_infos[aacbase]
+                aacbase = proteins.get_aac_base(u_ac,pos)
+                sub_info = sub_infos[pos]
                 res_nr = sub_info[0]
 
                 if res_nr == None:
@@ -2956,104 +2618,6 @@ def median(l):
         med = l[(n-1)//2]
     return med
 
-def getNeighborhood(class_dict,db,cursor,num_of_neighbors=10):
-    neighborhood = {}
-    if len(class_dict) == 0:
-        return {}
-    for m in class_dict:
-        (mut_class,conf,weighted_sc,conf_sc,best_res,max_seq_res,amount_of_structures,
-        weighted_c,conf_c,
-        weighted_d,conf_d,
-        weighted_r,conf_r,
-        weighted_l,conf_l,
-        weighted_m,conf_m,
-        weighted_i,conf_i,
-        weighted_h,conf_h,
-        max_seq_id,
-        weighted_raw,weighted_cent,weighted_norm,
-        weighted_lig_degree,weighted_lig_score,
-        weighted_metal_degree,weighted_metal_score,
-        weighted_ion_degree,weighted_ion_score,
-        weighted_prot_degree,weighted_prot_score,
-        weighted_rna_degree,weighted_rna_score,
-        weighted_dna_degree,weighted_dna_score,
-        weighted_modres,modres_prop,b_factor,
-        intra_ssbond_prop,inter_ssbond_prop,
-        intra_link_prop,inter_link_prop,
-        cis_prop,cis_follower_prop,
-        weighted_inter_chain_median_kd, weighted_inter_chain_dist_weighted_kd,
-        weighted_inter_chain_median_rsa, weighted_inter_chain_dist_weighted_rsa,
-        weighted_intra_chain_median_kd, weighted_intra_chain_dist_weighted_kd,
-        weighted_intra_chain_median_rsa, weighted_intra_chain_dist_weighted_rsa) = class_dict[m]
-        if best_res == None:
-            continue
-        [r_id,qual,res_aa,res_nr,pdb_id,chain,resolution,cov,seq_id,rsa,min_lig,min_metal,min_ion,iacs] = best_res
-        neighborhood[r_id] = []
-
-    rows = ['Residue_1','Residue_2','Distance']
-    table = 'RS_Residue_Residue'
-    in_rows = {'Residue_1':list(neighborhood.keys())}
-    results = select(db,cursor,rows,table,in_rows=in_rows)
-
-    res_ids = set()
-    res_bins = set()
-    binsize = 500000
-
-    for row in results:
-        r_id_1 = row[0]
-        r_id_2 = row[1]
-
-        res_ids.add(r_id_2)
-        bin_number = r_id_2//binsize
-        res_bins.add(bin_number)
-
-        d = row[2]
-        #sorted inserting
-        if neighborhood[r_id_1] == []:
-            neighborhood[r_id_1].append([r_id_2,d])
-        else:
-            ins = False
-            for i in range(len(neighborhood[r_id_1])):
-                if d < neighborhood[r_id_1][i][1]:
-                    neighborhood[r_id_1].insert(i,[r_id_2,d])
-                    ins = True
-                    break
-            if not ins:
-                neighborhood[r_id_1].append([r_id_2,d])
-
-    residue_dict = {}
-    if not len(res_ids) == 0:
-        max_r = max(res_ids)
-        min_r = min(res_ids)
-
-        min_max_tuples = []
-        if max_r - min_r > binsize:
-            for bin_number in res_bins:
-                min_max_tuples.append((bin_number*binsize,(bin_number+1)*binsize))
-        else:
-            min_max_tuples = [(min_r,max_r)]
-
-        for (min_r,max_r) in min_max_tuples:
-        #for [min_r,max_r] in bin_threshs:
-            rows = ['Residue_Id','Structure','Number','Amino_Acid','Sub_Lig_Dist','Sub_Chain_Distances','Relative_Surface_Access']
-            table = 'Residue'
-            between_rows = {'Residue_Id':(min_r,max_r)}
-            results = select(db,cursor,rows,table,between_rows=between_rows)
-
-            if not results == ():
-                for row in results:
-                    r_id = row[0]
-                    if not r_id in res_ids:
-                        continue
-                    residue_dict[r_id] = row[1:]
-
-    for r1 in neighborhood:
-        for neighbor in neighborhood[r1]:
-            r2 = neighbor[0]
-            neighbor += residue_dict[r2]
-
-    return neighborhood
-
 def excludeFarClasses(c,sc):
     if c == "Surface" or c == "Core" or c == 'Disorder' or c == None:
         return c
@@ -3206,134 +2770,6 @@ def writeClassFile(outfile,mutation_surface_dict,mutation_sec_dict,mutation_dict
     f = open(outfile,'a')
     f.write("\n".join(lines))
     f.close()
-
-def writeStatFile(out_file,mutation_dict,class_dict,tag_map,stat_dict=None):
-    seq_id_threshold = 0.99
-    startline = 'Tag\tTotal proteins\tTotal positions\tUnmapped proteins\tEntirely disordered proteins\tProteins mapped to at least one corresponding structure (seq-id > %s%%\tProteins mapped only to structure of homologs (seq-id <= %s%%)\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold),str(seq_id_threshold),str(seq_id_threshold),str(seq_id_threshold))
-    outmap = {'All':[{},0,0,0,0,0,0]}
-    
-    if stat_dict != None:
-        class_dict = stat_dict
-        max_seq_key = 1
-    else:
-        max_seq_key = 21
-    for m in tag_map:
-        if tag_map[m] != None and tag_map[m] != '':
-            raw_tags = tag_map[m].split(',')
-        else:
-            raw_tags = []
-        tags = set(['All'])
-        for tag in raw_tags:
-            if tag[0] == '#':
-                tag = tag[1:].split(':')[0]
-            tags.add(tag)
-
-        for tag in tags:
-            if not tag in outmap:
-                outmap[tag] = [{},0,0,0,0,0,0]
-            g = mutation_dict[m][1]
-            if not g in outmap[tag][0]:
-                outmap[tag][0][g] = 1
-            outmap[tag][1] += 1
-            
-            if m in class_dict:
-                clas = class_dict[m][0]
-                max_seq_id = class_dict[m][max_seq_key]
-                if clas != 'Disorder' and clas != None:
-                    outmap[tag][2] += 1
-                    if max_seq_id > seq_id_threshold:
-                        outmap[tag][5] += 1
-                        outmap[tag][0][g] = 2
-                    else:
-                        outmap[tag][6] += 1
-                        if not outmap[tag][0][g] == 2:
-                            outmap[tag][0][g] = 3
-                elif clas == 'Disorder':
-                    outmap[tag][3] += 1
-                else:
-                    outmap[tag][4] += 1
-                    if not outmap[tag][0][g] > 1:
-                        outmap[tag][0][g] = 0
-            else:
-                outmap[tag][4] += 1
-                if not outmap[tag][0][g] > 1:
-                    outmap[tag][0][g] = 0
-    if None in outmap:
-        del outmap[None]
-
-    lines = [startline]
-    for tag in outmap:
-        tot_prot = len(outmap[tag][0])
-        tot_pos = outmap[tag][1]
-        mapped = outmap[tag][2]
-        dis = outmap[tag][3]
-        unmapped = outmap[tag][4]
-        mapped_to_corr = outmap[tag][5]
-        mapped_to_homolog = outmap[tag][6]
-
-        prot_numbers = [0,0,0,0]
-        for g in outmap[tag][0]:
-            prot_numbers[outmap[tag][0][g]] += 1
-
-        if float(tot_pos) == 0.0:
-            continue
-        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (
-            tag,
-            str(tot_prot),
-            str(tot_pos),
-            str(prot_numbers[0]),str(100.*float(prot_numbers[0])/float(tot_prot)),
-            str(prot_numbers[1]),str(100.*float(prot_numbers[1])/float(tot_prot)),
-            str(prot_numbers[2]),str(100.*float(prot_numbers[2])/float(tot_prot)),
-            str(prot_numbers[3]),str(100.*float(prot_numbers[3])/float(tot_prot)),
-            str(mapped),str(100.*float(mapped)/float(tot_pos)),
-            str(mapped_to_corr),str(100.*float(mapped_to_corr)/float(tot_pos)),
-            str(mapped_to_homolog),str(100.*float(mapped_to_homolog)/float(tot_pos)),
-            str(dis),str(100.*float(dis)/float(tot_pos)),
-            str(unmapped),str(100.*float(unmapped)/float(tot_pos)))
-        lines.append(line)
-    f = open(out_file,'w')
-    f.write("\n".join(lines))
-    f.close()
-
-#called by output
-def sortGenes(session_id,outfile,db,cursor):
-
-    sql = "SELECT Gene,Gene_Score FROM RS_Gene_Session WHERE Session = '%s'" % session_id
-
-    try:
-        # Execute the SQL command
-        cursor.execute(sql)
-        gene_scores = cursor.fetchall()
-        # Commit your changes in the database
-        db.commit()
-    except:
-        raise NameError("NameError sortGenes %s" % sql)
-
-    gene_scores = sorted(gene_scores,key = lambda x: x[1],reverse = True)
-
-    lines = ["sp_id\tgene_id\tScore"]
-    for gene_score in gene_scores:
-        sp_id = getUniprotFromId(str(gene_score[0]),db,cursor)
-        line = "%s\t%s\t%s" % (sp_id,str(gene_score[0]),str(gene_score[1]))
-        lines.append(line)
-        #updateGeneScore(gene_score[0],session_id,gene_score[2],db,cursor)
-    page = "\n".join(lines)
-    f = open(outfile, "wb")
-    f.write(page)
-    f.close()
-
-#called by output, reScore
-def updateGeneScore(gene_id,session_id,score,db,cursor):
-    sql = "UPDATE IGNORE RS_Gene_Session SET Gene_Score = '%s' WHERE Session = '%s' AND Gene = '%s'" % (str(score),str(session_id),str(gene_id))
-    try:
-        # Execute the SQL command
-        cursor.execute(sql)
-        # Commit your changes in the database
-        db.commit()
-    except:
-        raise NameError("Error in updateGeneScore: %s" % sql)
-        # Rollback in case there is any NameError
-        db.rollback()  
 
 #called by output    
 def goTermAnalysis(session_id,outfile,db,cursor):

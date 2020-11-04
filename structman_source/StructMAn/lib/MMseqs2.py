@@ -179,7 +179,10 @@ def parseHits(temp_outfile,option_seq_thresh,small_genes):
 
 #called by serializePipeline
 def search(proteins,config):
-    mmseqs_tmp_folder = config.mmseqs_tmp_folder
+    mmseqs_tmp_folder = '%s/mmseqs_tmp' % config.mmseqs_tmp_folder
+    if not os.path.exists(mmseqs_tmp_folder):
+        os.mkdir(mmseqs_tmp_folder)
+
     mmseqs2_path = config.mmseqs2_path
     search_db = config.mmseqs2_db_path
     option_seq_thresh = config.option_seq_thresh
@@ -239,8 +242,14 @@ def search(proteins,config):
 
     os.remove(temp_outfile)
 
-    shutil.rmtree(mmseqs_tmp_folder)
-    os.mkdir(mmseqs_tmp_folder)
+    for fn in os.listdir(mmseqs_tmp_folder):
+        subfolder_path = '%s/%s' % (mmseqs_tmp_folder,fn)
+        if os.path.exists(subfolder_path):
+            if os.path.getmtime(subfolder_path) > config.prog_start_time:
+                try:
+                    shutil.rmtree(subfolder_path)
+                except:
+                    config.errorlog.add_warning('Tmp folder wipe failed for: %s' % subfolder_path)
 
     t3 = time.time()
 

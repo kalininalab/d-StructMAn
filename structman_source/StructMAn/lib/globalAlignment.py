@@ -341,7 +341,7 @@ def createTemplateFasta(template_page,template_name,chain,onlySeqResMap = False,
     return(template_fasta,seq_res_map)
 
 #gets also called by serializedPipeline
-def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=False,ignore_update=False):
+def getSubPos(config,u_ac,target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=False,lock=None):
     target_aligned_sequence = target_aligned_sequence.replace("\n","")
     template_aligned_sequence = template_aligned_sequence.replace("\n","")
     
@@ -352,54 +352,41 @@ def getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_
     n = 0
     tar_n = 0
     tem_n = 0
-    try:
-        for char in target_aligned_sequence:
-            tem_char = template_aligned_sequence[n]
-            n += 1
-            if tem_char != '-':
-                tem_n += 1
-            if char != '-':
-                tar_n += 1
-                if tem_char == '-':
-                    align_map[tar_n] = ((None,'-'),char)
-                else:
-                    align_map[tar_n] = ((seq_res_map[tem_n-1],tem_char),char)
-    except:
-        [e,f,g] = sys.exc_info()
-        g = traceback.format_exc()
-        errortext = '\n'.join([str(e),str(f),str(g)]) + '\n\n'
-        errors.append('Unknown alignment bug: %s' % errortext)
-        return sub_infos,errors,aaclist,{}
 
-    update_map = {}
+    for char in target_aligned_sequence:
+        tem_char = template_aligned_sequence[n]
+        n += 1
+        if tem_char != '-':
+            tem_n += 1
+        if char != '-':
+            tar_n += 1
+            if tem_char == '-':
+                align_map[tar_n] = ((None,'-',None),char)
+            else:
+                align_map[tar_n] = ((seq_res_map[tem_n-1],tem_char,tem_n),char)
+
     for aac_base in aaclist:
         target_pos = int(aac_base[1:])
         target_aa = aac_base[0]
         if target_pos not in align_map:
-            error = 'Mutation not inside target sequence: %s' % aac_base
-            errors.append(error)
+            error = 'Mutation not inside target sequence: %s %s' % (u_ac,aac_base)
+            config.errorlog.add_warning(error,lock=lock)
             continue
         sub_info = align_map[target_pos][0]
         
         if align_map[target_pos][1] != target_aa:
-            update_map[aac_base] = align_map[target_pos]
+
             if target_aa != '?':
-                error = 'Amino acid of Mutation does not match with amino acid in the query protein: %s (found),%s (given)' % (align_map[target_pos][1],aac_base)
-                errors.append(error)
+                if not (target_aa == 'U' and align_map[target_pos][1] == 'C'):
+                    if not (target_aa == 'O' and align_map[target_pos][1] == 'K'):
+                        if not (target_aa == 'J' and align_map[target_pos][1] == 'I'):
+                            config.errorlog.add_warning('Amino acid of Mutation does not match with amino acid in the query protein: %s; %s (found),%s (given)' % (u_ac,align_map[target_pos][1],aac_base),lock = lock)
+
         if ignore_gaps and sub_info[0] == None:
             continue
-        sub_infos[aac_base] = sub_info
-    if not ignore_update:
-        for old_aac_base in update_map:
-            new_aac_base = '%s%s' % (update_map[old_aac_base][1],old_aac_base[1:])
-            aaclist[new_aac_base] = aaclist[old_aac_base]
-            del aaclist[old_aac_base]
-            
-            if old_aac_base in sub_infos:
-                sub_infos[new_aac_base] = update_map[old_aac_base][0]
-                del sub_infos[old_aac_base]
+        sub_infos[target_pos] = sub_info
 
-    return(sub_infos,errors,aaclist,update_map)
+    return(sub_infos,aaclist)
 
 def getCovSI(full_length,target_seq,template_seq):
     target_length = len(target_seq.replace("-",""))
@@ -420,7 +407,7 @@ def getCovSI(full_length,target_seq,template_seq):
 
     return(aln_length,seq_id)
 
-def BPalign(config,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=False):
+def BPalign(config,u_ac,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=False,lock=None):
     target_seq = target_seq.replace('U','C').replace('O','K').replace('J','I')
     if config.verbosity >= 4:
         print('Aligning:')
@@ -432,11 +419,11 @@ def BPalign(config,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=False
     else:
         if config.verbosity >= 4:
             print('Alignment failed')
-        return 'Alignment produced no Output'
+        return 'Alignment produced no Output:\n%s\n%s\n' % (target_seq,template_seq)
 
-    sub_infos,errors,aaclist,update_map = getSubPos(target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=ignore_gaps)
+    sub_infos,aaclist = getSubPos(config,u_ac,target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=ignore_gaps,lock=lock)
 
-    return (target_aligned_sequence,template_aligned_sequence,sub_infos,errors,aaclist,update_map)
+    return (target_aligned_sequence,template_aligned_sequence,sub_infos,aaclist)
 
 
 def truncateSequences(aseq,bseq):
@@ -462,7 +449,7 @@ def createAlignmentPir(target_name,target_aligned_sequence,template_name,templat
     return page
 
 #called by serializedPipeline
-def alignBioPython(config,target_name,wildtype_sequence,template_name,template_page,chain,aaclist,ignore_gaps=False):
+def alignBioPython(config,target_name,wildtype_sequence,template_name,template_page,chain,aaclist,ignore_gaps=False,lock = None):
     #preparing the alignment of the target and the template, by:
     t0 = time.time()
     (seq_res_map,template_seq) = createTemplateFasta(template_page,template_name,chain,seqAndMap = True)
@@ -472,12 +459,12 @@ def alignBioPython(config,target_name,wildtype_sequence,template_name,template_p
     endres = seq_res_map[-1]
 
     t1 = time.time()
-    align_out = BPalign(config,wildtype_sequence,template_seq,aaclist,seq_res_map,ignore_gaps=ignore_gaps)
+    align_out = BPalign(config,target_name,wildtype_sequence,template_seq,aaclist,seq_res_map,ignore_gaps=ignore_gaps,lock=lock)
 
     if isinstance(align_out ,str):
         return align_out
 
-    (target_aligned_sequence,template_aligned_sequence,sub_infos,errors,aaclist,update_map) = align_out
+    (target_aligned_sequence,template_aligned_sequence,sub_infos,aaclist) = align_out
     t2 = time.time()
     #write the alignment into the pir format, which can be used by the modeller
     (truncated_target_sequence,truncated_template_sequence) = truncateSequences(target_aligned_sequence,template_aligned_sequence)
@@ -488,5 +475,5 @@ def alignBioPython(config,target_name,wildtype_sequence,template_name,template_p
     t5 = time.time()
 
     times = [t1-t0,t2-t1,t3-t2,t4-t3,t5-t4]
-    return (aln_length,seq_id,sub_infos,alignment_pir,errors,times,aaclist,update_map)
+    return (aln_length,seq_id,sub_infos,alignment_pir,times,aaclist)
 

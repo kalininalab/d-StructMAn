@@ -3,14 +3,15 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: wibi-guardian.helmholtz-hzi.de
--- Erstellungszeit: 22. Mai 2020 um 12:39
--- Server-Version: 10.1.45-MariaDB
+-- Erstellungszeit: 17. Sep 2020 um 11:50
+-- Server-Version: 10.1.46-MariaDB
 -- PHP-Version: 7.0.33
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET AUTOCOMMIT = 0;
 START TRANSACTION;
 SET time_zone = "+00:00";
+SET @@auto_increment_increment=1;
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -66,13 +67,13 @@ CREATE TABLE `Complex` (
 
 CREATE TABLE `Gene` (
   `Gene_Id` int(10) UNSIGNED NOT NULL,
-  `Uniprot_Ac` varchar(64) DEFAULT NULL,
-  `Genbank_Protein_Accession_Number` text,
+  `Uniprot_Ac` varchar(255) DEFAULT NULL,
+  `Genbank_Protein_Accession_Number` text DEFAULT NULL,
   `Uniprot_Id` varchar(32) DEFAULT NULL,
   `Original_Session` int(11) DEFAULT NULL,
   `Error_Code` int(11) DEFAULT NULL,
   `Error` varchar(255) DEFAULT NULL,
-  `Sequence` text,
+  `Sequence` text DEFAULT NULL,
   `Species` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -87,6 +88,19 @@ CREATE TABLE `GO_Term` (
   `Name` tinytext NOT NULL,
   `Id` varchar(64) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `Indel`
+--
+
+CREATE TABLE `Indel` (
+  `Indel_Id` int(10) UNSIGNED NOT NULL,
+  `Wildtype_Protein` int(10) UNSIGNED NOT NULL,
+  `Mutant_Protein` int(10) UNSIGNED NOT NULL,
+  `Indel_Notation` text COLLATE utf8_unicode_ci NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -235,6 +249,18 @@ CREATE TABLE `RS_Gene_Session` (
 -- --------------------------------------------------------
 
 --
+-- Tabellenstruktur für Tabelle `RS_Indel_Session`
+--
+
+CREATE TABLE `RS_Indel_Session` (
+  `Session` int(11) NOT NULL,
+  `Indel` int(10) UNSIGNED NOT NULL,
+  `Tags` mediumtext COLLATE utf8_unicode_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Tabellenstruktur für Tabelle `RS_Ligand_Structure`
 --
 
@@ -332,6 +358,14 @@ ALTER TABLE `GO_Term`
   ADD UNIQUE KEY `Id` (`Id`) USING BTREE;
 
 --
+-- Indizes für die Tabelle `Indel`
+--
+ALTER TABLE `Indel`
+  ADD PRIMARY KEY (`Indel_Id`),
+  ADD KEY `Mutant_Protein` (`Mutant_Protein`),
+  ADD KEY `Wildtype_Protein` (`Wildtype_Protein`);
+
+--
 -- Indizes für die Tabelle `Ligand`
 --
 ALTER TABLE `Ligand`
@@ -377,6 +411,13 @@ ALTER TABLE `RS_Gene_Pathway`
 --
 ALTER TABLE `RS_Gene_Session`
   ADD KEY `Gene` (`Gene`,`Session`),
+  ADD KEY `Session` (`Session`);
+
+--
+-- Indizes für die Tabelle `RS_Indel_Session`
+--
+ALTER TABLE `RS_Indel_Session`
+  ADD KEY `Indel` (`Indel`),
   ADD KEY `Session` (`Session`);
 
 --
@@ -443,6 +484,12 @@ ALTER TABLE `GO_Term`
   MODIFY `GO_Term_Id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT für Tabelle `Indel`
+--
+ALTER TABLE `Indel`
+  MODIFY `Indel_Id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT für Tabelle `Ligand`
 --
 ALTER TABLE `Ligand`
@@ -490,6 +537,13 @@ ALTER TABLE `Alignment`
   ADD CONSTRAINT `Alignment_ibfk_2` FOREIGN KEY (`Structure`) REFERENCES `Structure` (`Structure_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
+-- Constraints der Tabelle `Indel`
+--
+ALTER TABLE `Indel`
+  ADD CONSTRAINT `Indel_ibfk_1` FOREIGN KEY (`Mutant_Protein`) REFERENCES `Gene` (`Gene_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Indel_ibfk_2` FOREIGN KEY (`Wildtype_Protein`) REFERENCES `Gene` (`Gene_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
 -- Constraints der Tabelle `Mutation`
 --
 ALTER TABLE `Mutation`
@@ -521,6 +575,13 @@ ALTER TABLE `RS_Gene_Pathway`
 ALTER TABLE `RS_Gene_Session`
   ADD CONSTRAINT `RS_Gene_Session_ibfk_1` FOREIGN KEY (`Session`) REFERENCES `Session` (`Session_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `RS_Gene_Session_ibfk_2` FOREIGN KEY (`Gene`) REFERENCES `Gene` (`Gene_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints der Tabelle `RS_Indel_Session`
+--
+ALTER TABLE `RS_Indel_Session`
+  ADD CONSTRAINT `RS_Indel_Session_ibfk_1` FOREIGN KEY (`Indel`) REFERENCES `Indel` (`Indel_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `RS_Indel_Session_ibfk_2` FOREIGN KEY (`Session`) REFERENCES `Session` (`Session_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints der Tabelle `RS_Ligand_Structure`
