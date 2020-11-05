@@ -38,14 +38,14 @@ rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
 # Register the python version 3.7 in alternatives
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.7 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
 
-# Set python 3.7 as the default python
-RUN update-alternatives --set python /usr/bin/python3.7
+# Set python 3.7 as the default python3
+RUN update-alternatives --set python3 /usr/bin/python3.7
 
 # Upgrade pip to the latest version
 RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-python get-pip.py --force-reinstall && \
+python3 get-pip.py --force-reinstall && \
 rm get-pip.py
 
 # Install StructMAn Python dependencies
