@@ -6,6 +6,6 @@ db_name=struct_man_db_1
 blast_path=
 dssp_path=mkdssp
 mmseqs2_path=mmseqs
-tanimoto_cutoff=0.5
+lite=True
 
 resources=auto

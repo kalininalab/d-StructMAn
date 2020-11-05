@@ -76,6 +76,9 @@ def geneSeqMapToFasta(proteins,outfile,config,filtering_db=None):
 
     u_acs = proteins.get_not_stored_acs()
 
+    if len(u_acs) == 0:
+        return False
+
     for u_ac in u_acs:
         seq = proteins.get_sequence(u_ac)
 
@@ -99,7 +102,7 @@ def geneSeqMapToFasta(proteins,outfile,config,filtering_db=None):
         f = open(outfile,'w')
         f.write('\n'.join(lines))
         f.close()
-        return None
+        return True
     else: 
         return 'Empty fasta file'
 
@@ -200,10 +203,13 @@ def search(proteins,config):
     t0 = time.time()
 
     temp_fasta = '%s/tmp_%s.fasta' % (mmseqs_tmp_folder,randomString())
-    error_message = geneSeqMapToFasta(proteins,temp_fasta,config)
+    to_fasta_out = geneSeqMapToFasta(proteins,temp_fasta,config)
 
-    if error_message != None:
-        config.errorlog.add_error('%s , mmseqs2 skiped' % (error_message))
+    if isinstance(to_fasta_out,str):
+        config.errorlog.add_warning('%s , mmseqs2 skipped, %s' % (error_message,str(list(u_acs)[:10])))
+        return {},set()
+    if not to_fasta_out:
+        #All proteins are stored, no need for mmseqs
         return {},set()
 
     temp_outfile = '%s/tmp_outfile_%s.fasta' % (mmseqs_tmp_folder,randomString())

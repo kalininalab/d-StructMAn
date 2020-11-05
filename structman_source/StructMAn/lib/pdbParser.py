@@ -310,17 +310,24 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
     if AU:
         path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
         if not os.path.isfile(path):
-            url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
-            if pdb_path != '':
-                print("Did not find asymetric unit entry in local pdb, searching online: ",url)
-            try:
-                request = urllib.request.Request(url)
+            pdb_id = getCurrentPDBID(pdb_id, pdb_path)
+            path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+            if not os.path.isfile(path):
+                url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
+                if pdb_path != '':
+                    print("Did not find asymetric unit entry in local pdb, searching online: ",url)
+                try:
+                    request = urllib.request.Request(url)
+                    if get_is_local:
+                        return urllib.request.urlopen(request),None
+                    return urllib.request.urlopen(request)
+                except:
+                    print("Did not find the PDB-file: %s" % pdb_id)
+                    return None
+            else:
                 if get_is_local:
-                    return urllib.request.urlopen(request),None
-                return urllib.request.urlopen(request)
-            except:
-                print("Did not find the PDB-file: %s" % pdb_id)
-                return None
+                    return gzip.open(path, 'rb'),path
+                return gzip.open(path, 'rb')
                 
         else:
             if get_is_local:
@@ -329,17 +336,24 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
     else:
         path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
         if not os.path.isfile(path):
-            url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
-            if pdb_path != '':
-                print("Did not find entry in local pdb, searching online: ",url)
-            try:
-                request = urllib.request.Request(url)
+            pdb_id = getCurrentPDBID(pdb_id, pdb_path)
+            path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
+            if not os.path.isfile(path):
+                url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
+                if pdb_path != '':
+                    print("Did not find entry in local pdb, searching online: ",url)
+                try:
+                    request = urllib.request.Request(url)
+                    if get_is_local:
+                        return urllib.request.urlopen(request),None
+                    return urllib.request.urlopen(request)
+                except:
+                    print("Did not find the PDB-file: %s" % pdb_id)
+                    return None
+            else:
                 if get_is_local:
-                    return urllib.request.urlopen(request),None
-                return urllib.request.urlopen(request)
-            except:
-                print("Did not find the PDB-file: %s" % pdb_id)
-                return None
+                    return gzip.open(path, 'rb'),path
+                return gzip.open(path, 'rb')
                
         else:
             if get_is_local:
@@ -888,8 +902,9 @@ def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set()):
 
     if buf == None:
         # Added automatization here, if pdb file not exist, automatically calls MMCIF version
-        print('PDB file does not found, trying MMCIF file')
-        return getStandardizedMMCIFFile(pdb_id=pdb_id,pdb_path=pdb_path)
+        #print('PDB file does not found, trying MMCIF file')
+        #return getStandardizedMMCIFFile(pdb_id=pdb_id,pdb_path=pdb_path)
+        return None
 
     chain_type_map = {}
     modres_map = {}
@@ -1343,10 +1358,10 @@ def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
             return urllib.request.urlopen(request)
         except:
             if tries < 2:
-                print("Unable to connect ot PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
+                print("Unable to connect to PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
                 return getPDBHeaderBuffer(pdb_id,pdb_path,tries = tries+1)
             else:
-                print("Unable to connect ot PDB for the Header: %s\n%s'" % (pdb_id,url))
+                print("Unable to connect to PDB for the Header: %s\n%s'" % (pdb_id,url))
                 return None
     else:
         return gzip.open(path, 'rb')

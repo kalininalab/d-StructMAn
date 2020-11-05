@@ -39,10 +39,7 @@ def paraGetInfo(lock,input_queue,out_queue,pdb_path):
         with lock:
             out_queue.put((pdb_id,resolution,homomer_dict))
 
-def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n_processes,proteins):
-
-    manager = multiprocessing.Manager()
-    lock = manager.Lock()
+def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n_processes,proteins,manager,lock):
 
     input_queue = manager.Queue()
     out_queue = manager.Queue()
@@ -61,6 +58,8 @@ def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n
     for i in processes:
         processes[i].join()
 
+    del input_queue
+
     out_queue.put(None)
     while True:
         out = out_queue.get()
@@ -68,6 +67,8 @@ def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n
             break
         (pdb_id,resolution,homomer_dict) = out
         info_map[pdb_id] = (resolution,homomer_dict)
+
+    del out_queue
 
     u_acs = proteins.get_protein_u_acs()
     structure_list = proteins.get_structure_list()

@@ -771,7 +771,7 @@ def autoTemplateSelection(config,manager,lock,proteins):
 
         t1 = time.time()
 
-        templateSelection.filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,blast_processes,proteins)
+        templateSelection.filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,blast_processes,proteins,manager,lock)
 
         t2 = time.time()
         if config.verbosity >= 2:
@@ -824,14 +824,7 @@ def paraAlignment(config,manager,lock,proteins,skip_db = False):
         if not proteins.is_protein_stored(u_ac):
             continue
 
-        all_stored = True
-        positions = proteins.get_position_ids(u_ac)
-
-        for pos in positions:
-            if not proteins.is_position_stored(u_ac,pos):
-                all_stored = False
-                break
-        if all_stored:
+        if proteins.is_completely_stored(u_ac):
             continue
 
         annotation_list = proteins.get_protein_annotation_list(u_ac)
@@ -932,7 +925,7 @@ def paraMap(mapping_dump,u_ac,pdb_id,chain,structure_id,target_seq,template_seq,
 
     template_page = pdbParser.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
 
-    seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,onlySeqResMap = True)
+    seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,config,onlySeqResMap = True)
 
     sub_infos,aaclist = globalAlignment.getSubPos(config,u_ac,target_seq,template_seq,aaclist,seq_res_map)
 
@@ -951,7 +944,12 @@ def align(align_dump,u_ac,pdb_id,chain,oligo,seq,aaclist):
     option_seq_thresh = config.option_seq_thresh
 
     try:
-        (template_page,interaction_partners,chain_type_map,oligo) = pdbParser.getStandardizedPdbFile(pdb_id,pdb_path,oligo=oligo)
+        parse_out = pdbParser.getStandardizedPdbFile(pdb_id,pdb_path,oligo=oligo)
+
+        if parse_out == None:
+            return (u_ac,pdb_id,chain,'pdbParser failed')
+
+        (template_page,interaction_partners,chain_type_map,oligo) = parse_out
 
         align_out = globalAlignment.alignBioPython(config,u_ac,seq,pdb_id,template_page,chain,aaclist)
 
@@ -1071,6 +1069,8 @@ def classification(proteins,config):
     size_sorted = []
     u_acs = proteins.get_protein_u_acs()
     for u_ac in u_acs:
+        if proteins.is_completely_stored(u_ac):
+            continue
         annotation_list = proteins.get_protein_annotation_list(u_ac)
         size_sorted.append((u_ac,len(annotation_list)))
 
@@ -1084,6 +1084,8 @@ def classification(proteins,config):
         classification_inp = []
         positions = proteins.get_position_ids(u_ac)
         for pos in positions:
+            if proteins.is_position_stored(u_ac,pos):
+                continue
             mappings = []
             aacbase = proteins.get_aac_base(u_ac,pos)
             disorder_score = proteins.get_disorder_score(u_ac,pos)

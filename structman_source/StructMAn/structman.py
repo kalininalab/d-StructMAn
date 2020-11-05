@@ -21,8 +21,6 @@ import lite_pipeline
 import resource
 import repairDB
 
-cwd = os.getcwd()
-
 
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '',
@@ -412,7 +410,16 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     multiprocessing.set_start_method('forkserver')
     #print(multiprocessing.get_start_method())
-    disclaimer = 'Usage: structman.py <-i input_file>\n(or to reset the database: structman.py database reset)\n\n\n##### Optional parameter: #####\n\n<-n threads> : Number of cores to be used\n\n<-o output_folder> : Path to the output folder\n\n<-c config_file> : Path to the configuration file\n\n<-l> : lite-mode\n\n<-v> : verbose output'
+    disclaimer = ''.join([
+                'Usage: structman.py <-i input_file>\n',
+                '(or to reset the database: structman.py database reset)\n\n\n',
+                '##### Optional parameter: #####\n\n',
+                '<-n threads> : Number of cores to be used\n\n',
+                '<-o output_folder> : Path to the output folder\n\n',
+                '<-c config_file> : Path to the configuration file\n\n',
+                '<-d> : database mode\n\n',
+                '<-l> : lite-mode\n\n',
+                '<-v> : verbose output'])
 
     argv = sys.argv[1:]
 
@@ -483,7 +490,7 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lv",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize='])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvd",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize='])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -512,6 +519,8 @@ if __name__ == "__main__":
             verbose_flag = True
         if opt == '-l':
             lite = True
+        if opt == '-d':
+            lite = False
         if opt == '-i':
             infile = arg
         if opt == '-n':
@@ -577,7 +586,7 @@ if __name__ == "__main__":
                     if not os.path.exists(outfolder):
                         os.mkdir(outfolder)
                 elif len(single_line_inputs) != 0:
-                    outfolder = cwd
+                    outfolder = os.getcwd()
                 else:
                     outfolder = None
 
@@ -585,8 +594,8 @@ if __name__ == "__main__":
     if config_path == '':
         if os.path.exists('%s/config.txt' % infile.rsplit('/',1)[0]):
             config_path = '%s/config.txt' % infile.rsplit('/',1)[0]
-        elif os.path.exists('%s/config.txt' % cwd):
-            config_path = '%s/config.txt' % cwd
+        elif os.path.exists('%s/config.txt' % os.getcwd()):
+            config_path = '%s/config.txt' % os.getcwd()
         elif os.path.exists('%s/config.txt' % main_file_path.rsplit('/',1)[0]):
             config_path = '%s/config.txt' % main_file_path.rsplit('/',1)[0]
         else:
@@ -658,7 +667,6 @@ if __name__ == "__main__":
 
     else:
 
-        if lite:
-            config.lite = True
+        config.lite = lite
 
         main(infiles,outfolder,main_file_path,config)

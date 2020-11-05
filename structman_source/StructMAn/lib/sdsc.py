@@ -591,7 +591,7 @@ class Substitution(Indel):
         return wt_structure_annotations,mut_structure_annotations
 
 class Protein:
-    __slots__ = ['u_ac','u_id','ref_ids','pdb_id','positions','res_id_map','sequence','stored',
+    __slots__ = ['u_ac','u_id','ref_ids','pdb_id','positions','res_id_map','sequence','stored','completely_stored',
                     'go_terms','pathways','disorder_regions','disorder_tool','database_id','structure_annotations']
 
     def __init__(self,u_ac = None,u_id = None,ref_ids = set([]),pdb_id = None,positions = {},database_id = None):
@@ -603,6 +603,7 @@ class Protein:
         self.res_id_map = {}
         self.sequence = None
         self.stored = False #If the protein is stored in the database
+        self.completely_stored = False #Gets true if all corresponding input positions are stored
         self.database_id = database_id #ID in the corresponding database table
         if database_id != None:
             self.stored = True
@@ -693,6 +694,10 @@ class Protein:
     def set_stored(self,value):
         self.stored = value
         return
+
+    def set_completely_stored(self):
+        self.completely_stored = True
+        return self.database_id
 
     def is_stored(self):
         return self.stored
@@ -870,12 +875,13 @@ class Protein:
 
 class Proteins:
 
-    __slots__ = ['protein_map','stored_ids','stored_ids_mutant_excluded','not_stored_ids','id_map','structures','complexes','indels','lite']
+    __slots__ = ['protein_map','stored_ids','stored_ids_mutant_excluded','completely_stored_ids','not_stored_ids','id_map','structures','complexes','indels','lite']
 
     def __init__(self,proteins,indels, lite = False):
         self.protein_map = proteins
         self.stored_ids = set()
         self.stored_ids_mutant_excluded = set()
+        self.completely_stored_ids = set()
         self.not_stored_ids = set()
         self.id_map = {}
         self.structures = {}
@@ -1181,15 +1187,19 @@ class Proteins:
             acs.append(self.id_map[db_id])
         return acs
 
-    def set_stored_ids(self,stored_ids,stored_ids_mutants_excluded):
+    def set_stored_ids(self,stored_ids,stored_ids_mutant_excluded):
         self.stored_ids = stored_ids
-        self.stored_ids_mutant_excluded = stored_ids_mutants_excluded
+        self.stored_ids_mutant_excluded = stored_ids_mutant_excluded
         return
 
-    def get_stored_ids(self,exclude_indel_mutants = False):
+    def get_stored_ids(self,exclude_indel_mutants = False,exclude_completely_stored=False):
         if not exclude_indel_mutants:
+            if exclude_completely_stored:
+                return self.stored_ids - self.completely_stored_ids
             return self.stored_ids
         else:
+            if exclude_completely_stored:
+                return self.stored_ids_mutant_excluded - self.completely_stored_ids
             return self.stored_ids_mutant_excluded
 
     def contains(self,u_ac):
@@ -1200,6 +1210,14 @@ class Proteins:
 
     def is_protein_stored(self,u_ac):
         return self.protein_map[u_ac].is_stored()
+
+    def set_completely_stored(self,u_ac):
+        prot_id = self.protein_map[u_ac].set_completely_stored()
+        self.completely_stored_ids.add(prot_id)
+        return
+
+    def is_completely_stored(self,u_ac):
+        return self.protein_map[u_ac].completely_stored
 
     def isStored(self,prot_id):
         return prot_id in self.stored_ids

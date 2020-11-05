@@ -624,14 +624,19 @@ def positionCheck(proteins,database_session,config):
     for u_ac in u_acs:
         prot_id = proteins.get_protein_database_id(u_ac)
         positions = proteins.get_position_ids(u_ac)
+        all_stored = True
         for pos in positions:
             if proteins.is_position_stored(u_ac,pos):
                 continue
+            all_stored = False
             aac_base = proteins.get_aac_base(u_ac,pos)
 
             res_id = proteins.get_res_id(u_ac,pos)
 
             values.append((prot_id,aac_base,res_id))
+
+        if all_stored:
+            proteins.set_completely_stored(u_ac)
 
     if len(values) > 0:
         columns = ['Gene','Amino_Acid_Change','Residue_Id']
@@ -1393,7 +1398,7 @@ def getAlignments(proteins,config):
 
     rows = ['Gene','Structure','Sequence_Identity','Coverage','Alignment']
     table = 'Alignment'
-    results = binningSelect(proteins.get_stored_ids(),rows,table,config)
+    results = binningSelect(proteins.get_stored_ids(exclude_completely_stored=True),rows,table,config)
 
     if config.verbosity >= 2:
         t1 = time.time()
@@ -1516,11 +1521,17 @@ def createClassValues(proteins,config):
     values = []
 
     for u_ac in proteins.get_protein_u_acs():
+        if proteins.is_completely_stored(u_ac):
+            continue
         positions = proteins.get_position_ids(u_ac)
         for pos in positions:
             aachange = proteins.get_aac_base(u_ac,pos)
             prot_id = proteins.get_protein_database_id(u_ac)
             pos = int(aachange[1:])
+
+            if proteins.is_position_stored(u_ac,pos):
+                continue
+
             m = proteins.get_position_database_id(u_ac,pos)
 
             position = proteins.get_position(u_ac,pos)

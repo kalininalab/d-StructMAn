@@ -290,8 +290,9 @@ oneToThree = {'C':'CYS',
 'E':'GLU',
 'X':'UNK'}
 
+#called by serializedPipeline
 #-creating a fasta file of the template from the pdb and file and store some informations for the later pir file
-def createTemplateFasta(template_page,template_name,chain,onlySeqResMap = False,seqAndMap = False):
+def createTemplateFasta(template_page,template_name,chain,config,onlySeqResMap = False,seqAndMap = False):
     lines = template_page.split('\n')
     
     seq = ""
@@ -320,11 +321,9 @@ def createTemplateFasta(template_page,template_name,chain,onlySeqResMap = False,
                     seq = seq + aa
                     seq_res_map.append(res_nr)
                     used_res.add(res_nr)
+
     if seq_res_map == []:
-        print('Warning: seq_res_map empty in createTemplateFasta')
-        print(template_name)
-        print(chain)
-        #print template_page
+        config.errorlog.add_warning('Warning: seq_res_map empty: %s:%s' % (template_name,chain))
 
     if onlySeqResMap:
         return seq_res_map
@@ -452,7 +451,7 @@ def createAlignmentPir(target_name,target_aligned_sequence,template_name,templat
 def alignBioPython(config,target_name,wildtype_sequence,template_name,template_page,chain,aaclist,ignore_gaps=False,lock = None):
     #preparing the alignment of the target and the template, by:
     t0 = time.time()
-    (seq_res_map,template_seq) = createTemplateFasta(template_page,template_name,chain,seqAndMap = True)
+    (seq_res_map,template_seq) = createTemplateFasta(template_page,template_name,chain,config,seqAndMap = True)
     if len(seq_res_map) == 0:
         return 'Unable to create template fasta'
     startres = seq_res_map[0]
