@@ -56,7 +56,7 @@ class Config:
         self.profiling = profiling
         self.skipref = cfg.getboolean('skipref', fallback=False)
 
-        self.resources = cfg.getboolean('resources', fallback='manu')
+        self.resources = cfg.get('resources', fallback='manu')
 
         self.proc_n = 48
         self.blast_processes = self.proc_n
