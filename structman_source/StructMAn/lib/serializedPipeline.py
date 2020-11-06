@@ -1600,7 +1600,7 @@ def main(filename,config,output_path,main_file_path):
     verbose = config.verbose
     session = 0 #This can later be used, structman.py could give a specific session id and the pipeline can then expand that session
 
-    config.errorlog.start(nfname,filename)
+    config.errorlog.start(filename,output_path)
 
     t0 = time.time()
 
