@@ -40,7 +40,7 @@ class Config:
         self.db_user_name = cfg.get('db_user_name', fallback='')
         self.db_password = cfg.get('db_password', fallback='')
         self.db_name = cfg.get('db_name', fallback='')
-        self.mapping_db = cfg.get('mapping_db', fallback='')
+        self.mapping_db = cfg.get('mapping_db', fallback=None)
 
         self.outfolder = output_path
         self.num_of_cores = num_of_cores
