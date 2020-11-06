@@ -137,13 +137,9 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
             indel_map.append(indel)
         return
 
-    try:
-        db_adress = config.db_adress
-        db_user_name = config.db_user_name
-        db_password = config.db_password
-        db = MySQLdb.connect(db_adress,db_user_name,db_password,config.mapping_db)
-        cursor = db.cursor()
-    except:
+    if config.mapping_db != None:
+        db,cursor = config.getDB(mapping_db = True)
+    else:
         db = None
         cursor = None
 
