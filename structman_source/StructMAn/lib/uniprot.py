@@ -185,7 +185,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
             if len(unstored_ids) > 0: #whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
 
                 #This part is identical to the part, when no local database is used
-                id_ac_map = getUniprotIds(unstored_ids,'ID',target_type="ACC")
+                id_ac_map = getUniprotIds(config,unstored_ids,'ID',target_type="ACC")
                 for u_id in id_ac_map:
                     u_ac = id_ac_map[u_id]
                     if not u_ac in proteins:
@@ -202,7 +202,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
                 #updateMappingDatabase(update_acs,db,config)
 
         else:
-            id_ac_map = getUniprotIds(list(id_map.keys()),'ID',target_type="ACC")
+            id_ac_map = getUniprotIds(config,list(id_map.keys()),'ID',target_type="ACC")
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
                 if not u_ac in proteins:
@@ -267,7 +267,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
                     unstored_refs.append(ref)
             update_acs = []
             if len(unstored_refs) > 0:
-                np_ac_map = getUniprotIds(unstored_refs,'P_REFSEQ_AC',target_type="ACC")
+                np_ac_map = getUniprotIds(config,unstored_refs,'P_REFSEQ_AC',target_type="ACC")
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
                     if not u_ac in proteins:
@@ -282,7 +282,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
                 #updateMappingDatabase(update_acs,db,config)
 
         else:
-            np_ac_map = getUniprotIds(list(np_map.keys()),'P_REFSEQ_AC',target_type="ACC")
+            np_ac_map = getUniprotIds(config,list(np_map.keys()),'P_REFSEQ_AC',target_type="ACC")
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
                 if not u_ac in proteins:
@@ -364,7 +364,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
                             proteins['%s-%s' % (u_ac,iso)].u_id = u_id
 
         else:
-            ac_id_map = getUniprotIds(id_search,'ACC',target_type="ID")
+            ac_id_map = getUniprotIds(config,id_search,'ACC',target_type="ID")
             for u_ac in ac_id_map:
                 u_id = ac_id_map[u_ac]
                 if u_ac in proteins:
@@ -387,7 +387,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
             ref = row[1]
             proteins[u_ac].add_ref_id(ref)
     else:
-        ac_np_map = getUniprotIds(list(proteins.keys()),'ACC',target_type="P_REFSEQ_AC")
+        ac_np_map = getUniprotIds(config,list(proteins.keys()),'ACC',target_type="P_REFSEQ_AC")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
             proteins[u_ac].add_ref_id(ref)
@@ -402,8 +402,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
     return proteins,indel_map
 
 
-#called by serializedPipeline
-def getUniprotIds(query_ids,querytype,target_type="ID"):
+def getUniprotIds(config,query_ids,querytype,target_type="ID"):
     #print query_ids
     if len(query_ids) == 0:
         return {}
@@ -423,8 +422,10 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
     try:
         response = urllib.request.urlopen(request)
     except:
-        print("ERROR: Uniprot did not answer")
+        e,f,g = sys.exc_info()
+        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (e,str(f)))
         return {}
+
     page = response.read(2000000).decode('utf-8')
     uniprot_ids = {}
     try:
@@ -452,8 +453,8 @@ def getUniprotIds(query_ids,querytype,target_type="ID"):
                 set_A.add(query_ids.pop())
                 if len(query_ids) > 0:
                     set_B.add(query_ids.pop())
-            map_A = getUniprotIds(set_A,querytype,target_type=target_type)
-            map_B = getUniprotIds(set_B,querytype,target_type=target_type)
+            map_A = getUniprotIds(config,set_A,querytype,target_type=target_type)
+            map_B = getUniprotIds(config,set_B,querytype,target_type=target_type)
             return map_A.update(map_B)
 
     #If unusable result, try without version number
@@ -687,7 +688,8 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         response = urllib.request.urlopen(request)
         page = response.read(9000000).decode('utf-8')
     except:
-        print('Error trying to reach: ',url)
+        e,f,g = sys.exc_info()
+        config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,e,str(f)))
         return None
 
     lines = page.split("\n")

@@ -1600,6 +1600,8 @@ def main(filename,config,output_path,main_file_path):
     verbose = config.verbose
     session = 0 #This can later be used, structman.py could give a specific session id and the pipeline can then expand that session
 
+    config.errorlog.start(nfname,filename)
+
     t0 = time.time()
 
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/lib'
@@ -1665,8 +1667,6 @@ def main(filename,config,output_path,main_file_path):
         session = database.insertSession(starttime,nfname,config)
         newsession = True
     session_name = (nfname.rsplit("/",1)[1]).rsplit(".",1)[0]
-
-    config.errorlog.start(nfname,session)
 
     try:
         os.stat("%s/tmp_structman_pipeline" %(output_path))

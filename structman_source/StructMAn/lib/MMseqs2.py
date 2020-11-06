@@ -206,7 +206,7 @@ def search(proteins,config):
     to_fasta_out = geneSeqMapToFasta(proteins,temp_fasta,config)
 
     if isinstance(to_fasta_out,str):
-        config.errorlog.add_warning('%s , mmseqs2 skipped, %s' % (error_message,str(list(u_acs)[:10])))
+        config.errorlog.add_warning('%s , mmseqs2 skipped, %s' % (to_fasta_out,str(list(u_acs)[:10])))
         return {},set()
     if not to_fasta_out:
         #All proteins are stored, no need for mmseqs
