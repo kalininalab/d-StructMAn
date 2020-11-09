@@ -14,13 +14,14 @@
 
 ## Requirements
 
-**NOTE: Before you start, please make sure you have internet connection to use SructMAn**
+**Before you start, please make sure you have internet connection to use SructMAn**
 
 **NOTE: All the example code/commands here are based on CentOS 7 (everything is executed as root user(denoted by #))**
 
 * Install [docker](https://docs.docker.com/install/) and docker-compose
 
 *NOTE: Enable/install epel repo if by default it is not available in your system (for CentOS it is not available by default)*
+*In this setup we install docker using the yum package manager*
 
 ```bash
 # yum install epel-release
@@ -39,17 +40,9 @@
 # systemctl enable docker
 ```
 
-## To get this image
+## To use this image
 
-The recommended way to get this StructMAn docker image is to pull the prebuilt image from the [Docker Hub Registry](https://hub.docker.com/r/sanjaysrikakulam/structman/) by using the "docker pull" command
-
-```bash
-# docker pull "docker.io/sanjaysrikakulam/structman:latest"
-```
-
-## To use/run this image
-
-Once you pulled the image, use this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) by downloading the script to your local machine in order to create the base setup and configuration for your StructMAn to run succesfully using docker-compose client
+Download this utility script [setup_structman_docker_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_docker_container.sh) to your local machine in order to create the base setup and configuration for your StructMAn to run succesfully using docker-compose client
 
 ```bash
 
@@ -63,7 +56,7 @@ Once you pulled the image, use this utility script [setup_structman_docker_conta
 
 - Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>"), make sure you always use the latest version of the sript, as there might be some updates from time to time.
 
-# ./setup_structman_docker_container.sh -p <path/to/create/the/container_directory> -c <container_name>
+# ./setup_structman_docker_container.sh -p <path/to/create/the/container_directory_name> -c <container_name>
 
 Where: 
 -p => A path to create the container direcotry
@@ -120,6 +113,14 @@ Use the following command to run StructMAn, make sure you have some input file l
  ```bash
  # docker exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
 ```
+For ease of use, lets setup an alias for the `docker exec` command either in the current terminal or by adding it to the end of the `.bashrc` file like below,
+ ```bash
+ # alias structman='sudo docker exec -it <container_name> structman.py'
+```
+Once an alias is set, you can easily access the structman.py from your current terminal simply by,
+ ```bash
+ # structman -i /structman/input_data/<input_file_name>
+```
 
 **Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
 
@@ -128,7 +129,6 @@ Use the following command to run StructMAn, make sure you have some input file l
 ## To update the existing StructMAn docker image
 
 * If there is a new image of StructMAn available, one can easily update their container to use this latest image by doing the following
-
 
  ```bash
  - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
@@ -139,18 +139,14 @@ Use the following command to run StructMAn, make sure you have some input file l
  
  # docker-compose -f <docker-compose.yml> rm -f
 
- - Pull the latest image of StructMAn from Docker Hub Registry (The docker compose.yml file already contains the image location which is pointing to the docker hub's registry, so just a pull command will download the latest image from the registry)
- 
- # docker-compose -f <docker-compose.yml> pull
-
- - Finally start the container in the detach mode
+ - Finally pull the latest image and start the container in the detach mode
  
  # docker-compose -f <docker-compose.yml> up -d
 ```
 
 ## To reset StructMAn database/ To have a clean StructMAn container 
 
-* Once you encounter some issues with the database/container while executing structman.py with some input or you simple want a clean setup of the container, you can do the following
+* If you encounter some issues with the database/container while executing structman.py with some input or you simply want a clean setup of the container, you can do the following
 
 ```bash
  - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
@@ -206,10 +202,10 @@ $ path="$(pwd)"             # change this path to anywhere you like
 $ container_name="structman"
 $ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results}}
 ```
-**To run this image**
+**To use this image**
 
 ```bash
-$ podman run -d -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
+$ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
 ```
 **That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
 
@@ -226,12 +222,20 @@ Use the following command to run StructMAn, make sure you have some input file l
  ```bash
  $ podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
 ```
+For ease of use, lets setup an alias for the `podman exec` command either in the current terminal or by adding it to the end of the `.bashrc` file like below,
+ ```bash
+ # alias structman='podman exec -it <container_name> structman.py'
+```
+Once an alias is set, you can easily access the structman.py from your current terminal simply by,
+ ```bash
+ # structman -i /structman/input_data/<input_file_name>
+```
 
 **Refer this [tutorial](https://github.com/sanjaysrikakulam/structman/wiki/Tutorial) for more details on how to use StructMAn**
 
 **NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
 
-## How to site container tools
+## How to cite container tools
 
 If you find these tools useful, please cite:
 
