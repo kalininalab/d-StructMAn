@@ -40,9 +40,10 @@ mkdir -p $path/{mysql_lib,mysql_logs,structman/{input_data,results}}
 
 
 # Creates a default docker-compose file
-echo "version: '2'
+echo "version: '3.5'
 services:
     structman_db:
+        shm_size: 8GB
         image: docker.io/sanjaysrikakulam/structman:latest
         container_name: $container_name
         hostname: structman-container
