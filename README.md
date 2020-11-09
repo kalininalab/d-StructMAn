@@ -20,8 +20,7 @@
 
 * Install [docker](https://docs.docker.com/install/) and docker-compose
 
-*NOTE: Enable/install epel repo if by default it is not available in your system (for CentOS it is not available by default)*
-*In this setup we install docker using the yum package manager*
+*NOTE: Enable/install epel repo if by default it is not available in your system (for CentOS it is not available by default). In this setup we install docker using the yum package manager*
 
 ```bash
 # yum install epel-release
@@ -115,7 +114,7 @@ Use the following command to run StructMAn, make sure you have some input file l
 ```
 For ease of use, lets setup an alias for the `docker exec` command either in the current terminal or by adding it to the end of the `.bashrc` file like below,
  ```bash
- # alias structman='sudo docker exec -it <container_name> structman.py'
+ # alias structman='docker exec -it <container_name> structman.py'
 ```
 Once an alias is set, you can easily access the structman.py from your current terminal simply by,
  ```bash
@@ -138,6 +137,10 @@ Once an alias is set, you can easily access the structman.py from your current t
  - Remove the container that we stopped just now
  
  # docker-compose -f <docker-compose.yml> rm -f
+ 
+ - Delete the old image
+ 
+ # docker rmi <image_id>
 
  - Finally pull the latest image and start the container in the detach mode
  
