@@ -1023,17 +1023,21 @@ def para_classify(classification_dump,package):
                     else:
                         sc = "Core"
 
-                raw_rin_class,raw_rin_simple_class = profile.getClass()
+                if profile != None:
+                    raw_rin_class,raw_rin_simple_class = profile.getClass()
 
-                if raw_rin_class == 'No interaction':
-                    rin_class = sc
-                else:
-                    rin_class = raw_rin_class
+                    if raw_rin_class == 'No interaction':
+                        rin_class = sc
+                    else:
+                        rin_class = raw_rin_class
 
-                if raw_rin_simple_class == 'No interaction':
-                    rin_simple_class = sc
+                    if raw_rin_simple_class == 'No interaction':
+                        rin_simple_class = sc
+                    else:
+                        rin_simple_class = raw_rin_simple_class
                 else:
-                    rin_simple_class = raw_rin_simple_class
+                    rin_simple_class = None
+                    rin_class = None
 
 
                 mapping = (qual,seq_id,cov,rsa,ssa,lig_dist,metal_dist,ion_dist,chain_dist,rna_dist,dna_dist,homo_dist,profile,centralities,

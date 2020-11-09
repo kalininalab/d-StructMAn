@@ -48,7 +48,7 @@ class Config:
         self.neighborhood_calculation = cfg.getboolean('neighborhood_calculation', fallback=False)
         self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
         self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
-        self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=False)
+        self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=True)
 
         self.verbose = cfg.getboolean('verbose', fallback=False)
         self.verbosity = cfg.getint('verbosity', fallback=0)
@@ -97,6 +97,7 @@ class Config:
         self.mmseqs2_path = cfg.get('mmseqs2_path', fallback='')
         self.output_path = cfg.get('output_path', fallback='')
         self.pdb_path = cfg.get('pdb_path', fallback='')
+
         self.annovar_path = cfg.get('annovar_path', fallback='')
         self.dssp_path = cfg.get('dssp_path', fallback='')
         self.rin_db_path = cfg.get('rin_db_path', fallback='')
@@ -131,6 +132,24 @@ class Config:
         self.smiles_path = '%s/lib/base/ligand_bases/Components-smiles-stereo-oe.smi' % trunk
         self.inchi_path = '%s/lib/base/ligand_bases/inchi_base.tsv' % trunk
         self.human_id_mapping_path = '%s/lib/base/id_mapping' % trunk
+        self.rinerator_base_path = '%s/lib/rinerator' % trunk
+        self.rinerator_path = '%s/lib/rinerator/get_chains.py' % trunk
+        os.environ["REDUCE_HET_DICT"] = '%s/lib/rinerator/reduce_wwPDB_het_dict.txt' % trunk
+
+        self.pdb_sync_script = '%s/pdb-rsync.sh' % trunk
+        #Set the BASE_DIR variable in the sync script
+        f = open(self.pdb_sync_script,'r')
+        lines = f.readlines()
+        f.close()
+        newlines = []
+        for line in lines:
+            if line.count('BASE_DIR=') == 1:
+                line = 'BASE_DIR="%s"\n' % self.pdb_path
+            newlines.append(line)
+        f = open(self.pdb_sync_script,'w')
+        f.write(''.join(newlines))
+        f.close()
+
         self.mmseqs_tmp_folder = cfg.get('mmseqs_tmp_folder', '%s/lib/base/blast_db/tmp' % trunk)
 
         self.fasta_input = cfg.getboolean('fasta_input', fallback=False)
@@ -208,7 +227,7 @@ class Config:
                 print('Need writing rights in the MMSEQS temp folder, please check the path')
                 sys.exit()
 
-        if self.base_path != None and not database_util and not external_call:
+        if self.base_path != None and not database_util:
             if self.verbosity >= 1:
                 print('Using structman_data from :',self.base_path)
             self.blast_db_path = '%s/base/blast_db/pdbba' % self.base_path
@@ -490,7 +509,7 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvd",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize='])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvd",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin'])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -511,6 +530,7 @@ if __name__ == "__main__":
     #mmcif mode flag is added
     mmcif_mode = False
     '''
+    norin = False
 
     for opt,arg in opts:
         if opt == '-c':
@@ -547,6 +567,8 @@ if __name__ == "__main__":
 
         if opt == '--chunksize':
             chunksize = int(arg)
+        if opt == '--norin':
+            norin = True
         '''
         #mmcif option added to call mmcif mode while calling structman
         if opt == '-mmcif':
@@ -620,6 +642,8 @@ if __name__ == "__main__":
     if config.verbosity >= 1:
         print(("Using following config file: %s" % config_path))
         config.verbose = True
+
+    config.calculate_interaction_profiles = not norin
 
     config.skipref = skipref
 

@@ -423,7 +423,7 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
         response = urllib.request.urlopen(request)
     except:
         e,f,g = sys.exc_info()
-        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (e,str(f)))
+        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e),str(f)))
         return {}
 
     page = response.read(2000000).decode('utf-8')
@@ -689,7 +689,7 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         page = response.read(9000000).decode('utf-8')
     except:
         e,f,g = sys.exc_info()
-        config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,e,str(f)))
+        config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,str(e),str(f)))
         return None
 
     lines = page.split("\n")

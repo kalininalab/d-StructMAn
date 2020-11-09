@@ -885,7 +885,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
     chain_chain_profiles = {}
 
     if calculate_interaction_profiles:
-        (profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = rin.lookup(pdb_id,None,None,ligands,
+        (profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = rin.lookup(pdb_id,page,config,None,None,ligands,
                                                                                                     metals,ions,res_contig_map,
                                                                                                     rin_db_path,chain_type_map,encoded = False)
 

@@ -3,6 +3,7 @@ import os
 import pdbParser
 import sys
 import traceback
+import createRINdb
 
 class Ligand_types:
     __slots__ = ['ligand','ion','metal']
@@ -864,20 +865,25 @@ def calculateIAPProfiles(interaction_map,chains,ligands,metals,ions):
     return ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
 #called by templateFiltering
-def lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map, encoded = True):
+def lookup(pdb_id,page,config,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map, encoded = True):
     pdb_id = pdb_id.replace('_AU','').lower()
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
+    interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
+
+    remove_tmp_files = False
+    if not os.path.isfile(interaction_score_file):
+        #error = "Did not find RIN: %s" % folder_path
+        folder_path = config.temp_folder
+        rinerator_path = config.rinerator_path
+        remove_tmp_files = True
+        createRINdb.calcRIN(page.encode(),folder_path,pdb_id,rinerator_path,remove_tmp_files,config.verbosity)
+        interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
+        
 
     network_file = "%s/%s.sif.gz" % (folder_path,pdb_id)
-    interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
     interaction_count_file = "%s/%s_nrint.ea.gz" % (folder_path,pdb_id)
     residue_file = "%s/%s_res.txt.gz" % (folder_path,pdb_id)
-
     centrality_file = "%s/%s_btw_cent.txt.gz" % (folder_path,pdb_id)
-
-    if not os.path.isfile(interaction_score_file):
-        error = "Did not find RIN: %s" % folder_path
-        return {},{},{},{},{}
 
     interaction_map = getIAmap(interaction_score_file)
     if os.path.isfile(centrality_file):
@@ -915,6 +921,13 @@ def lookup(pdb_id,inp_residues,chains,ligands,metals,ions,res_contig_map,base_pa
                 profile_map[res] = profile,centrality_scores
         profiles_map[chain] = profile_map
     ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles = calculateIAPProfiles(interaction_map,chains,ligands,metals,ions)
+
+    if remove_tmp_files:
+        os.remove(interaction_score_file)
+        os.remove(network_file)
+        os.remove(interaction_count_file)
+        os.remove(residue_file)
+        os.remove(centrality_file)
 
     return profiles_map,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
