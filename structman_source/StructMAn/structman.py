@@ -24,17 +24,17 @@ import repairDB
 
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '',
-                    database_util = False, output_util = False,external_call = True,profiling = False, verbosity = None,
+                    util_mode = False, output_util = False,external_call = True,profiling = False, verbosity = None,
                     print_all_errors = False,chunksize = 500):
         self.prog_start_time = time.time()
         # read config file, auto add section header so old config files work
-        config = configparser.ConfigParser()
+        self.config_parser_obj = configparser.ConfigParser()
         try:
-            config.read(config_path)
+            self.config_parser_obj.read(config_path)
         except configparser.MissingSectionHeaderError:
             with open(config_path, 'r') as f:
-                config.read_string('[user]\n%s' % f.read())
-        cfg = config['user']
+                self.config_parser_obj.read_string('[user]\n%s' % f.read())
+        cfg = self.config_parser_obj['user']
 
         self.db_adress = cfg.get('db_adress', fallback='')
         self.db_user_name = cfg.get('db_user_name', fallback='')
@@ -137,18 +137,6 @@ class Config:
         os.environ["REDUCE_HET_DICT"] = '%s/lib/rinerator/reduce_wwPDB_het_dict.txt' % trunk
 
         self.pdb_sync_script = '%s/pdb-rsync.sh' % trunk
-        #Set the BASE_DIR variable in the sync script
-        f = open(self.pdb_sync_script,'r')
-        lines = f.readlines()
-        f.close()
-        newlines = []
-        for line in lines:
-            if line.count('BASE_DIR=') == 1:
-                line = 'BASE_DIR="%s"\n' % self.pdb_path
-            newlines.append(line)
-        f = open(self.pdb_sync_script,'w')
-        f.write(''.join(newlines))
-        f.close()
 
         self.mmseqs_tmp_folder = cfg.get('mmseqs_tmp_folder', '%s/lib/base/blast_db/tmp' % trunk)
 
@@ -227,7 +215,7 @@ class Config:
                 print('Need writing rights in the MMSEQS temp folder, please check the path')
                 sys.exit()
 
-        if self.base_path != None and not database_util:
+        if self.base_path != None and not util_mode:
             if self.verbosity >= 1:
                 print('Using structman_data from :',self.base_path)
             self.blast_db_path = '%s/base/blast_db/pdbba' % self.base_path
@@ -264,7 +252,7 @@ class Config:
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
 
-        if not database_util:
+        if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
                 os.mkdir(self.outfolder)
             if self.verbosity >= 1:
@@ -431,7 +419,9 @@ if __name__ == "__main__":
     #print(multiprocessing.get_start_method())
     disclaimer = ''.join([
                 'Usage: structman.py <-i input_file>\n',
-                '(or to reset the database: structman.py database reset)\n\n\n',
+                'more functionalities can be used giving a second key word:\n',
+                'structman.py database   gives you more info about the database utility functions\n',
+                'structman.py update   gives you more info about the different update options\n\n\n',
                 '##### Optional parameter: #####\n\n',
                 '<-n threads> : Number of cores to be used\n\n',
                 '<-o output_folder> : Path to the output folder\n\n',
@@ -439,6 +429,30 @@ if __name__ == "__main__":
                 '<-d> : database mode\n\n',
                 '<-l> : lite-mode\n\n',
                 '<-v> : verbose output'])
+
+    database_util_disclaimer = ''.join([
+                'Usage: structman.py database [command] <-c config_file>\n\n',
+                '#### Commands: ####\n\n',
+                'reset : deletes all content of the database\n\n',
+                'destroy : completely removes the database\n\n',
+                'create : creates an empty instance of the database, usually called after database destroy'
+                ])
+
+    update_util_disclaimer = ''.join([
+                'Usage: structman.py update [commands] <-c config_file> <-p path_to_local_pdb>\n',
+                'The update functionalities manage local database, that significantly increases the performance of StructMAn.\n',
+                'They need a lot of disk space though. Thus the usage of local databases is only recommended when one wants to process larger inputs with StructMAn.\n'
+                'Only needs the path to the local instance of the PDB (-p), if it is not already specified in the config file.\n\n'
+                '#### Commands: ####\n\n',
+
+                'pdb : uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
+                'If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
+
+                'rindb : calculates and stores the RIN for each PDB structure in the local PDB.\n',
+                'When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
+                ])
+
+    config_util_disclaimer = 'WRITE ME'
 
     argv = sys.argv[1:]
 
@@ -451,19 +465,67 @@ if __name__ == "__main__":
         database_util = True
         argv = argv[1:]
 
-    if database_util:
+        if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
+            print(database_util_disclaimer)
+            sys.exit(1)
         if argv[0] == 'reset':
             db_mode = 'reset'
             argv = argv[1:]
-        if argv[0] == 'out':
+        elif argv[0] == 'out':
             db_mode = 'out'
             argv = argv[1:]
-        if argv[0] == 'create':
+        elif argv[0] == 'create':
             db_mode = 'create'
             argv = argv[1:]
-        if argv[0] == 'destroy':
+        elif argv[0] == 'destroy':
             db_mode = 'destroy'
             argv = argv[1:]
+        else:
+            print(database_util_disclaimer)
+            sys.exit(1)
+
+    update_util = False
+    update_pdb = False
+    update_rindb = False
+    if argv[0] == 'update':
+        update_util = True
+        argv = argv[1:]
+
+        if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
+            print(update_util_disclaimer)
+            sys.exit(1)
+        if 'pdb' in argv:
+            update_pdb = True
+        if 'rindb' in argv:
+            update_rindb = True
+        if not (update_pdb or update_rindb):
+            print(update_util_disclaimer)
+            sys.exit(1)
+
+    configure_mode = False
+    if argv[0] == 'config':
+        configure_mode = True
+        argv = argv[1:]
+
+        if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
+            print(config_util_disclaimer)
+            sys.exit(1)
+
+        conf_update_pdb_path = None
+
+        if argv[0] == 'set_local_pdb_path':
+            if len(argv) == 1:
+                print(config_util_disclaimer)
+                sys.exit(1)
+            conf_update_pdb_path = argv[1]
+            if not os.path.exists(conf_update_pdb_path):
+                print('Did not found given path')
+                sys.exit(1)
+        else:
+            print(config_util_disclaimer)
+            sys.exit(1)
+
+        argv = argv[2:]
 
     output_util = False
     ppi_output = False
@@ -475,6 +537,8 @@ if __name__ == "__main__":
             print(disclaimer)
             sys.exit(1)
         argv = argv[2:]
+
+    util_mode = database_util or configure_mode or update_util
 
     #Custom single line input preparsing
     insert_flag_pos = None
@@ -509,7 +573,7 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvd",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin','pdb','rindb'])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -531,6 +595,7 @@ if __name__ == "__main__":
     mmcif_mode = False
     '''
     norin = False
+    minus_p_path = None #different modes can use this way a path given with -p
 
     for opt,arg in opts:
         if opt == '-c':
@@ -547,6 +612,11 @@ if __name__ == "__main__":
             num_of_cores = int(arg)
         if opt == '-o':
             outfolder = arg
+        if opt == '-p':
+            minus_p_path = arg
+            if not os.path.exists(minus_p_path):
+                print('Did not found given path',minus_p_path)
+                sys.exit(1)
 
         if opt == '--profile':
             profiling = True
@@ -575,7 +645,7 @@ if __name__ == "__main__":
             mmcif_mode = True
         '''
 
-    if not database_util and not output_util:
+    if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
             if not os.path.isdir(input_folder):
@@ -599,7 +669,7 @@ if __name__ == "__main__":
             infile = os.path.abspath(infile)
             infiles = [infile]
 
-    if not database_util:
+    if not util_mode:
         if outfolder == '':
             outfolder = '/structman/results/'
             if not os.path.isdir(outfolder):
@@ -627,10 +697,9 @@ if __name__ == "__main__":
 
     config_path = os.path.abspath(config_path)
 
-
     config = Config(config_path,num_of_cores = num_of_cores,
                     output_path = outfolder,
-                    database_util = database_util,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
+                    util_mode = util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
                     print_all_errors = print_all_errors,chunksize = chunksize)
 
     if verbose_flag:
@@ -688,6 +757,23 @@ if __name__ == "__main__":
             output.create_ppi_network(session_id,config,outfile)
 
             db.close()
+
+    elif update_util:
+        import update
+        if minus_p_path != None:
+            config.pdb_path = minus_p_path
+            config.config_parser_obj.set('user','pdb_path',minus_p_path)
+            f = open(config_path,'w')
+            config.config_parser_obj.write(f)
+            f.close()
+        update.main(config,skipUpdatePDB = not update_pdb,skip_rindb = not update_rindb)
+
+    elif configure_mode:
+        if conf_update_pdb_path != None:
+            config.config_parser_obj.set('user','pdb_path',conf_update_pdb_path)
+        f = open(config_path,'w')
+        config.config_parser_obj.write(f)
+        f.close()
 
     else:
 
