@@ -45,7 +45,7 @@ class Config:
         self.outfolder = output_path
         self.num_of_cores = num_of_cores
 
-        self.neighborhood_calculation = cfg.getboolean('neighborhood_calculation', fallback=False)
+        self.neighborhood_calculation = cfg.getboolean('neighborhood_calculation', fallback=True)
         self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
         self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
         self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=True)

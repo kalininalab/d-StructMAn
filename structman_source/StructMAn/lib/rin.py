@@ -635,6 +635,8 @@ def calculateAverageProfile(profiles):
                 degree_sum = 0.
                 score_sum = 0.
                 for weight,profile in profiles:
+                    if profile == None:
+                        continue
                     degree = profile.getDegree(chain_type,bond_type,interaction_type)
                     score = profile.getScore(chain_type,bond_type,interaction_type)
                     weight_sum += weight
