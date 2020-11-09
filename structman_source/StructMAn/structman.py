@@ -420,22 +420,24 @@ if __name__ == "__main__":
     disclaimer = ''.join([
                 'Usage: structman.py <-i input_file>\n',
                 'more functionalities can be used giving a second key word:\n',
-                'structman.py database   gives you more info about the database utility functions\n',
-                'structman.py update   gives you more info about the different update options\n\n\n',
+                'structman.py database    gives you more info about the database utility functions\n',
+                'structman.py config      gives you more info about the config utility functions\n',
+                'structman.py update      gives you more info about the different update options\n\n\n',
                 '##### Optional parameter: #####\n\n',
-                '<-n threads> : Number of cores to be used\n\n',
-                '<-o output_folder> : Path to the output folder\n\n',
-                '<-c config_file> : Path to the configuration file\n\n',
-                '<-d> : database mode\n\n',
-                '<-l> : lite-mode\n\n',
-                '<-v> : verbose output'])
+                '<-n threads> :           Number of cores to be used\n\n',
+                '<-o output_folder> :     Path to the output folder\n\n',
+                '<-c config_file> :       Path to the configuration file\n\n',
+                '<-d> :                   database mode\n\n',
+                '<-l> :                   lite-mode\n\n',
+                '<--verbosity> [1-4]:     verbose output\n\n',
+                '<--norin>                disable all RIN-based calculation'])
 
     database_util_disclaimer = ''.join([
                 'Usage: structman.py database [command] <-c config_file>\n\n',
                 '#### Commands: ####\n\n',
-                'reset : deletes all content of the database\n\n',
-                'destroy : completely removes the database\n\n',
-                'create : creates an empty instance of the database, usually called after database destroy'
+                'reset :     deletes all content of the database\n\n',
+                'destroy :   completely removes the database\n\n',
+                'create :    creates an empty instance of the database, usually called after database destroy'
                 ])
 
     update_util_disclaimer = ''.join([
@@ -445,14 +447,20 @@ if __name__ == "__main__":
                 'Only needs the path to the local instance of the PDB (-p), if it is not already specified in the config file.\n\n'
                 '#### Commands: ####\n\n',
 
-                'pdb : uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
-                'If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
+                'pdb :       uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
+                '            If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
 
-                'rindb : calculates and stores the RIN for each PDB structure in the local PDB.\n',
-                'When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
+                'rindb :     calculates and stores the RIN for each PDB structure in the local PDB.\n',
+                '            When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
                 ])
 
-    config_util_disclaimer = 'WRITE ME'
+    config_util_disclaimer = ''.join([
+                'Usage: structman.py config [command] [value] <-c config_file>\n',
+                'The config commands enable the expansion of StructMAn by giving it access to additional functionalities, which are too large to be included by default or require an external license.\n\n',
+                '#### Commands: ####\n\n',
+                'set_local_pdb_path <path_to_local_pdb> :               enables the usage of a local instance of the PDB. If this is not available, StructMAn has to download all structural information from the web.\n\n',
+                'set_local_iupred_path <path_to_iupred_executable> :    enables StructMAn to use the predicted disordered regions performed by iupred2a.'
+                ])
 
     argv = sys.argv[1:]
 
@@ -512,6 +520,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         conf_update_pdb_path = None
+        conf_update_iupred_path = None
 
         if argv[0] == 'set_local_pdb_path':
             if len(argv) == 1:
@@ -521,6 +530,16 @@ if __name__ == "__main__":
             if not os.path.exists(conf_update_pdb_path):
                 print('Did not found given path')
                 sys.exit(1)
+
+        elif argv[0] == 'set_local_iupred_path':
+            if len(argv) == 1:
+                print(config_util_disclaimer)
+                sys.exit(1)
+            conf_update_iupred_path = argv[1]
+            if not os.path.exists(conf_update_iupred_path):
+                print('Did not found given path')
+                sys.exit(1)
+
         else:
             print(config_util_disclaimer)
             sys.exit(1)
@@ -567,13 +586,17 @@ if __name__ == "__main__":
     for pos,arg in enumerate(argv):
         if arg == '--overwrite':
             remove_args.append(pos)
+        if arg == 'pdb':
+            remove_args.append(pos)
+        if arg == 'rindb':
+            remove_args.append(pos)
 
     remove_args.reverse()
     for pos in remove_args:
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin','pdb','rindb'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin'])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -771,6 +794,8 @@ if __name__ == "__main__":
     elif configure_mode:
         if conf_update_pdb_path != None:
             config.config_parser_obj.set('user','pdb_path',conf_update_pdb_path)
+        if conf_update_iupred_path != None:
+            config.config_parser_obj.set('user','iupred_path',conf_update_iupred_path)
         f = open(config_path,'w')
         config.config_parser_obj.write(f)
         f.close()

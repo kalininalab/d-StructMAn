@@ -6,7 +6,11 @@ import math
 import time
 
 from Bio.PDB import *
-from Bio.SubsMat import MatrixInfo
+sys.stdout = open(os.devnull, 'w')
+sys.stderr = open(os.devnull, 'w')
+from Bio.Align import substitution_matrices
+sys.stdout = sys.__stdout__
+sys.stderr = sys.__stderr__
 from operator import itemgetter
 
 import pdbParser
@@ -77,11 +81,11 @@ def candidateScore(lig_sub_dist,chain_sub_dist,lig_wf=1.0,chain_wf=1.0,useBlosum
     if useBlosum:
         if aac == "":
             raise NameError("If useBlosum is True, an aac is needed")
-        #print MatrixInfo.blosum62
+
         try:
-            blosum_value =  0.6 - float(MatrixInfo.blosum62[(aac[0],aac[-1])])/10
+            blosum_value =  0.6 - float(substitution_matrices.blosum62[(aac[0],aac[-1])])/10
         except:
-            blosum_value =  0.6 - float(MatrixInfo.blosum62[(aac[-1],aac[0])])/10
+            blosum_value =  0.6 - float(substitution_matrices.blosum62[(aac[-1],aac[0])])/10
         if blosum_value < 0.0:
             blosum_value = 0.0
         #print blosum_value

@@ -19,6 +19,7 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
     pdb_update_script = config.pdb_sync_script
 
     rinerator_base_path = config.rinerator_base_path
+    rin_db_path = config.rin_db_path
 
     search_db_base_path = config.blast_db_path
     mmseqs2_db_path = config.mmseqs2_db_path
@@ -105,7 +106,7 @@ if __name__ == "__main__":
     config_path = sys.argv[1]
     if not os.path.isfile(config_path):
         print('ERROR: Need path to config file as second argument.')
-        return
+        sys.exit(1)
     config = structman.Config(config_path,external_call = True)
     main(config)
 
