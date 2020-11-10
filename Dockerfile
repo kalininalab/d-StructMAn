@@ -30,6 +30,7 @@ libz-dev \
 autoconf \
 automake \
 autotools-dev \
+rsync \
 openbabel \
 ncbi-blast+ \
 python-mysqldb \
