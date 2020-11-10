@@ -1715,8 +1715,8 @@ def main(filename,config,output_path,main_file_path):
         database.updateSession(session,endtime,config)
 
     tend = time.time()
-    if config.verbosity >= 2:
-        print((tend-t0))
+    if config.verbosity >= 1:
+        print('Total runtime of StructMAn:',(tend-t0))
 
     '''
     total_memory_peak = 0
