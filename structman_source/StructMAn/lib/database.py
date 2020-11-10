@@ -9,12 +9,7 @@ import templateFiltering
 import rin
 from operator import itemgetter
 import multiprocessing
-from Bio.PDB import *
-sys.stdout = open(os.devnull, 'w')
-sys.stderr = open(os.devnull, 'w')
-from Bio.Align import substitution_matrices
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
+
 import numpy as np
 import re
 import traceback
@@ -1992,9 +1987,9 @@ def getBlosumValue(aac):
     if aac.count(',') < 1:
         try:
             try:
-                blosum_value = substitution_matrices.blosum62[(aac[0],aac[-1])]
+                blosum_value = sdsc.blosum62[(aac[0],aac[-1])]
             except:
-                blosum_value = substitution_matrices.blosum62[(aac[-1],aac[0])]
+                blosum_value = sdsc.blosum62[(aac[-1],aac[0])]
         except:
             blosum_value = 0.0
     else:
@@ -2005,9 +2000,9 @@ def getBlosumValue(aac):
         for aa2 in aa2s:
             try:
                 try:
-                    blosum_value = substitution_matrices.blosum62[(aa1,aa2)]
+                    blosum_value = sdsc.blosum62[(aa1,aa2)]
                 except:
-                    blosum_value = substitution_matrices.blosum62[(aa2,aa1)]
+                    blosum_value = sdsc.blosum62[(aa2,aa1)]
             except:
                 blosum_value = 0.0
             bvs.append(blosum_value)

@@ -5,12 +5,6 @@ import subprocess
 import math
 import time
 
-from Bio.PDB import *
-sys.stdout = open(os.devnull, 'w')
-sys.stderr = open(os.devnull, 'w')
-from Bio.Align import substitution_matrices
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
 from operator import itemgetter
 
 import pdbParser
@@ -83,9 +77,9 @@ def candidateScore(lig_sub_dist,chain_sub_dist,lig_wf=1.0,chain_wf=1.0,useBlosum
             raise NameError("If useBlosum is True, an aac is needed")
 
         try:
-            blosum_value =  0.6 - float(substitution_matrices.blosum62[(aac[0],aac[-1])])/10
+            blosum_value =  0.6 - float(sdsc.blosum62[(aac[0],aac[-1])])/10
         except:
-            blosum_value =  0.6 - float(substitution_matrices.blosum62[(aac[-1],aac[0])])/10
+            blosum_value =  0.6 - float(sdsc.blosum62[(aac[-1],aac[0])])/10
         if blosum_value < 0.0:
             blosum_value = 0.0
         #print blosum_value
@@ -153,10 +147,10 @@ def calcDSSP(path,DSSP,angles=False,verbosity_level=0):
             if aa_type_one_letter == 'X':
                 macc = 220.0
             elif aa_type_one_letter.islower(): #This happens for SS-bond cysteines
-                aa = Polypeptide.one_to_three('C')
+                aa = pdbParser.oneToThree['C']
                 macc = residue_max_acc['Sander'][aa]
             else:
-                aa = Polypeptide.one_to_three(aa_type_one_letter)
+                aa = pdbParser.oneToThree[aa_type_one_letter]
                 macc = residue_max_acc['Sander'][aa]
             racc = acc/macc
         except:

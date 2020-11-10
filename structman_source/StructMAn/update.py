@@ -24,7 +24,7 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
     search_db_base_path = config.blast_db_path
     mmseqs2_db_path = config.mmseqs2_db_path
     mmseqs2_tmp = config.mmseqs_tmp_folder
-
+    recently_modified_structures = set()
     if not skipStructureDBs:
         if not skipUpdatePDB:
             if not os.path.exists(pdb_path):
@@ -58,8 +58,6 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
             recently_modified_structures = createRINdb.main(fromScratch=rin_fromScratch,forceCentrality=forceCentrality,update_days=30.,pdb_p=pdb_path,rin_db_path=rin_db_path,n_proc=n_proc,rinerator_base_path = rinerator_base_path)
 
         print('Update RIN db done')
-    else:
-        recently_modified_structures = set()
 
     print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
 

@@ -1,10 +1,9 @@
 import time
 from Bio import pairwise2
-from Bio.SubsMat import MatrixInfo as matlist
-matrix = matlist.blosum62
 
 import sys
 import traceback
+import sdsc
 
 threeToOne = {
     "00C": "C", "01W": "X", "02K": "A", "03Y": "C", "07O": "C",
@@ -412,7 +411,7 @@ def BPalign(config,u_ac,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=
         print('Aligning:')
         print(target_seq)
         print(template_seq)
-    align_out = pairwise2.align.globalds(target_seq, template_seq,matrix,-10.0,-0.5,one_alignment_only=True,penalize_end_gaps=False)
+    align_out = pairwise2.align.globalds(target_seq, template_seq,sdsc.blosum62,-10.0,-0.5,one_alignment_only=True,penalize_end_gaps=False)
     if len(align_out) > 0:
         (target_aligned_sequence,template_aligned_sequence,a,b,c) = align_out[0]
     else:

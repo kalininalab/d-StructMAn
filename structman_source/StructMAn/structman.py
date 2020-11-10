@@ -638,8 +638,11 @@ if __name__ == "__main__":
         if opt == '-p':
             minus_p_path = arg
             if not os.path.exists(minus_p_path):
-                print('Did not found given path',minus_p_path)
-                sys.exit(1)
+                try:
+                    os.mkdir(minus_p_path)
+                except:
+                    print('Did not found given path',minus_p_path)
+                    sys.exit(1)
 
         if opt == '--profile':
             profiling = True
