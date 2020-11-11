@@ -71,6 +71,8 @@ Where:
     └── structman
         ├── input_data
         └── results
+        └── resources
+        
 ```
 ## Directory setup
 
@@ -80,6 +82,7 @@ Where:
 - **structman:** This is where we organize all the files, so that we can keep them under one roof
 - **input_data:** A user has to upload their input files into this directory
 - **reuslts:** StructMAn by default will write all the generated output to this directory
+- **resources:** Useful resources such as local PDB or other executables required by StructMAn should be put here before starting the container
 - **NOTE 1: All these volumes are bind mounted and for more information on [bind mounts](https://docs.docker.com/storage/bind-mounts/)**
 - **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
 
