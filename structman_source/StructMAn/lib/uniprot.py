@@ -121,7 +121,7 @@ def updateMappingDatabase(u_acs,db,config):
     return
 
 #called by serializedPipeline
-def IdMapping(config,ac_map,id_map,np_map,pdb_map):
+def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
     def indel_insert(indels,ac):
         for indel in indels:
             indel_protein_name = indel.create_protein_name(ac)
@@ -292,6 +292,18 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map):
                     proteins[u_ac].add_ref_id(ref)
                     proteins[u_ac].add_positions(np_map[ref][0])
                 indel_insert(np_map[ref][1],u_ac)
+
+    if len(hgnc_map) > 0: #No support for mapping DB yet
+        hgnc_ac_map = getUniprotIds(config,list(hgnc_map.keys()),'HGNC_ID',target_type="ACC")
+        for hgnc in hgnc_ac_map:
+            u_ac = hgnc_ac_map[hgnc]
+            if not u_ac in proteins:
+                protein = sdsc.Protein(u_ac=u_ac,positions = hgnc_map[hgnc][0], other_ids = [('HGNC_ID',hgnc)])
+                proteins[u_ac] = protein
+            else:
+                proteins[u_ac].add_other_ids('HGNC_ID',hgnc)
+                proteins[u_ac].add_positions(hgnc_map[hgnc][0])
+            indel_insert(hgnc_map[hgnc][1],u_ac)
 
     #Step two: get uniprot-id and refseqs from uniprot-ac
 

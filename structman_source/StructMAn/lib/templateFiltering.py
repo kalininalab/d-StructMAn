@@ -883,9 +883,15 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
     chain_chain_profiles = {}
 
     if calculate_interaction_profiles:
-        (profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = rin.lookup(pdb_id,page,config,None,None,ligands,
+        try:
+            (profiles,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = rin.lookup(pdb_id,page,config,None,None,ligands,
                                                                                                     metals,ions,res_contig_map,
                                                                                                     rin_db_path,chain_type_map,encoded = False)
+        except:
+            [e,f,g] = sys.exc_info()
+            g = traceback.format_exc()
+            errortext = 'RIN lookup Error:%s\nRIN_db_path:%s\n' % (pdb_id,rin_db_path) + '\n'.join([str(e),str(f),str(g)])
+            errorlist.append(errortext)
 
     if verbosity >= 4:
         t6 = time.time()

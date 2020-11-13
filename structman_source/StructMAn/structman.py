@@ -792,6 +792,14 @@ if __name__ == "__main__":
             f = open(config_path,'w')
             config.config_parser_obj.write(f)
             f.close()
+        elif os.path.exists('/structman/resources/'):
+            if not os.path.exists('/structman/resources/pdb'):
+                os.mkdir('/structman/resources/pdb')
+            config.pdb_path = '/structman/resources/pdb'
+            config.config_parser_obj.set('user','pdb_path','/structman/resources/pdb')
+            f = open(config_path,'w')
+            config.config_parser_obj.write(f)
+            f.close()
         update.main(config,skipUpdatePDB = not update_pdb,skip_rindb = not update_rindb)
 
     elif configure_mode:

@@ -627,10 +627,10 @@ class Substitution(Indel):
         return wt_structure_annotations,mut_structure_annotations
 
 class Protein:
-    __slots__ = ['u_ac','u_id','ref_ids','pdb_id','positions','res_id_map','sequence','stored','completely_stored',
+    __slots__ = ['u_ac','u_id','ref_ids','other_ids','pdb_id','positions','res_id_map','sequence','stored','completely_stored',
                     'go_terms','pathways','disorder_regions','disorder_tool','database_id','structure_annotations']
 
-    def __init__(self,u_ac = None,u_id = None,ref_ids = set([]),pdb_id = None,positions = {},database_id = None):
+    def __init__(self,u_ac = None,u_id = None,ref_ids = set([]),pdb_id = None,positions = {},database_id = None, other_ids = []):
         self.u_ac = u_ac # UNIPROT accession number
         self.u_id = u_id # UNIPROT ID
         self.ref_ids = ref_ids.copy() #RefSeq IDs
@@ -653,6 +653,10 @@ class Protein:
             self.add_positions(positions)
         else:
             self.add_residues(positions)
+        self.other_ids = {}
+        for id_id,other_id in other_ids:
+            self.other_ids[id_id] = other_id
+        return
 
     def print_state(self):
         print('----State of %s----' % self.u_ac)
@@ -740,6 +744,10 @@ class Protein:
 
     def add_ref_id(self,ref):
         self.ref_ids.add(ref)
+        return
+
+    def add_other_ids(self,id_id,other_id):
+        self.other_ids[id_id] = other_id
         return
 
     def get_ref_ids(self):

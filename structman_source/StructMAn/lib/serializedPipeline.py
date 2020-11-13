@@ -171,7 +171,7 @@ def parseFasta(config,nfname):
             seq_map[entry_id] = ''
 
         else:
-            seq_map[entry_id] += line
+            seq_map[entry_id] += line.replace('\n','').upper()
 
     
 
@@ -188,7 +188,7 @@ def parseFasta(config,nfname):
                 protein.positions[seq_pos] = position
 
         proteins[prot_id] = protein
-    return [proteins]
+    return [(proteins,[])]
 
 #@profile
 def buildQueue(config,filename,chunksize):
@@ -200,6 +200,7 @@ def buildQueue(config,filename,chunksize):
     id_map = {}
     ac_map = {}
     np_map = {}
+    hgnc_map = {}
 
     pdb_map = {}
 
@@ -321,6 +322,13 @@ def buildQueue(config,filename,chunksize):
                     pdb_map[pdb_chain_tuple] = [position]
                 else:
                     pdb_map[pdb_chain_tuple].append(position)
+            elif sp_id[:5] == 'HGNC:':
+                if not sp_id in hgnc_map:
+                    hgnc_map[sp_id] = [],[]
+                if indel == None:
+                    hgnc_map[sp_id][0].append(position)
+                else:
+                    hgnc_map[sp_id][1].append(indel)
             else:
                 u_acs.add(sp_id)
                 if not sp_id in ac_map:
@@ -335,7 +343,7 @@ def buildQueue(config,filename,chunksize):
     if config.verbosity >= 2:
         print("buildQueue Part 1: ",str(t1-t0))
 
-    proteins,indels = uniprot.IdMapping(config,ac_map,id_map,np_map,pdb_map)
+    proteins,indels = uniprot.IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map)
     
     t2 = time.time()
     if config.verbosity >= 2:
