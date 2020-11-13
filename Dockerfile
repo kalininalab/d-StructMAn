@@ -68,7 +68,7 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Default volumes to organize all the files under one roof and to allow backup
-VOLUME ["/structman/input_data/", "/structman/results/", "/var/log/mysql/", "/var/lib/mysql/"]
+VOLUME ["/structman/input_data/", "/structman/results/", "/structman/resources/", "/var/log/mysql/", "/var/lib/mysql/"]
 
 # Ports
 EXPOSE 3306/tcp

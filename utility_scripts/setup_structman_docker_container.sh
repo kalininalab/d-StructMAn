@@ -36,7 +36,7 @@ if [[ "$container_name" == "" ]] ; then
 fi
 
 # Creates the default folder structure
-mkdir -p $path/{mysql_lib,mysql_logs,structman/{input_data,results}}
+mkdir -p $path/{mysql_lib,mysql_logs,structman/{input_data,results,resources}}
 
 
 # Creates a default docker-compose file
@@ -52,6 +52,7 @@ services:
         volumes:
             - ./structman/input_data/:/structman/input_data/:Z
             - ./structman/results/:/structman/results/:Z
+            - ./structman/resources/:/structman/resources/:Z
             - ./mysql_lib/:/var/lib/mysql/:Z
             - ./mysql_logs/:/var/log/mysql/:Z
         environment:
