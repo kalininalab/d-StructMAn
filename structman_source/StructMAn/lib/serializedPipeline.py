@@ -229,6 +229,11 @@ def buildQueue(config,filename,chunksize):
             continue
         sp_id = words[0]#.replace("'","\\'")
 
+        if len(sp_id) < 2:
+            if config.verbosity >= 1:
+                print("Skipped input line:\n%s\nID too short.\n" % line)
+            continue
+
         tags = set()
 
         if len(words) > 2:
@@ -242,7 +247,7 @@ def buildQueue(config,filename,chunksize):
             else:
                 aachange = words[1].replace("\n","")
                 
-                if not sp_id.count(':') == 1: #this means sp_id is not a pdb-id
+                if (not sp_id.count(':') == 1) or sp_id[0:5] == 'HGNC:': #this means sp_id is not a pdb-id
                     if aachange.count('delins') == 1:
                         flanks,inserted_sequence = aachange.split('delins')
                         left_flank,right_flank = flanks.split('_')

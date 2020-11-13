@@ -495,67 +495,70 @@ if __name__ == "__main__":
     update_util = False
     update_pdb = False
     update_rindb = False
-    if argv[0] == 'update':
-        update_util = True
-        argv = argv[1:]
+    if len(argv) > 0:
+        if argv[0] == 'update':
+            update_util = True
+            argv = argv[1:]
 
-        if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
-            print(update_util_disclaimer)
-            sys.exit(1)
-        if 'pdb' in argv:
-            update_pdb = True
-        if 'rindb' in argv:
-            update_rindb = True
-        if not (update_pdb or update_rindb):
-            print(update_util_disclaimer)
-            sys.exit(1)
+            if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
+                print(update_util_disclaimer)
+                sys.exit(1)
+            if 'pdb' in argv:
+                update_pdb = True
+            if 'rindb' in argv:
+                update_rindb = True
+            if not (update_pdb or update_rindb):
+                print(update_util_disclaimer)
+                sys.exit(1)
 
     configure_mode = False
-    if argv[0] == 'config':
-        configure_mode = True
-        argv = argv[1:]
+    if len(argv) > 0:
+        if argv[0] == 'config':
+            configure_mode = True
+            argv = argv[1:]
 
-        if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
-            print(config_util_disclaimer)
-            sys.exit(1)
-
-        conf_update_pdb_path = None
-        conf_update_iupred_path = None
-
-        if argv[0] == 'set_local_pdb_path':
-            if len(argv) == 1:
+            if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
                 print(config_util_disclaimer)
                 sys.exit(1)
-            conf_update_pdb_path = argv[1]
-            if not os.path.exists(conf_update_pdb_path):
-                print('Did not found given path')
-                sys.exit(1)
 
-        elif argv[0] == 'set_local_iupred_path':
-            if len(argv) == 1:
+            conf_update_pdb_path = None
+            conf_update_iupred_path = None
+
+            if argv[0] == 'set_local_pdb_path':
+                if len(argv) == 1:
+                    print(config_util_disclaimer)
+                    sys.exit(1)
+                conf_update_pdb_path = argv[1]
+                if not os.path.exists(conf_update_pdb_path):
+                    print('Did not found given path')
+                    sys.exit(1)
+
+            elif argv[0] == 'set_local_iupred_path':
+                if len(argv) == 1:
+                    print(config_util_disclaimer)
+                    sys.exit(1)
+                conf_update_iupred_path = argv[1]
+                if not os.path.exists(conf_update_iupred_path):
+                    print('Did not found given path')
+                    sys.exit(1)
+
+            else:
                 print(config_util_disclaimer)
                 sys.exit(1)
-            conf_update_iupred_path = argv[1]
-            if not os.path.exists(conf_update_iupred_path):
-                print('Did not found given path')
-                sys.exit(1)
 
-        else:
-            print(config_util_disclaimer)
-            sys.exit(1)
-
-        argv = argv[2:]
+            argv = argv[2:]
 
     output_util = False
     ppi_output = False
-    if argv[0] == 'out':
-        output_util = True
-        if argv[1] == 'PPI':
-            ppi_output = True
-        else:
-            print(disclaimer)
-            sys.exit(1)
-        argv = argv[2:]
+    if len(argv) > 0:
+        if argv[0] == 'out':
+            output_util = True
+            if argv[1] == 'PPI':
+                ppi_output = True
+            else:
+                print(disclaimer)
+                sys.exit(1)
+            argv = argv[2:]
 
     util_mode = database_util or configure_mode or update_util
 
