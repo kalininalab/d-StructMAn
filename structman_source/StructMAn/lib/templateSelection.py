@@ -4,6 +4,7 @@ from operator import itemgetter
 import multiprocessing
 import sdsc
 
+#Called by what?
 def selectTemplates(structures,pdb_path):
     if len(structures) == 0:
         return {}
@@ -39,6 +40,7 @@ def paraGetInfo(lock,input_queue,out_queue,pdb_path):
         with lock:
             out_queue.put((pdb_id,resolution,homomer_dict))
 
+#called by serializedPipeline
 def filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,n_processes,proteins,manager,lock):
 
     input_queue = manager.Queue()

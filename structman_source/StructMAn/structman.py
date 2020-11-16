@@ -414,8 +414,8 @@ if __name__ == "__main__":
     import lite_pipeline
 
 
-    multiprocessing.freeze_support()
-    multiprocessing.set_start_method('forkserver')
+    #multiprocessing.freeze_support()
+    #multiprocessing.set_start_method('forkserver')
     #print(multiprocessing.get_start_method())
     disclaimer = ''.join([
                 'Usage: structman.py <-i input_file>\n',

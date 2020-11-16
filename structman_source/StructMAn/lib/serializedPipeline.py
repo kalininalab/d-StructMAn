@@ -4,7 +4,7 @@ import sys
 import errno
 import getopt
 import time
-import multiprocessing
+
 import subprocess
 import shutil
 import psutil
@@ -321,12 +321,7 @@ def buildQueue(config,filename,chunksize):
                     id_map[sp_id][0].append(position)
                 else:
                     id_map[sp_id][1].append(indel)
-            elif len(sp_id) == 6 and sp_id.count(':') == 1:
-                pdb_chain_tuple = '%s:%s' % (sp_id[:4].upper(),sp_id[-1]) #enforce uppercase pdb-id 
-                if not pdb_chain_tuple in pdb_map:
-                    pdb_map[pdb_chain_tuple] = [position]
-                else:
-                    pdb_map[pdb_chain_tuple].append(position)
+            
             elif sp_id[:5] == 'HGNC:':
                 if not sp_id in hgnc_map:
                     hgnc_map[sp_id] = [],[]
@@ -334,6 +329,14 @@ def buildQueue(config,filename,chunksize):
                     hgnc_map[sp_id][0].append(position)
                 else:
                     hgnc_map[sp_id][1].append(indel)
+
+            elif len(sp_id) == 6 and sp_id.count(':') == 1:
+                pdb_chain_tuple = '%s:%s' % (sp_id[:4].upper(),sp_id[-1]) #enforce uppercase pdb-id 
+                if not pdb_chain_tuple in pdb_map:
+                    pdb_map[pdb_chain_tuple] = [position]
+                else:
+                    pdb_map[pdb_chain_tuple].append(position)
+
             else:
                 u_acs.add(sp_id)
                 if not sp_id in ac_map:
@@ -477,7 +480,7 @@ def nToAA(seq):
     return aa_seq
 
 #@profile
-def getSequences(proteins,config,manager,lock,skip_db = False):
+def getSequences(proteins,config,skip_db = False):
 
     number_of_processes = config.proc_n
     pdb_path = config.pdb_path
@@ -514,8 +517,8 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
         t0 = time.time()
 
         if not mobi_lite:
-            in_queue = manager.Queue()
-            out_queue = manager.Queue()
+            iupred_results = []
+            iupred_dump = ray.put(config.iupred_path)
         else:
             mobi_list = []
 
@@ -528,7 +531,7 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
             disorder_scores = proteins.get_disorder_scores(u_ac)
             if disorder_scores == None:
                 if not mobi_lite:
-                    in_queue.put((u_ac,seq))
+                    iupred_results.append(para_iupred.remote(u_ac,seq,iupred_dump))
                     n_disorder += 1
                 else:
                     mobi_list.append('>%s\n%s\n' % (u_ac,seq))
@@ -536,30 +539,12 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
                 proteins.set_disorder_tool(u_ac,'MobiDB3.0')
 
         if not mobi_lite:
-            processes = {}
-            for i in range(1,min(blast_processes,n_disorder) + 1):
-                try:
-                    os.stat("%s/%d" %(cwd,i))
-                except:
-                    os.mkdir("%s/%d" %(cwd,i))
-                p = multiprocessing.Process(target=paraIupred, args=(config,in_queue,out_queue,lock))
-                processes[i] = p
-                p.start()
-            for i in processes:
-                processes[i].join()
+            iupred_out = ray.get(iupred_results)
 
-            out_queue.put(None)
-            while True:
-                out = out_queue.get()
-                if out == None:
-                    break
-                iupred_parts = out
+            for iupred_parts in iupred_out:
                 proteins.set_disorder_scores(iupred_parts[0],iupred_parts[2])
                 proteins.set_disorder_regions(iupred_parts[0],iupred_parts[1])
                 proteins.set_disorder_tool(iupred_parts[0],'IUpred')
-
-            del in_queue
-            del out_queue
 
         else:
             mobi_tmp_file = 'mobi_tmp_file.fasta'
@@ -612,44 +597,40 @@ def getSequences(proteins,config,manager,lock,skip_db = False):
 
     return background_iu_process
 
-#@profile
-def paraIupred(config,in_queue,out_queue,lock):
-    iupred_path = config.iupred_path
-    with lock:
-        in_queue.put(None)
-    while True:
-        inp = in_queue.get()
-        if inp == None:
-            return
+@ray.remote(num_cpus=1)
+def para_iupred(u_ac,seq,iupred_dump):
+    #hack proposed by the devs of ray to prevent too many processes being spawned
+    resources = ray.ray.get_resource_ids() 
+    cpus = [v[0] for v in resources['CPU']]
+    psutil.Process().cpu_affinity(cpus)
 
-        (u_ac,seq) = inp
+    iupred_path_path = iupred_dump
 
-        p = subprocess.Popen(['python3','%s/iupred2a.py' % iupred_path,seq,'glob'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-        out,err = p.communicate()
+    p = subprocess.Popen(['python3','%s/iupred2a.py' % iupred_path,seq,'glob'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
+    out,err = p.communicate()
 
-        after_glob = False
-        iupred_parts = [u_ac,[],{}]
-        for line in out.split('\n'):
-            if len(line) < 3:
+    after_glob = False
+    iupred_parts = [u_ac,[],{}]
+    for line in out.split('\n'):
+        if len(line) < 3:
+            continue
+        if line[0] == '#':
+            continue
+        if line[0] == '1':
+            after_glob = True
+        words = line.split()
+        if not after_glob:
+            if len(words) < 4:
                 continue
-            if line[0] == '#':
+            if words[0] == 'globular' and words[1] == 'domain':
+                lower_bound,upper_bound = words[3].split('-')
+                iupred_parts[1].append((int(lower_bound),int(upper_bound),'globular'))
+        if after_glob:
+            if len(words) < 3:
                 continue
-            if line[0] == '1':
-                after_glob = True
-            words = line.split()
-            if not after_glob:
-                if len(words) < 4:
-                    continue
-                if words[0] == 'globular' and words[1] == 'domain':
-                    lower_bound,upper_bound = words[3].split('-')
-                    iupred_parts[1].append((int(lower_bound),int(upper_bound),'globular'))
-            if after_glob:
-                if len(words) < 3:
-                    continue
-                iupred_parts[2][int(words[0])] = words[2]
+            iupred_parts[2][int(words[0])] = words[2]
 
-        with lock:
-            out_queue.put(iupred_parts)
+    return iupred_parts
 
 def paraBlast(config,process_queue_blast,out_queue,lock,i,err_queue):
     blast_path = config.blast_path
@@ -683,7 +664,7 @@ def paraBlast(config,process_queue_blast,out_queue,lock,i,err_queue):
                 err_queue.put((e,f,g,gene))
 
 #@profile
-def autoTemplateSelection(config,manager,lock,proteins):
+def autoTemplateSelection(config,proteins):
 
     blast_processes = config.blast_processes
     option_seq_thresh = config.option_seq_thresh
@@ -698,93 +679,52 @@ def autoTemplateSelection(config,manager,lock,proteins):
     if config.verbosity >= 1:
         print('Sequence search with: ',search_tool)
 
-    if search_tool == 'Blast': #Legacy
-
-        t0 = time.time()
-
-        process_list_db = set([])
-        process_queue_blast = manager.Queue()
-        blast_queues = [process_queue_blast]
-        n = 0
-        gene_error_map = {}
-
-        for gene in new_genes:
-            seq = gene_sequence_map[gene][0]
-            if seq == 0 or seq == 1:
-                gene_error_map[new_genes[gene]] = seq
-            elif seq == "":
-                gene_error_map[new_genes[gene]] = 2
-            else:
-                process_queue_blast.put((gene,seq))
-                n += 1
-                if n == 1000:
-                    process_queue_blast = manager.Queue()
-                    blast_queues.append(process_queue_blast)
-                    n = 0
-                #seq_map[gene] = seq
-     
-        t1 = time.time()
-
-        #"""paralized blasting of single sequences  
-        t12 = 0.0
-        t3 = 0.0
-        t2 = 0.0
-        t4 = 0.0
-        structure_map = {}
-        for process_queue_blast in blast_queues:
-            t12 += time.time()
-            out_queue = manager.Queue()
-            err_queue = manager.Queue()
-            processes = {}
-            for i in range(1,blast_processes + 1):
-                try:
-                    os.stat("%s/%d" %(cwd,i))
-                except:
-                    os.mkdir("%s/%d" %(cwd,i))
-                p = multiprocessing.Process(target=paraBlast, args=(config,process_queue_blast,out_queue,lock,i,err_queue))
-                processes[i] = p
-                p.start()
-            for i in processes:
-                processes[i].join()
-
-            err_queue.put(None)
-            while True:
-                err = err_queue.get()
-                if err == None:
-                    break
-                (e,f,g,gene) = err
-                errortext = "BLAST Error: %s\n%s\n\n" % (gene,'\n'.join([str(e),str(f),str(g)]))
-                errorlog.add_error(error_text)
-
-            t2 += time.time()
-
-            template_map = {}
-            out_queue.put(None)
-            while True:
-                out = out_queue.get()
-                if out == None:
-                    break
-                (gene,structures) = out
-                structure_map[gene] = structures
-            #"""
-            del out_queue
-            del process_queue_blast
-
-            t3 += time.time()
-
-        if config.verbosity >= 2:
-            print("Template Selection Part 1: %s" % (str(t1-t0)))
-            print("Template Selection Part 2: %s" % (str(t2-t12)))
-            print("Template Selection Part 3: %s" % (str(t3-t2)))
-
-    elif search_tool == 'MMseqs2':
+    if search_tool == 'MMseqs2':
         t0 = time.time()
 
         raw_structure_map,pdb_ids = MMseqs2.search(proteins,config)
 
         t1 = time.time()
 
-        templateSelection.filterRawStructureMap(raw_structure_map,pdb_ids,pdb_path,option_res_thresh,blast_processes,proteins,manager,lock)
+        info_map = {}
+        filtering_results = []
+        filtering_dump = ray.put(config.pdb_path)
+
+        for pdb_id in pdb_ids:
+            filtering_results.append(filter_structures.remote(pdb_id,filtering_dump))
+
+        filtering_out = ray.get(filtering_results)
+
+        for (pdb_id,resolution,homomer_dict) in filtering_out:
+            info_map[pdb_id] = (resolution,homomer_dict)
+
+        u_acs = proteins.get_protein_u_acs()
+        structure_list = proteins.get_structure_list()
+        complex_list = proteins.get_complex_list()
+
+        for u_ac in raw_structure_map:
+            for pdb_id,chain in raw_structure_map[u_ac]:
+                if not pdb_id in info_map:
+                    continue
+                resolution,homomer_dict = info_map[pdb_id]
+                if resolution == None:
+                    continue
+                if resolution > option_res_thresh:
+                    continue
+                oligo = raw_structure_map[u_ac][(pdb_id,chain)]['Oligo']
+                struct_anno = sdsc.Structure_annotation(u_ac,pdb_id,chain)
+                proteins.add_annotation(u_ac,pdb_id,chain,struct_anno)
+
+                if not (pdb_id,chain) in structure_list:
+                    struct = sdsc.Structure(pdb_id,chain, oligo = oligo,mapped_proteins = [u_ac])
+                    proteins.add_structure(pdb_id,chain,struct)
+                else:
+                    proteins.add_mapping_to_structure(pdb_id,chain,u_ac)
+
+                if not pdb_id in complex_list:
+                    compl = sdsc.Complex(pdb_id,resolution,homomers = homomer_dict)
+                    proteins.add_complex(pdb_id,compl)
+
 
         t2 = time.time()
         if config.verbosity >= 2:
@@ -793,8 +733,21 @@ def autoTemplateSelection(config,manager,lock,proteins):
 
     return
 
+@ray.remote(num_cpus=1)
+def filter_structures(pdb_id,filtering_dump):
+    #hack proposed by the devs of ray to prevent too many processes being spawned
+    resources = ray.ray.get_resource_ids() 
+    cpus = [v[0] for v in resources['CPU']]
+    psutil.Process().cpu_affinity(cpus)
+
+    pdb_path = filtering_dump
+
+    resolution,homomer_dict = pdbParser.getInfo(pdb_id,pdb_path)
+
+    return (pdb_id,resolution,homomer_dict)
+
 #@profile
-def paraAlignment(config,manager,lock,proteins,skip_db = False):
+def paraAlignment(config,proteins,skip_db = False):
 
     alignment_processes = config.alignment_processes
     errorlog = config.errorlog
@@ -1261,7 +1214,7 @@ def classification(proteins,config):
     return
 
 #@profile
-def paraAnnotate(config,manager,lock,proteins, lite = False):
+def paraAnnotate(config,proteins, lite = False):
 
     annotation_processes = config.annotation_processes
 
@@ -1485,7 +1438,7 @@ def annotate(config,pdb_id,target_dict):
     return (pdb_id,structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,t1-t0)
 
 
-def core(protein_list,indels,config,session,manager,lock,outfolder,session_name,out_objects):
+def core(protein_list,indels,config,session,outfolder,session_name,out_objects):
     if len(protein_list) == 0:
         return
 
@@ -1535,7 +1488,7 @@ def core(protein_list,indels,config,session,manager,lock,outfolder,session_name,
         if config.verbosity >= 1:
             print("Before getSequences")
 
-        background_iu_process = getSequences(proteins,config,manager,lock,skip_db = config.lite)
+        background_iu_process = getSequences(proteins,config,skip_db = config.lite)
 
         t4 = time.time()
         if config.verbosity >= 2:
@@ -1543,7 +1496,7 @@ def core(protein_list,indels,config,session,manager,lock,outfolder,session_name,
 
         if config.verbosity >= 1:
             print("Before autoTemplateSelection")
-        autoTemplateSelection(config,manager,lock,proteins)
+        autoTemplateSelection(config,proteins)
 
         t5 = time.time()
         if config.verbosity >= 2:
@@ -1551,7 +1504,7 @@ def core(protein_list,indels,config,session,manager,lock,outfolder,session_name,
 
         if config.verbosity >= 1:
             print("Before paraAlignment")
-        paraAlignment(config,manager,lock,proteins,skip_db = config.lite)
+        paraAlignment(config,proteins,skip_db = config.lite)
 
         t6 = time.time()
         if config.verbosity >= 2:
@@ -1563,14 +1516,16 @@ def core(protein_list,indels,config,session,manager,lock,outfolder,session_name,
         if config.verbosity >= 1:
             print("Before paraAnnotate")
 
-        background_insert_residues_process = paraAnnotate(config,manager,lock,proteins, lite = config.lite)
+        background_insert_residues_process = paraAnnotate(config,proteins, lite = config.lite)
 
         t7 = time.time()
         if config.verbosity >= 2:
             print("Time for Annotation: %s" % (str(t7-t6)))
 
         if not config.lite:
-            indel_analysis.para_indel_analysis(proteins,config,manager,lock)
+            #Will be replaced with a version using ray
+            #indel_analysis.para_indel_analysis(proteins,config)
+            pass
         else:
             out_objects = output.appendOutput(proteins,outfolder,session_name,out_objects = out_objects)
 
@@ -1694,9 +1649,6 @@ def main(filename,config,output_path,main_file_path):
 
     config.temp_folder = cwd
 
-    manager = multiprocessing.Manager()
-    lock = manager.Lock()
-
     out_objects = None
 
     chunk_nr = 1 
@@ -1705,7 +1657,7 @@ def main(filename,config,output_path,main_file_path):
             print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
         chunk_nr+=1
 
-        out_objects = core(protein_list,indels,config,session,manager,lock,output_path,session_name,out_objects)
+        out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
 
     os.chdir(output_path)
 

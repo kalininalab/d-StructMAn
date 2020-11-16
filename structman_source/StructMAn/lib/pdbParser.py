@@ -1351,17 +1351,17 @@ def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
     path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
     if not os.path.isfile(path):
         url = 'https://files.rcsb.org/header/%s.pdb' % pdb_id
-        if pdb_path != '':
-            print("Did not find asymetric unit entry in local pdb, searching online: ",url)
+        #if pdb_path != '':
+        #    print("Did not find asymetric unit entry in local pdb, searching online: ",url)
         try:
             request = urllib.request.Request(url)
             return urllib.request.urlopen(request)
         except:
             if tries < 2:
-                print("Unable to connect to PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
+                #print("Unable to connect to PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
                 return getPDBHeaderBuffer(pdb_id,pdb_path,tries = tries+1)
             else:
-                print("Unable to connect to PDB for the Header: %s\n%s'" % (pdb_id,url))
+                #print("Unable to connect to PDB for the Header: %s\n%s'" % (pdb_id,url))
                 return None
     else:
         return gzip.open(path, 'rb')
@@ -1400,15 +1400,15 @@ def boring(abr):
     return False
 
 #called by templateSelection
-#called by templateFiltering
 def getInfo(pdb_id,pdb_path):
     buf = getPDBHeaderBuffer(pdb_id,pdb_path)
     
     #Added automatization here
     if buf == None:
-        buf = getMMCIFHeaderBuffer(pdb_id,pdb_path)
-        if buf == None:
-            return None,{}
+        #buf = getMMCIFHeaderBuffer(pdb_id,pdb_path)
+        #if buf == None:
+        #    return None,{}
+        return None,{}
     #print(pdb_id)
     abort = False
     resolution = None
