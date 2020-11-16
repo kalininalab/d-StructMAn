@@ -201,18 +201,8 @@ $ podman pull "docker.io/sanjaysrikakulam/structman:latest"
 
 ## To use/run this image
 
-Like in the docker version we need same directory setup, so execute the following in your current working directory to create the setup
+Like in the docker version we provide a setup script that creates the required directory structure and sets up the container with the right bind mounts. Download [setup_structman_podman_container.sh](https://github.com/sanjaysrikakulam/structman/blob/master/utility_scripts/setup_structman_podman_container.sh) instead of `setup_structman_docker_container.sh` and follow the [instruction given for the Docker version of the script](#to-use-this-image).
 
-```bash
-$ path="$(pwd)"             # change this path to anywhere you like
-$ container_name="structman"
-$ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results,resources}}
-```
-**To use this image**
-
-```bash
-$ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -v "$path/structman/resources/:/structman/resources/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
-```
 
 Now Wait for a while before you start running the commands. To check if the container has properly started or not, check the logs
 
