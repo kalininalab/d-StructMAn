@@ -215,7 +215,7 @@ $ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/
 ```
 **That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
 
-**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/libpod/blob/master/commands.md)**
+**Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/podman/blob/master/commands-demo.md)**
 
 ## How to access the StructMAn tool running in the container
 * To list the running podman containers
