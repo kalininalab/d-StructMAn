@@ -213,6 +213,15 @@ $ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results,resources
 ```bash
 $ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -v "$path/structman/resources/:/structman/resources/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
 ```
+
+Now Wait for a while before you start running the commands. To check if the container has properly started or not, check the logs
+
+```bash
+# podman logs <container_name>
+```
+
+- If you see the line ''***** Container setup and configuration is done, starting < mysqld > on the container <structman> '' at the end of the output from the above command, then it means the container has started successfully and that it is fully functional now.
+
 **That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
 
 **Almost all docker commands work for podman, just replace docker with podman and if you are not sure use this [commands manual](https://github.com/containers/podman/blob/master/commands-demo.md)**
