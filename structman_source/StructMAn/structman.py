@@ -26,7 +26,7 @@ import repairDB
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '',
                     util_mode = False, output_util = False,external_call = True,profiling = False, verbosity = None,
-                    print_all_errors = False,chunksize = 500):
+                    print_all_errors = False):
         self.prog_start_time = time.time()
         # read config file, auto add section header so old config files work
         self.config_parser_obj = configparser.ConfigParser()
@@ -253,12 +253,10 @@ class Config:
             self.number_of_processes = self.proc_n
 
         mem = virtual_memory()
-        self.low_mem_system = mem.total/1024/1024/1024 < 8 #Less than 8Gb is a low memory system
+        gigs_of_ram = mem.total/1024/1024/1024
+        self.low_mem_system = gigs_of_ram < 16 #Less than 16Gb is a low memory system
 
-        self.chunksize = chunksize
-        if self.low_mem_system and self.chunksize > 100:
-            self.chunksize = 100
-        
+        self.chunksize = int(gigs_of_ram*10)
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
@@ -623,7 +621,7 @@ if __name__ == "__main__":
     profiling = False
     skipref = False
     print_all_errors = False
-    chunksize = 500
+    chunksize = None
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -737,7 +735,10 @@ if __name__ == "__main__":
     config = Config(config_path,num_of_cores = num_of_cores,
                     output_path = outfolder,
                     util_mode = util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
-                    print_all_errors = print_all_errors,chunksize = chunksize)
+                    print_all_errors = print_all_errors)
+
+    if chunksize != None:
+        config.chunksize = chunksize
 
     if verbose_flag:
         config.verbose = True

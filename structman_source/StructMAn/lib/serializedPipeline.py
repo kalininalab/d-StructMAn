@@ -1659,7 +1659,7 @@ def main(filename,config,output_path,main_file_path):
                 print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
         chunk_nr+=1
 
-        if not config.low_mem_system:
+        if config.low_mem_system:
             proteins,indels = sequenceScan(config,proteins,indels)
 
         out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
