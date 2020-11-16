@@ -357,7 +357,8 @@ def buildQueue(config,filename,chunksize):
     if config.verbosity >= 2:
         print("buildQueue Part 2: ",str(t2-t1))
 
-    proteins,indels = sequenceScan(config,proteins,indels)
+    if not config.low_mem_system:
+        proteins,indels = sequenceScan(config,proteins,indels)
 
     t3 = time.time()
     if config.verbosity >= 2:
@@ -1653,9 +1654,13 @@ def main(filename,config,output_path,main_file_path):
 
     chunk_nr = 1 
     for protein_list,indels in proteins_chunks:
+
         if config.verbosity >= 1:
-            print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
+                print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
         chunk_nr+=1
+
+        if not config.low_mem_system:
+            proteins,indels = sequenceScan(config,proteins,indels)
 
         out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
 

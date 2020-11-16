@@ -9,6 +9,7 @@ import pymysql as MySQLdb
 import multiprocessing
 import subprocess
 import traceback
+from psutil import virtual_memory
 
 main_file_path = os.path.abspath(sys.argv[0])
 
@@ -146,7 +147,6 @@ class Config:
         if verbosity != None:
             self.verbosity = verbosity
 
-        self.chunksize = chunksize
         # Checking whether the given paths in config exist or not if it is given and not exist, system gives error message and exits
 
         if self.search_tool=='MMseqs2':
@@ -251,6 +251,14 @@ class Config:
             self.alignment_processes = self.proc_n
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
+
+        mem = virtual_memory()
+        self.low_mem_system = mem.total/1024/1024/1024 < 8 #Less than 8Gb is a low memory system
+
+        self.chunksize = chunksize
+        if self.low_mem_system and self.chunksize > 100:
+            self.chunksize = 100
+        
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
