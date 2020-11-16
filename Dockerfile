@@ -50,7 +50,7 @@ python3 get-pip.py --force-reinstall && \
 rm get-pip.py
 
 # Install StructMAn Python dependencies
-RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph pickle5>=0.0.10
+RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph pickle5>=0.0.10 psutil
 RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp37-cp37m-manylinux1_x86_64.whl
 
 # Install and setup MMseqs2
