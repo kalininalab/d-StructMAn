@@ -243,6 +243,14 @@ class Config:
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
 
+        mem = virtual_memory()
+        gigs_of_ram = mem.total/1024/1024/1024
+        self.low_mem_system = gigs_of_ram < 16 #Less than 16Gb is a low memory system
+        if self.low_mem_system:
+            self.proc_n = min([self.proc_n,4])
+
+        self.chunksize = int(gigs_of_ram*10)
+
         if self.proc_n > multiprocessing.cpu_count():
             if self.verbosity >= 1:
                 print('More processes annotated (',self.proc_n,') than cores registered in system (',multiprocessing.cpu_count(),').')
@@ -251,12 +259,6 @@ class Config:
             self.alignment_processes = self.proc_n
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
-
-        mem = virtual_memory()
-        gigs_of_ram = mem.total/1024/1024/1024
-        self.low_mem_system = gigs_of_ram < 16 #Less than 16Gb is a low memory system
-
-        self.chunksize = int(gigs_of_ram*10)
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):

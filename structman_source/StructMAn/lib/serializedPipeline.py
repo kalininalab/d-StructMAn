@@ -1660,7 +1660,7 @@ def main(filename,config,output_path,main_file_path):
         chunk_nr+=1
 
         if config.low_mem_system:
-            proteins,indels = sequenceScan(config,proteins,indels)
+            protein_list,indels = sequenceScan(config,protein_list,indels)
 
         out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
 
