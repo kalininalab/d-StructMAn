@@ -206,12 +206,12 @@ Like in the docker version we need same directory setup, so execute the followin
 ```bash
 $ path="$(pwd)"             # change this path to anywhere you like
 $ container_name="structman"
-$ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results}}
+$ mkdir -p "$path"/{mysql_lib,mysql_logs,structman/{input_data,results,resources}}
 ```
 **To use this image**
 
 ```bash
-$ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
+$ podman run -d --shm-size 8g -v "$path/mysql_lib/:/var/lib/mysql/:Z" -v "$path/mysql_logs/:/var/log/mysql/:Z" -v "$path/structman/input_data/:/structman/input_data/:Z" -v "$path/structman/results/:/structman/results/:Z" -v "$path/structman/resources/:/structman/resources/:Z" -e "MYSQL_STRUCTMAN_USER_NAME=structman" -e "MYSQL_STRUCTMAN_USER_PASSWORD=structman_rocks" --hostname "structman" --name "$container_name" structman
 ```
 **That's it, now you can enjoy structman even without bothering your Admin** (*Remember with great power comes great responsibility, so!!!*)
 
