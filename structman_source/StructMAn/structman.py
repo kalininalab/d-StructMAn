@@ -244,12 +244,12 @@ class Config:
             self.number_of_processes = self.proc_n
 
         mem = virtual_memory()
-        gigs_of_ram = mem.total/1024/1024/1024
-        self.low_mem_system = gigs_of_ram < 16 #Less than 16Gb is a low memory system
+        self.gigs_of_ram = mem.total/1024/1024/1024
+        self.low_mem_system = self.gigs_of_ram < 16 #Less than 16Gb is a low memory system
         if self.low_mem_system:
             self.proc_n = min([self.proc_n,4])
 
-        self.chunksize = int(gigs_of_ram*10)
+        self.chunksize = int(self.gigs_of_ram*10)
 
         if self.proc_n > multiprocessing.cpu_count():
             if self.verbosity >= 1:

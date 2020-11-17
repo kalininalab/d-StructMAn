@@ -221,16 +221,24 @@ def search(proteins,config):
 
     if config.verbosity >= 3:
         if len(small_proteins) == 0:
-            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','--min-aln-len','50','-s','7.5'])
+            cmds = [mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,
+                    '--max-seqs','999999','--min-aln-len','50','-s','7.5','--split-memory-limit','%1.0fG' % (0.5*config.gigs_of_ram)]
+            p = subprocess.Popen(cmds)
         else:
-            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','-s','7.5'])
+            cmds = [mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,
+                    '--max-seqs','999999','-s','7.5','--split-memory-limit','%1.0fG' % (0.5*config.gigs_of_ram)]
+            p = subprocess.Popen(cmds)
         p.wait()
     else:
         FNULL = open(os.devnull, 'w')
         if len(small_proteins) == 0:
-            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','--min-aln-len','50','-s','7.5'],stdout=FNULL)
+            cmds = [mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,
+                    '--max-seqs','999999','--min-aln-len','50','-s','7.5','--split-memory-limit','%1.0fG' % (0.5*config.gigs_of_ram)]
+            p = subprocess.Popen(cmds,stdout=FNULL)
         else:
-            p = subprocess.Popen([mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,'--max-seqs','999999','-s','7.5'],stdout=FNULL)
+            cmds = [mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder,
+                    '--max-seqs','999999','-s','7.5','--split-memory-limit','%1.0fG' % (0.5*config.gigs_of_ram)]
+            p = subprocess.Popen(cmds,stdout=FNULL)
         p.wait()
 
     os.remove(temp_fasta)
