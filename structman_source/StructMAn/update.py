@@ -21,8 +21,8 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
     rinerator_base_path = config.rinerator_base_path
     rin_db_path = config.rin_db_path
 
-    search_db_base_path = config.blast_db_path
     mmseqs2_db_path = config.mmseqs2_db_path
+    search_db_base_path = mmseqs2_db_path.rsplit('/',1)[0]
     mmseqs2_tmp = config.mmseqs_tmp_folder
     recently_modified_structures = set()
     if not skipStructureDBs:

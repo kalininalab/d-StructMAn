@@ -24,7 +24,7 @@ import repairDB
 
 
 class Config:
-    def __init__(self,config_path ,num_of_cores = 1,output_path = '',
+    def __init__(self,config_path ,num_of_cores = 1,output_path = '', basic_util_mode = False,
                     util_mode = False, output_util = False,external_call = True,profiling = False, verbosity = None,
                     print_all_errors = False):
         self.prog_start_time = time.time()
@@ -215,7 +215,7 @@ class Config:
                 print('Need writing rights in the MMSEQS temp folder, please check the path')
                 sys.exit()
 
-        if self.base_path != None and not util_mode:
+        if self.base_path != None and not basic_util_mode:
             if self.verbosity >= 1:
                 print('Using structman_data from :',self.base_path)
             self.blast_db_path = '%s/base/blast_db/pdbba' % self.base_path
@@ -246,8 +246,8 @@ class Config:
         mem = virtual_memory()
         self.gigs_of_ram = mem.total/1024/1024/1024
         self.low_mem_system = self.gigs_of_ram < 16 #Less than 16Gb is a low memory system
-        if self.low_mem_system:
-            self.proc_n = min([self.proc_n,4])
+        #if self.low_mem_system:
+        #    self.proc_n = min([self.proc_n,self.gigs_of_ram//2])
 
         self.chunksize = int(self.gigs_of_ram*10)
 
@@ -568,6 +568,7 @@ if __name__ == "__main__":
                 sys.exit(1)
             argv = argv[2:]
 
+    basic_util_mode = database_util or configure_mode
     util_mode = database_util or configure_mode or update_util
 
     #Custom single line input preparsing
@@ -735,8 +736,8 @@ if __name__ == "__main__":
     config_path = os.path.abspath(config_path)
 
     config = Config(config_path,num_of_cores = num_of_cores,
-                    output_path = outfolder,
-                    util_mode = util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
+                    output_path = outfolder, util_mode = util_mode,
+                    basic_util_mode = basic_util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
                     print_all_errors = print_all_errors)
 
     if chunksize != None:

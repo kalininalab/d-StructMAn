@@ -630,7 +630,7 @@ class Protein:
     __slots__ = ['u_ac','u_id','ref_ids','other_ids','pdb_id','positions','res_id_map','sequence','stored','completely_stored',
                     'go_terms','pathways','disorder_regions','disorder_tool','database_id','structure_annotations']
 
-    def __init__(self,u_ac = None,u_id = None,ref_ids = set([]),pdb_id = None,positions = {},database_id = None, other_ids = []):
+    def __init__(self,errorlog,u_ac = None,u_id = None,ref_ids = set([]),pdb_id = None,positions = {},database_id = None, other_ids = []):
         self.u_ac = u_ac # UNIPROT accession number
         self.u_id = u_id # UNIPROT ID
         self.ref_ids = ref_ids.copy() #RefSeq IDs
@@ -650,9 +650,12 @@ class Protein:
         self.structure_annotations = {}
 
         if pdb_id == None:
-            self.add_positions(positions)
+            warns = self.add_positions(positions)
         else:
-            self.add_residues(positions)
+            warns = self.add_residues(positions)
+        if warns != None:
+            for warn in warns:
+                errorlog.add_warning(warn)
         self.other_ids = {}
         for id_id,other_id in other_ids:
             self.other_ids[id_id] = other_id
@@ -672,6 +675,7 @@ class Protein:
             return self.pdb_id
 
     def add_positions(self,positions):
+       warns = []
        for position in positions:
             warn = False
             if not position.pos in self.positions:
@@ -679,9 +683,14 @@ class Protein:
             else:
                 warn = self.positions[position.pos].fuse(position)
                 if warn:
-                    print('Warning happened in fuse',self.u_ac,self.pdb_id)
+                    warns.append('Warning happened in add_positions fuse: %s %s' % (self.u_ac,self.pdb_id))
+       if len(warns) == 0:
+           return None
+       else:
+           return warns
 
     def add_residues(self,positions):
+        warns = []
         for position in positions:
             warn = False
             if not position.pdb_res_nr in self.res_id_map:
@@ -689,7 +698,11 @@ class Protein:
             else:
                 warn = self.res_id_map[position.pdb_res_nr].fuse(position)
                 if warn:
-                    print('Warning happened in fuse',self.u_ac,self.pdb_id)
+                    warns.append('Warning happened in add_residues fuse: %s %s' % (self.u_ac,self.pdb_id))
+        if len(warns) == 0:
+            return None
+        else:
+            return warns
 
     def popNone(self):
         if self.pdb_id == None:

@@ -131,7 +131,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                     if indel_protein_name == None:
                         config.errorlog.add_error('All indel protein names are reserved, duplicate indels in input?')
                         break
-            indel_mut_protein = sdsc.Protein(u_ac = indel_protein_name)
+            indel_mut_protein = sdsc.Protein(config.errorlog,u_ac = indel_protein_name)
             proteins[indel_protein_name] = indel_mut_protein
             indel.set_proteins(ac,indel_protein_name)
             indel_map.append(indel)
@@ -150,7 +150,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
         positions = ac_map[ac][0]
         indels = ac_map[ac][1]
 
-        protein = sdsc.Protein(u_ac=ac,positions = positions)
+        protein = sdsc.Protein(config.errorlog,u_ac=ac,positions = positions)
         proteins[ac] = protein
         indel_insert(indels,ac)
 
@@ -170,7 +170,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 u_id = row[1]
                 stored_ids.add(u_id)
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
+                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                     proteins[u_ac] = protein
                 else:
                     proteins[u_ac].u_id = u_id
@@ -189,7 +189,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 for u_id in id_ac_map:
                     u_ac = id_ac_map[u_id]
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
+                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                         proteins[u_ac] = protein
 
                     else:
@@ -206,7 +206,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
+                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
                     proteins[u_ac] = protein
                 else:
                     proteins[u_ac].u_id = u_id
@@ -229,7 +229,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 if not ref in ref_u_ac_map:
                     ref_u_ac_map[ref] = u_ac
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
+                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
                     else:
                         proteins[u_ac].add_ref_id(ref)
@@ -240,7 +240,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                     if ref_u_ac_map[ref].count('-') == 0 and u_ac.count('-') > 0:
                         ref_u_ac_map[ref] = u_ac
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
+                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
                     else:
                         proteins[u_ac].add_ref_id(ref)
@@ -254,7 +254,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                         ref_u_ac_map[ref] = u_ac
                         del proteins[old_ac]
                         if not u_ac in proteins:
-                            protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
+                            protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                             proteins[u_ac] = protein
                         else:
                             proteins[u_ac].add_ref_id(ref)
@@ -271,7 +271,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
                     if not u_ac in proteins:
-                        protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
+                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                         proteins[u_ac] = protein
                     else:
                         proteins[u_ac].add_ref_id(ref)
@@ -286,7 +286,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
                 if not u_ac in proteins:
-                    protein = sdsc.Protein(u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
+                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
                     proteins[u_ac] = protein
                 else:
                     proteins[u_ac].add_ref_id(ref)
@@ -298,7 +298,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
         for hgnc in hgnc_ac_map:
             u_ac = hgnc_ac_map[hgnc]
             if not u_ac in proteins:
-                protein = sdsc.Protein(u_ac=u_ac,positions = hgnc_map[hgnc][0], other_ids = [('HGNC_ID',hgnc)])
+                protein = sdsc.Protein(config.errorlog,u_ac=u_ac,positions = hgnc_map[hgnc][0], other_ids = [('HGNC_ID',hgnc)])
                 proteins[u_ac] = protein
             else:
                 proteins[u_ac].add_other_ids('HGNC_ID',hgnc)
@@ -405,7 +405,7 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
             proteins[u_ac].add_ref_id(ref)
 
     for pdb_tuple in pdb_map:
-        protein = sdsc.Protein(pdb_id=pdb_tuple,positions = pdb_map[pdb_tuple])
+        protein = sdsc.Protein(config.errorlog,pdb_id=pdb_tuple,positions = pdb_map[pdb_tuple])
         proteins[pdb_tuple] = protein
 
     if db != None:
@@ -679,7 +679,7 @@ def getSequences(proteins,config):
     return
 
 def getSequence(uniprot_ac,config,tries=0,return_id=False):
-    if config.verbosity >= 2:
+    if config.verbosity >= 3:
         print('uniprot.getSequence for ',uniprot_ac)
 
     if sdsc.is_mutant_ac(uniprot_ac):

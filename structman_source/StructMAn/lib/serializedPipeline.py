@@ -178,7 +178,7 @@ def parseFasta(config,nfname):
     proteins = {}
     for prot_id in seq_map:
         positions = set()
-        protein = sdsc.Protein(u_ac=prot_id,positions = positions)
+        protein = sdsc.Protein(config.errorlog,u_ac=prot_id,positions = positions)
         seq = seq_map[prot_id]
         protein.sequence = seq
         for (pos,aa) in enumerate(seq):
@@ -191,7 +191,7 @@ def parseFasta(config,nfname):
     return [(proteins,[])]
 
 #@profile
-def buildQueue(config,filename,chunksize):
+def buildQueue(config,filename):
     t0 =time.time()
 
     proteins = {}
@@ -346,6 +346,24 @@ def buildQueue(config,filename,chunksize):
                 else:
                     ac_map[sp_id][1].append(indel)
 
+    if config.low_mem_system:
+        total_num_of_raw_ids = len(ac_map) + len(id_map) + len(np_map) + len(pdb_map) + len(hgnc_map)
+        if total_num_of_raw_ids > 10*config.chunksize:
+            temp_infiles = []
+            num_of_infiles = total_num_of_raw_ids//10*config.chunksize
+            if total_num_of_raw_ids%10*config.chunksize != 0:
+                num_of_infiles += 1
+            num_of_lines_per_file = len(lines)//num_of_infiles
+            if len(lines)%num_of_infiles != 0:
+                num_of_lines_per_file += 1
+            for i in range(num_of_infiles):
+                temp_file_lines = lines[num_of_lines_per_file*i:num_of_lines_per_file*(i+1)]
+                temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder)
+                f = open(temp_file_path,'w')
+                f.write('\n'.join(temp_file_lines))
+                f.close()
+                temp_infiles.append(temp_file_path)
+            return [],temp_infiles
 
     t1 = time.time()
     if config.verbosity >= 2:
@@ -377,13 +395,13 @@ def buildQueue(config,filename,chunksize):
 
     amount_of_indel_proteins = 2*len(indels)
 
-    if s > chunksize:
+    if s > config.chunksize:
 
-        n_of_indel_batches = amount_of_indel_proteins//chunksize
-        if amount_of_indel_proteins%chunksize != 0:
+        n_of_indel_batches = amount_of_indel_proteins//config.chunksize
+        if amount_of_indel_proteins%config.chunksize != 0:
             n_of_indel_batches += 1
 
-        n_of_batches = s//chunksize
+        n_of_batches = s//config.chunksize
         batchsize = s//n_of_batches
         if n_of_indel_batches > 0:
             indel_rest = s%n_of_indel_batches
@@ -411,7 +429,7 @@ def buildQueue(config,filename,chunksize):
         mix_map = len(new_map) > 0
 
         n_of_batches = n_of_batches - len(outlist)
-        if s%chunksize != 0:
+        if s%config.chunksize != 0:
             n_of_batches += 1
         rest = s%n_of_batches
 
@@ -446,7 +464,7 @@ def buildQueue(config,filename,chunksize):
     if config.verbosity >= 2:
         print("buildQueue Part 5: ",str(t5-t4))
 
-    return outlist
+    return outlist,[None]
 
 def nToAA(seq):
     table={ 
@@ -1614,6 +1632,15 @@ def main(filename,config,output_path,main_file_path):
     if config.verbosity >= 2:
         print("Time for preparation before buildQueue: %s" % (str(t01-t0)))
 
+    try:
+        os.stat("%s/tmp_structman_pipeline" %(output_path))
+    except:
+        os.mkdir("%s/tmp_structman_pipeline" %(output_path))  
+    os.chdir("%s/tmp_structman_pipeline" %(output_path))
+    cwd = "%s/tmp_structman_pipeline" %(output_path)
+
+    config.temp_folder = cwd
+
     chunksize = config.chunksize
 
     if config.verbosity >= 1:
@@ -1622,10 +1649,11 @@ def main(filename,config,output_path,main_file_path):
     if nfname != 'Single line input':
         if config.fasta_input:
             proteins_chunks = parseFasta(config,nfname)
+            temp_infiles = [None]
         else:
-            proteins_chunks = buildQueue(config,nfname,chunksize)
+            proteins_chunks,temp_infiles = buildQueue(config,nfname)
     else:
-        proteins_chunks = buildQueue(config,single_line_inputs,chunksize)
+        proteins_chunks,temp_infiles = buildQueue(config,single_line_inputs)
         nfname = '/%s.' % (' '.join(single_line_inputs))
 
     t02 = time.time()
@@ -1641,28 +1669,26 @@ def main(filename,config,output_path,main_file_path):
         newsession = True
     session_name = (nfname.rsplit("/",1)[1]).rsplit(".",1)[0]
 
-    try:
-        os.stat("%s/tmp_structman_pipeline" %(output_path))
-    except:
-        os.mkdir("%s/tmp_structman_pipeline" %(output_path))  
-    os.chdir("%s/tmp_structman_pipeline" %(output_path))
-    cwd = "%s/tmp_structman_pipeline" %(output_path)
-
-    config.temp_folder = cwd
-
     out_objects = None
 
-    chunk_nr = 1 
-    for protein_list,indels in proteins_chunks:
+    for nr_temp_file,temp_infile in enumerate(temp_infiles):
+        if temp_infile != None:
+            proteins_chunks,nothing = buildQueue(config,temp_infile)
+            if config.verbosity >= 1:
+                print('Infile splitting due to low memory system, processing infile split nr.:',nr_temp_file)
+            os.remove(temp_infile)
 
-        if config.verbosity >= 1:
+        chunk_nr = 1 
+        for protein_list,indels in proteins_chunks:
+
+            if config.verbosity >= 1:
                 print("Chunk %s/%s" % (str(chunk_nr),str(len(proteins_chunks))))
-        chunk_nr+=1
+            chunk_nr+=1
 
-        if config.low_mem_system:
-            protein_list,indels = sequenceScan(config,protein_list,indels)
+            if config.low_mem_system:
+                protein_list,indels = sequenceScan(config,protein_list,indels)
 
-        out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
+            out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
 
     os.chdir(output_path)
 
