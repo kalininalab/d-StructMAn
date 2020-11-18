@@ -358,7 +358,7 @@ def buildQueue(config,filename):
                 num_of_lines_per_file += 1
             for i in range(num_of_infiles):
                 temp_file_lines = lines[num_of_lines_per_file*i:num_of_lines_per_file*(i+1)]
-                temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder)
+                temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
                 f = open(temp_file_path,'w')
                 f.write('\n'.join(temp_file_lines))
                 f.close()
