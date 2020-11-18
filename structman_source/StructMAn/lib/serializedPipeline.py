@@ -212,6 +212,42 @@ def buildQueue(config,filename):
         #In case of single line input
         lines = ['\t'.join(filename)]
 
+    if config.low_mem_system:
+        gids = set()
+        for line in lines:
+            if line == '':
+                continue
+            if len(line) < 3:
+                if config.verbosity >= 1:
+                    print("Skipped input line:\n%s\nToo short.\n" % line)
+                continue
+            line = line.replace(' ','\t')
+            words = line.split("\t")
+            if len(words) < 1:
+                if config.verbosity >= 1:
+                    print("Skipped input line:\n%s\nToo few words.\n" % line)
+                continue
+            sp_id = words[0]#.replace("'","\\'")
+            gids.add(sp_id)
+
+        total_num_of_raw_ids = len(gids)
+        if total_num_of_raw_ids > (10*config.chunksize):
+            temp_infiles = []
+            num_of_infiles = total_num_of_raw_ids//(10*config.chunksize)
+            if total_num_of_raw_ids%(10*config.chunksize) != 0:
+                num_of_infiles += 1
+            num_of_lines_per_file = len(lines)//num_of_infiles
+            if len(lines)%num_of_infiles != 0:
+                num_of_lines_per_file += 1
+            for i in range(num_of_infiles):
+                temp_file_lines = lines[num_of_lines_per_file*i:num_of_lines_per_file*(i+1)]
+                temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
+                f = open(temp_file_path,'w')
+                f.write('\n'.join(temp_file_lines))
+                f.close()
+                temp_infiles.append(temp_file_path)
+            return [],temp_infiles
+
     tag_map = {}
 
     for line in lines:
@@ -346,24 +382,6 @@ def buildQueue(config,filename):
                 else:
                     ac_map[sp_id][1].append(indel)
 
-    if config.low_mem_system:
-        total_num_of_raw_ids = len(ac_map) + len(id_map) + len(np_map) + len(pdb_map) + len(hgnc_map)
-        if total_num_of_raw_ids > 10*config.chunksize:
-            temp_infiles = []
-            num_of_infiles = total_num_of_raw_ids//10*config.chunksize
-            if total_num_of_raw_ids%10*config.chunksize != 0:
-                num_of_infiles += 1
-            num_of_lines_per_file = len(lines)//num_of_infiles
-            if len(lines)%num_of_infiles != 0:
-                num_of_lines_per_file += 1
-            for i in range(num_of_infiles):
-                temp_file_lines = lines[num_of_lines_per_file*i:num_of_lines_per_file*(i+1)]
-                temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
-                f = open(temp_file_path,'w')
-                f.write('\n'.join(temp_file_lines))
-                f.close()
-                temp_infiles.append(temp_file_path)
-            return [],temp_infiles
 
     t1 = time.time()
     if config.verbosity >= 2:
