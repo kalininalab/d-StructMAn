@@ -1,6 +1,8 @@
 import os
 import gzip
 import sys
+import ray
+import psutil
 
 threeToOne = {
     "00C": "C", "01W": "X", "02K": "A", "03Y": "C", "07O": "C",
@@ -286,63 +288,156 @@ oneToThree = {'C':'CYS',
 'M':'MET',
 'X':'UNK'}
 
-def parseByAtom(path,pdb_id,great_seq_map):
-    global threeToOne
-    global oneToThree
-    f = gzip.open(path, 'rb')
-    page = f.read()
-    f.close()
+@ray.remote(num_cpus=1)
+def parseByAtom(parse_dump,sub_folder):
+    #hack proposed by the devs of ray to prevent too many processes being spawned
+    resources = ray.ray.get_resource_ids() 
+    cpus = [v[0] for v in resources['CPU']]
+    psutil.Process().cpu_affinity(cpus)
 
-    page = page.decode('ascii')
+    divide_folder = parse_dump
 
-    lines = page.split('\n')
-
-    seqs = {}
-    used_res = {}
-    firstAltLoc = None
-    for line in lines:
-        record_name = line[0:6].replace(" ","")
-        atom_nr = line[6:11].replace(" ","")
-        atom_name = line[12:16].replace(" ","")
-        res_name = line[17:20].replace(" ","")
-        if record_name == 'ENDMDL':
-            break
-        if len(res_name) < 3:
+    files = os.listdir("%s%s" % (divide_folder,sub_folder))
+    great_seq_map = {}
+    bio_entries = set()
+    for filename in files:
+        if not filename.count('.pdb1.gz') > 0:
             continue
-        if len(line) > 21:
-            
-            chain_id = line[21]
-            res_nr = line[22:27].replace(" ","")
+        pdb_id = filename[:4].upper()
+
+        bio_entries.add(pdb_id)
+        path  = "%s%s/%s" % (divide_folder,sub_folder,filename)
+
+        f = gzip.open(path, 'rb')
+        page = f.read()
+        f.close()
+
+        page = page.decode('ascii')
+
+        lines = page.split('\n')
+
+        seqs = {}
+        used_res = {}
+        firstAltLoc = None
+        for line in lines:
+            record_name = line[0:6].replace(" ","")
+            atom_nr = line[6:11].replace(" ","")
+            atom_name = line[12:16].replace(" ","")
+            res_name = line[17:20].replace(" ","")
+            if record_name == 'ENDMDL':
+                break
+            if len(res_name) < 3:
+                continue
+            if len(line) > 21:
+                
+                chain_id = line[21]
+                res_nr = line[22:27].replace(" ","")
 
 
-            if record_name == "ATOM" or record_name == 'HETATM':
-                altLoc = line[16]
+                if record_name == "ATOM" or record_name == 'HETATM':
+                    altLoc = line[16]
 
-                if firstAltLoc == None and altLoc != ' ':
-                    firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
-                if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
-                    continue
-                if not chain_id in seqs:
-                    seqs[chain_id] = ""
-                    used_res[chain_id] = set()
-                if record_name == 'HETATM' and res_name not in threeToOne:
-                    continue
-                if not res_nr in used_res[chain_id]:
-                    if res_name in threeToOne:
-                        aa = threeToOne[res_name][0]
-                    else:
-                        aa = 'X'
-                    seqs[chain_id] += aa
-                    used_res[chain_id].add(res_nr)
+                    if firstAltLoc == None and altLoc != ' ':
+                        firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
+                    if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
+                        continue
+                    if not chain_id in seqs:
+                        seqs[chain_id] = ""
+                        used_res[chain_id] = set()
+                    if record_name == 'HETATM' and res_name not in threeToOne:
+                        continue
+                    if not res_nr in used_res[chain_id]:
+                        if res_name in threeToOne:
+                            aa = threeToOne[res_name][0]
+                        else:
+                            aa = 'X'
+                        seqs[chain_id] += aa
+                        used_res[chain_id].add(res_nr)
+
+        for chain in seqs:        
+            seq = seqs[chain]
+            if len(seq) > 10:
+                if not seq in great_seq_map:
+                    great_seq_map[seq] = [(pdb_id,chain)]
+                else:
+                    great_seq_map[seq].append((pdb_id,chain))
+    return great_seq_map,bio_entries
+
+@ray.remote(num_cpus=1)
+def parseByAtomAU(sub_folder,AU_dump):
+    #hack proposed by the devs of ray to prevent too many processes being spawned
+    resources = ray.ray.get_resource_ids() 
+    cpus = [v[0] for v in resources['CPU']]
+    psutil.Process().cpu_affinity(cpus)
+
+    AU_folder,bio_entries = AU_dump
+    great_seq_map = {}
+    files = os.listdir("%s%s" % (AU_folder,sub_folder))
+    for filename in files:
+        if not filename.count('.ent.gz') > 0:
+            continue
+        pdb_id = filename[3:7].upper()
+        if pdb_id in bio_entries:
+            continue
+        pdb_id = '%s_AU' % pdb_id
+        
+        path  = "%s%s/%s" % (AU_folder,sub_folder,filename)
+
+        f = gzip.open(path, 'rb')
+        page = f.read()
+        f.close()
+
+        page = page.decode('ascii')
+
+        lines = page.split('\n')
+
+        seqs = {}
+        used_res = {}
+        firstAltLoc = None
+        for line in lines:
+            record_name = line[0:6].replace(" ","")
+            atom_nr = line[6:11].replace(" ","")
+            atom_name = line[12:16].replace(" ","")
+            res_name = line[17:20].replace(" ","")
+            if record_name == 'ENDMDL':
+                break
+            if len(res_name) < 3:
+                continue
+            if len(line) > 21:
+                
+                chain_id = line[21]
+                res_nr = line[22:27].replace(" ","")
 
 
-    for chain in seqs:        
-        seq = seqs[chain]
-        if len(seq) > 10:
-            if not seq in great_seq_map:
-                great_seq_map[seq] = [(pdb_id,chain)]
-            else:
-                great_seq_map[seq].append((pdb_id,chain))
+                if record_name == "ATOM" or record_name == 'HETATM':
+                    altLoc = line[16]
+
+                    if firstAltLoc == None and altLoc != ' ':
+                        firstAltLoc = altLoc #The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
+                    if altLoc != ' ' and altLoc != firstAltLoc: #Whenever an alternative Location ID is found, which is not firstAltLoc, then skip the line
+                        continue
+                    if not chain_id in seqs:
+                        seqs[chain_id] = ""
+                        used_res[chain_id] = set()
+                    if record_name == 'HETATM' and res_name not in threeToOne:
+                        continue
+                    if not res_nr in used_res[chain_id]:
+                        if res_name in threeToOne:
+                            aa = threeToOne[res_name][0]
+                        else:
+                            aa = 'X'
+                        seqs[chain_id] += aa
+                        used_res[chain_id].add(res_nr)
+
+        for chain in seqs:        
+            seq = seqs[chain]
+            if len(seq) > 10:
+                if not seq in great_seq_map:
+                    great_seq_map[seq] = [(pdb_id,chain)]
+                else:
+                    great_seq_map[seq].append((pdb_id,chain))
+    return great_seq_map
+
 
 def parseBySeqres(path,pdb_id,great_seq_map):
     f = gzip.open(path, 'rb')
@@ -449,20 +544,13 @@ def parse_seq_file(seq_file,recently_modified_structures):
 
 
 
-pdb_path = ''
 
-divide_folder = ''
-sub_folders = []
-AU_folder = ''
-AU_sub_folders = []
+def main(config):
+    seq_file = config.pdb_fasta_path
 
-def main(seq_file,recently_modified_structures,fromScratch=False,pdb_p = ''):
-    global pdb_path
-    global sub_folders
-    global AU_sub_folders
-    global divide_folder
-
-    pdb_path = pdb_p
+    ray.init(num_cpus = config.proc_n, include_dashboard = False, ignore_reinit_error=True)
+    print('After ray init')
+    pdb_path = config.pdb_path
 
     divide_folder = "%s/data/biounit/PDB/divided/" % pdb_path
 
@@ -472,43 +560,44 @@ def main(seq_file,recently_modified_structures,fromScratch=False,pdb_p = ''):
 
     AU_sub_folders = os.listdir(AU_folder)
 
-    if not fromScratch:
-        safe_list,great_seq_map = parse_seq_file(seq_file,recently_modified_structures)
-    else:
-        safe_list = set()
-        great_seq_map = {}
+    #if not fromScratch:
+    #    safe_list,great_seq_map = parse_seq_file(seq_file,recently_modified_structures)
+    #else:
+    #safe_list = set()
+    great_seq_map = {}
 
     sub_folders = sorted(sub_folders)
     bio_entries = set()
 
-    for sub_folder in sub_folders:
-        files = os.listdir("%s%s" % (divide_folder,sub_folder))
+    parse_results = []
+    parse_dump = ray.put(divide_folder)
 
-        print(sub_folder)
-        for filename in files:
-            if filename.count('.pdb1.gz') > 0:
-                pdb_id = filename[:4].upper()
-                if pdb_id in safe_list:
-                    continue
-                bio_entries.add(pdb_id)
-                path  = "%s%s/%s" % (divide_folder,sub_folder,filename)
-                parseByAtom(path,pdb_id,great_seq_map)
-                #parseBySeqres(path,pdb_id,great_seq_map)
+    for sub_folder in sub_folders:
+        parse_results.append(parseByAtom.remote(parse_dump,sub_folder))
+
+    parse_out = ray.get(parse_results)
+    for seq_map,bio_entries_part in parse_out:
+        for seq in seq_map:
+            if not seq in great_seq_map:
+                great_seq_map[seq] = seq_map[seq]
+            else:
+                great_seq_map[seq] += seq_map[seq]
+        bio_entries = bio_entries | bio_entries_part
+
+    AU_dump = ray.put((AU_folder,bio_entries))
+    parse_results = []
 
     sub_folders = sorted(AU_sub_folders)
     for sub_folder in sub_folders:
-        files = os.listdir("%s%s" % (AU_folder,sub_folder))
-        print(sub_folder,' AU')
-        for filename in files:
-            if filename.count('.ent.gz') > 0:
-                pdb_id = filename[3:7].upper()
-                if pdb_id in bio_entries or pdb_id in safe_list:
-                    continue
-                pdb_id = '%s_AU' % pdb_id
-                if pdb_id in safe_list:
-                    continue
-                path  = "%s%s/%s" % (AU_folder,sub_folder,filename)
-                parseByAtom(path,pdb_id,great_seq_map)
+        parse_results.append(parseByAtomAU.remote(sub_folder,AU_dump))
+
+    parse_out = ray.get(parse_results)
+    for seq_map in parse_out:
+        for seq in seq_map:
+            if not seq in great_seq_map:
+                great_seq_map[seq] = seq_map[seq]
+            else:
+                great_seq_map[seq] += seq_map[seq]
 
     entries = []
 

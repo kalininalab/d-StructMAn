@@ -298,7 +298,10 @@ def getCurrentPDBID(pdb_id,pdb_path):
         buf = gzip.open(obsolete_path, 'rb')
         # The replacement PDB ID is always given in the second line
         next(buf)
-        pdb_id = buf.readline().split()[3].decode('ascii')
+        try:
+            pdb_id = buf.readline().split()[3].decode('ascii')
+        except:
+            pass
         buf.close()
 
     return pdb_id
@@ -323,6 +326,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                     return urllib.request.urlopen(request)
                 except:
                     print("Did not find the PDB-file: %s" % pdb_id)
+                    if get_is_local:
+                        return None,None
                     return None
             else:
                 if get_is_local:
@@ -349,6 +354,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                     return urllib.request.urlopen(request)
                 except:
                     print("Did not find the PDB-file: %s" % pdb_id)
+                    if get_is_local:
+                        return None,None
                     return None
             else:
                 if get_is_local:

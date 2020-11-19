@@ -6,14 +6,12 @@ import structman
 
 def main(config,skipUpdatePDB = False,skip_rindb = False):
     main_file_path = (os.path.abspath(sys.argv[0])).rsplit('/',1)[0]
-    rin_fromScratch = False
+    rin_fromScratch = True
     forceCentrality = False
     mmseqs_fromScratch = False
     skipStructureDBs = False
     
     verbose = True
-
-    n_proc = config.proc_n
 
     pdb_path = config.pdb_path
     pdb_update_script = config.pdb_sync_script
@@ -55,16 +53,19 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
             #update rin db
             sys.path.append(rinerator_base_path)
             import createRINdb
-            recently_modified_structures = createRINdb.main(fromScratch=rin_fromScratch,forceCentrality=forceCentrality,update_days=30.,pdb_p=pdb_path,rin_db_path=rin_db_path,n_proc=n_proc,rinerator_base_path = rinerator_base_path)
+            recently_modified_structures = createRINdb.main(fromScratch=rin_fromScratch,forceCentrality=forceCentrality,update_days=30.,pdb_p=pdb_path,rin_db_path=rin_db_path,n_proc=config.proc_n
+,rinerator_base_path = rinerator_base_path)
 
         print('Update RIN db done')
 
-    print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
+    #print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
 
+    pdb_fasta_name = 'pdbba_mmseqs2'
+    config.pdb_fasta_path = '%s/%s' % (search_db_base_path,pdb_fasta_name)
 
     #update pdbba for mmseqs2
     import createPdbBaDb
-    createPdbBaDb.main(mmseqs2_db_path,recently_modified_structures,fromScratch=mmseqs_fromScratch,pdb_p = pdb_path)
+    createPdbBaDb.main(config)
 
     print("Update search database fasta for MMseqs2 done")
 
@@ -77,7 +78,7 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
     '''
 
     #rerun mmseqs2 createdb
-    p = subprocess.Popen(['mmseqs','createdb','pdbba_mmseqs2','pdbba_search_db_mmseqs2'],cwd=search_db_base_path)
+    p = subprocess.Popen(['mmseqs','createdb',pdb_fasta_name,'pdbba_search_db_mmseqs2'],cwd=search_db_base_path)
     p.wait()
 
     p = subprocess.Popen(['rm','-R',mmseqs2_tmp],cwd=search_db_base_path)

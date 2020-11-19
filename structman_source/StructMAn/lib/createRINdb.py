@@ -350,7 +350,7 @@ def main(fromScratch=False,forceCentrality=False,update_days=2.,pdb_p='',rin_db_
 
     lim = 100*1024*1024*1024
 
-    resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
+    #resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
 
     if not os.path.isfile(het_dict_path):
         print("%s not found" % het_dict_path)
