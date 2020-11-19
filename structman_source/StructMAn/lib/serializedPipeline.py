@@ -191,7 +191,7 @@ def parseFasta(config,nfname):
     return [(proteins,[])]
 
 #@profile
-def buildQueue(config,filename):
+def buildQueue(config,filename,already_split = False):
     t0 =time.time()
 
     proteins = {}
@@ -212,7 +212,7 @@ def buildQueue(config,filename):
         #In case of single line input
         lines = ['\t'.join(filename)]
 
-    if config.low_mem_system:
+    if config.low_mem_system and not already_split:
         gids = set()
         for line in lines:
             if line == '':
@@ -1691,7 +1691,7 @@ def main(filename,config,output_path,main_file_path):
 
     for nr_temp_file,temp_infile in enumerate(temp_infiles):
         if temp_infile != None:
-            proteins_chunks,nothing = buildQueue(config,temp_infile)
+            proteins_chunks,nothing = buildQueue(config,temp_infile,already_split = True)
             if config.verbosity >= 1:
                 print('Infile splitting due to low memory system, processing infile split nr.:',nr_temp_file)
             os.remove(temp_infile)
