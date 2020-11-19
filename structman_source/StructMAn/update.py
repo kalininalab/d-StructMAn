@@ -6,7 +6,7 @@ import structman
 
 def main(config,skipUpdatePDB = False,skip_rindb = False):
     main_file_path = (os.path.abspath(sys.argv[0])).rsplit('/',1)[0]
-    rin_fromScratch = True
+    rin_fromScratch = False
     forceCentrality = False
     mmseqs_fromScratch = False
     skipStructureDBs = False
@@ -58,7 +58,7 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
 
         print('Update RIN db done')
 
-    #print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
+    print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
 
     pdb_fasta_name = 'pdbba_mmseqs2'
     config.pdb_fasta_path = '%s/%s' % (search_db_base_path,pdb_fasta_name)
