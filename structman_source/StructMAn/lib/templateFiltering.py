@@ -893,6 +893,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
             errortext = 'RIN lookup Error:%s\nRIN_db_path:%s\n' % (pdb_id,rin_db_path) + '\n'.join([str(e),str(f),str(g)])
             errorlist.append(errortext)
 
+
     if verbosity >= 4:
         t6 = time.time()
         print('Time for structuralAnalysis Part 6:',t6-t5)

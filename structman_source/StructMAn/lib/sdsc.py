@@ -226,7 +226,7 @@ class Position:
             raise NameError('Cannot fuse positions with differing pdb_res_nr')
             return
         if self.wt_aa != position.wt_aa:
-            print('Warning: fuse positions with different WT AAs:',self.pos,self.pdb_res_nr,self.wt_aa,position.wt_aa)
+            #print('Warning: fuse positions with different WT AAs:',self.pos,self.pdb_res_nr,self.wt_aa,position.wt_aa)
             warn = True
         self.mut_aas = self.mut_aas | position.mut_aas
         self.pos_tags = self.pos_tags | position.pos_tags

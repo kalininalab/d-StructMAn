@@ -20,7 +20,7 @@ def getUniprotId(query,querytype):
     contact = "" # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib.request.urlopen(request)
+        response = urllib.request.urlopen(request,timeout=60)
     except:
         return "-"
     page = response.read(200000).decode('utf-8')
@@ -432,7 +432,7 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
     contact = "agress@mpi-inf.mpg.de" # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib.request.urlopen(request)
+        response = urllib.request.urlopen(request,timeout=60)
     except:
         e,f,g = sys.exc_info()
         config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e),str(f)))
@@ -485,7 +485,7 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
     return uniprot_ids
 
 #called by serializedPipeline
-def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=None):
+def getSequencesPlain(u_acs,config,max_seq_len=None,filtering_db=None):
     gene_sequence_map = {}
     filtered_set = set()
 
@@ -508,7 +508,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
     if db != None:
         if len(u_acs) == 0:
             return {}
-        if debug:
+        if config.verbosity >= 2:
             t0 = time.time()
         sql = "SELECT Uniprot_Ac,Sequence,Disorder_Scores,Disorder_Regions FROM Sequences WHERE Uniprot_Ac IN ('%s')" % "','".join(u_acs)
         try:
@@ -521,7 +521,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
 
         db.close()
 
-        if debug:
+        if config.verbosity >= 2:
             t1 = time.time()
             print("getSequences Part 1: ",str(t1-t0))
 
@@ -559,16 +559,18 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
 
             gene_sequence_map[u_ac] = seq,disorder_scores,disorder_regions_datastruct
 
-        if n > 0 and debug:
+        if n > 0 and config.verbosity >= 2:
             print('Filtered ',n,' Sequences due to max length: ',max_seq_len)
 
-        if debug:
+        if config.verbosity >= 2:
             t2 = time.time()
             print("getSequences Part 2: ",str(t2-t1))
 
-    elif debug:
-        t2 = time.time()
+    else:
         missing_set = set(u_acs)
+
+    if config.verbosity >= 2:
+        t2 = time.time()
 
     in_db = set()
     for u_ac in u_acs:
@@ -590,12 +592,13 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
             missing_set.add(u_ac)
             #print u_ac
 
-    if debug:
+    if config.verbosity >= 2:
         t3 = time.time()
         print("getSequences Part 3: ",str(t3-t2))
 
-    if debug:
+    if config.verbosity >= 2:
         print('Size of missing set: ',len(missing_set))
+    if config.verbosity >= 3:
         print(missing_set)
 
     for u_ac in missing_set:
@@ -607,7 +610,7 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,debug=False,filtering_db=Non
         seq,refseqs,go_terms,pathways = seq_out
         gene_sequence_map[u_ac] = seq,None,None
 
-    if debug:
+    if config.verbosity >= 2:
         t4 = time.time()
         print("getSequences Part 4: ",str(t4-t3))
 
@@ -687,7 +690,6 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         return None
 
     #new part just for the sequence
-    time.sleep(2.0**tries-1.0)
     if len(uniprot_ac) < 2:
         return None
 
@@ -697,12 +699,15 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         url = 'https://www.uniprot.org/uniparc/%s.fasta' %uniprot_ac
     try:
         request = urllib.request.Request(url)
-        response = urllib.request.urlopen(request)
+        response = urllib.request.urlopen(request,timeout=(tries+1)*10)
         page = response.read(9000000).decode('utf-8')
     except:
-        e,f,g = sys.exc_info()
-        config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,str(e),str(f)))
-        return None
+        if tries < 3:
+            getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
+        else:
+            e,f,g = sys.exc_info()
+            config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,str(e),str(f)))
+            return None
 
     lines = page.split("\n")
 
@@ -723,22 +728,20 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         return (wildtype_sequence,{},{},{})
 
     #old part, now just for refseqs,go and reactome
-    time.sleep(2.0**tries-1.0)
-    if len(uniprot_ac) < 2:
-        return (0,"",{},{})
 
     url = 'https://www.uniprot.org/uniprot/%s.txt' %uniprot_ac
     try:
         request = urllib.request.Request(url)
-        response = urllib.request.urlopen(request)
+        response = urllib.request.urlopen(request,timeout=(tries+1)*10)
         page = response.read(9000000).decode('utf-8')
     except:
-        if tries < 4:
-            return getSequence(uniprot_ac,config,tries=tries+1)
+        if tries < 3:
+            return getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
 
         else:
             #print uniprot_ac
             return (1,"",{},{})
+
     lines = page.split("\n")
     #print(lines)
     refseqs = {}

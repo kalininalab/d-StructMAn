@@ -89,7 +89,7 @@ def sequenceScan(config,proteins,indels):
         if config.verbosity >= 1:
             print("Amount of proteins going into sequenceScan: ",len(sequenceScanProteins))
 
-        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(),config,debug=config.verbose)
+        gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(),config)
         for u_ac in gene_sequence_map:
             if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0:
                 config.errorlog.add_error("Error in sequenceScan with gene: %s" % u_ac)
@@ -1693,7 +1693,7 @@ def main(filename,config,output_path,main_file_path):
         if temp_infile != None:
             proteins_chunks,nothing = buildQueue(config,temp_infile,already_split = True)
             if config.verbosity >= 1:
-                print('Infile splitting due to low memory system, processing infile split nr.:',nr_temp_file)
+                print('Infile splitting due to low memory system, processing infile split nr.:',nr_temp_file+1,'out of',len(temp_infiles))
             os.remove(temp_infile)
 
         chunk_nr = 1 

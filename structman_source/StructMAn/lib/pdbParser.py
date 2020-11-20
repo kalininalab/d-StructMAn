@@ -291,7 +291,7 @@ oneToThree = {'C':'CYS',
 'M':'MET',
 'X':'UNK'}
 
-def getCurrentPDBID(pdb_id,pdb_path):
+def getCurrentPDBID(pdb_id,pdb_path,debug=False):
     obsolete_path = '%s/data/structures/obsolete/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
 
     if os.path.isfile(obsolete_path):
@@ -299,10 +299,13 @@ def getCurrentPDBID(pdb_id,pdb_path):
         # The replacement PDB ID is always given in the second line
         next(buf)
         try:
-            pdb_id = buf.readline().split()[3].decode('ascii')
+            pdb_id = buf.readline().decode('ascii').split()[3]
         except:
-            pass
+            print('Error in obsolete_check:',pdb_id)
+
         buf.close()
+    elif debug:
+        print('Is not a file:',obsolete_path)
 
     return pdb_id
 
@@ -322,8 +325,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                 try:
                     request = urllib.request.Request(url)
                     if get_is_local:
-                        return urllib.request.urlopen(request),None
-                    return urllib.request.urlopen(request)
+                        return urllib.request.urlopen(request,timeout=60),None
+                    return urllib.request.urlopen(request,timeout=60)
                 except:
                     print("Did not find the PDB-file: %s" % pdb_id)
                     if get_is_local:
@@ -350,8 +353,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                 try:
                     request = urllib.request.Request(url)
                     if get_is_local:
-                        return urllib.request.urlopen(request),None
-                    return urllib.request.urlopen(request)
+                        return urllib.request.urlopen(request,timeout=60),None
+                    return urllib.request.urlopen(request,timeout=60)
                 except:
                     print("Did not find the PDB-file: %s" % pdb_id)
                     if get_is_local:
@@ -1245,8 +1248,7 @@ def updateLigandDB(new_ligands,smiles_path,inchi_path):
 
 #get called by database
 def getSI(pdb_id,name,res,chain,pdb_path):
-    cwd = os.getcwd()
-    
+
     MMCIF_Flag = False
     AU = False
     if pdb_id.count('_AU') == 1:
@@ -1257,9 +1259,9 @@ def getSI(pdb_id,name,res,chain,pdb_path):
     
     #Added automatization here if pdb buffer does not exist, it goes into mmcif buffer
     
-    if buf == None:
-        buf = getMMCIFBuffer(pdb_id,pdb_path,AU=AU)
-        MMCIF_Flag = True
+    #if buf == None:
+    #    buf = getMMCIFBuffer(pdb_id,pdb_path,AU=AU)
+    #    MMCIF_Flag = True
         
     if MMCIF_Flag:
         newlines = []
@@ -1287,9 +1289,9 @@ def getSI(pdb_id,name,res,chain,pdb_path):
         FNULL = open(os.devnull, 'w')
         try:
             inchiproc = subprocess.Popen(["babel","-i","pdb","-o","inchi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-            inchi,i_err = inchiproc.communicate(page)
+            inchi,i_err = inchiproc.communicate(page,timeout = 600)
             smilesproc = subprocess.Popen(["babel","-i","pdb","-o","smi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-            smiles,s_err = smilesproc.communicate(page)
+            smiles,s_err = smilesproc.communicate(page,timeout = 600)
         except:
             print("[WARNING] Babel Package seems not to be installed")
             return ("","")
@@ -1332,11 +1334,11 @@ def getSI(pdb_id,name,res,chain,pdb_path):
         FNULL = open(os.devnull, 'w')
         try:
             inchiproc = subprocess.Popen(["babel","-i","pdb","-o","inchi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-            inchi,i_err = inchiproc.communicate(page)
+            inchi,i_err = inchiproc.communicate(page,timeout = 600)
             smilesproc = subprocess.Popen(["babel","-i","pdb","-o","smi"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True)
-            smiles,s_err = smilesproc.communicate(page)
+            smiles,s_err = smilesproc.communicate(page,timeout = 600)
         except:
-            print("[WARNING] Babel Package seems not to be installed")
+            print("[WARNING] Babel Package seems not to be installed",pdb_id,name,res,chain,i_err,s_err)
             return ("","")
 
         #print(i_err)
@@ -1362,7 +1364,7 @@ def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
         #    print("Did not find asymetric unit entry in local pdb, searching online: ",url)
         try:
             request = urllib.request.Request(url)
-            return urllib.request.urlopen(request)
+            return urllib.request.urlopen(request,timeout=(tries+1)*10)
         except:
             if tries < 2:
                 #print("Unable to connect to PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))
@@ -1385,7 +1387,7 @@ def getMMCIFHeaderBuffer(pdb_id,pdb_path,tries = 0):
             print("Did not find asymetric unit entry in local pdb, searching online: ",url)
         try:
             request = urllib.request.Request(url)
-            return urllib.request.urlopen(request)
+            return urllib.request.urlopen(request,timeout=(tries+1)*10)
         except:
             if tries < 2:
                 print("Unable to connect ot PDB for the Header: %s\n%s\nThis might due to bad connection, let's try again ...'" % (pdb_id,url))

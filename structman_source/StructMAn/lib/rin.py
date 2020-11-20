@@ -812,6 +812,10 @@ def calculateIAPProfiles(interaction_map,chains,ligands,metals,ions):
     for chain,res in ligands:
         deg = 0
         score = 0.0
+        if not chain in interaction_map:
+            #This can happen if the chain consists only of ligands with at least one non-boring ligand
+            #and this non-boring ligand only has bonds with boring ligands
+            continue
         if res in interaction_map[chain]:
             for (chain_b,res_b) in interaction_map[chain][res]['combi']['all']:
                 score += interaction_map[chain][res]['combi']['all'][(chain_b,res_b)]
