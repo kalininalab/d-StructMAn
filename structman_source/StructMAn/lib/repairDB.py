@@ -37,9 +37,56 @@ def reclass_null(config):
 
     return
 
+def reset(cursor,keep_structures = False):
+
+    sql_commands = ['SET FOREIGN_KEY_CHECKS=0;', 
+    'TRUNCATE Gene;',
+    'TRUNCATE Mutation;',
+    'TRUNCATE GO_Term;',
+    'TRUNCATE Pathway;',
+    'TRUNCATE Session;',
+    'TRUNCATE Alignment;',
+    'TRUNCATE Complex;',
+    'TRUNCATE RS_Gene_Session;',
+    'TRUNCATE RS_Gene_GO_Term;',
+    'TRUNCATE RS_Mutation_Session;',
+    'TRUNCATE RS_Gene_Pathway;',
+]
+
+    if not keep_structures:
+        sql_commands += [
+        'TRUNCATE Ligand;',
+        'TRUNCATE Structure;',
+        'TRUNCATE Residue;',
+        'TRUNCATE RS_Ligand_Structure;',
+        'TRUNCATE RS_Residue_Residue;'
+        ]
+
+    sql_commands.append('SET FOREIGN_KEY_CHECKS=1;')
+
+    for sql in sql_commands:
+        try:
+            # Execute the SQL command
+            cursor.execute(sql)
+            # Commit your changes in the database
+            #db.commit()
+        except:
+            # Rollback in case there is any error
+            #db.rollback()
+            [e,f,g] = sys.exc_info()
+            g = traceback.format_exc(g)
+            print("Error: ",e,f,g)
+    return
+
 def empty(config):
     db,cursor = config.getDB()
-    database.reset(cursor)
+    reset(cursor)
+    db.close()
+    return
+
+def clear(config):
+    db,cursor = config.getDB()
+    reset(cursor,keep_structures = True)
     db.close()
     return
 

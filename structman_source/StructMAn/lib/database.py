@@ -286,42 +286,6 @@ def update(config,table,columns,values):
 
     return
 
-#called by repairDB
-def reset(cursor):
-
-    sql_commands = ['SET FOREIGN_KEY_CHECKS=0;', 
-    'TRUNCATE Gene;',
-    'TRUNCATE Mutation;',
-    'TRUNCATE GO_Term;',
-    'TRUNCATE Pathway;',
-    'TRUNCATE Ligand;',
-    'TRUNCATE Session;',
-    'TRUNCATE Structure;',
-    'TRUNCATE Alignment;',
-    'TRUNCATE Residue;',
-    'TRUNCATE Complex;',
-    'TRUNCATE RS_Gene_Session;',
-    'TRUNCATE RS_Gene_GO_Term;',
-    'TRUNCATE RS_Mutation_Session;',
-    'TRUNCATE RS_Ligand_Structure;',
-    'TRUNCATE RS_Gene_Pathway;',
-    'TRUNCATE RS_Residue_Residue;',
-    'SET FOREIGN_KEY_CHECKS=1;']
-
-    for sql in sql_commands:
-        try:
-            # Execute the SQL command
-            cursor.execute(sql)
-            # Commit your changes in the database
-            #db.commit()
-        except:
-            # Rollback in case there is any error
-            #db.rollback()
-            [e,f,g] = sys.exc_info()
-            g = traceback.format_exc(g)
-            print("Error: ",e,f,g)
-    return
-
 #called by Output
 def getGeneScoreDict(gene_id_list,session_id,config,includeSequence=False):
     if len(gene_id_list) == 0:

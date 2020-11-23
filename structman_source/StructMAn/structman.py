@@ -243,14 +243,6 @@ class Config:
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
 
-        mem = virtual_memory()
-        self.gigs_of_ram = mem.total/1024/1024/1024
-        self.low_mem_system = self.gigs_of_ram < 16 #Less than 16Gb is a low memory system
-        #if self.low_mem_system:
-        #    self.proc_n = min([self.proc_n,self.gigs_of_ram//2])
-
-        self.chunksize = int(self.gigs_of_ram*10)
-
         if self.proc_n > multiprocessing.cpu_count():
             if self.verbosity >= 1:
                 print('More processes annotated (',self.proc_n,') than cores registered in system (',multiprocessing.cpu_count(),').')
@@ -259,6 +251,14 @@ class Config:
             self.alignment_processes = self.proc_n
             self.annotation_processes = self.proc_n
             self.number_of_processes = self.proc_n
+
+        mem = virtual_memory()
+        self.gigs_of_ram = mem.total/1024/1024/1024
+        self.low_mem_system = self.gigs_of_ram < 20 #Less than 20Gb is a low memory system
+        if self.low_mem_system:
+            self.chunksize = max([((self.gigs_of_ram*100)//self.proc_n)-60,self.proc_n])
+        else:
+            self.chunksize = max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n])
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
@@ -481,20 +481,13 @@ if __name__ == "__main__":
         database_util = True
         argv = argv[1:]
 
+        possible_key_words = set(['reset','out','create','destroy','clear'])
+
         if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
             print(database_util_disclaimer)
             sys.exit(1)
-        if argv[0] == 'reset':
-            db_mode = 'reset'
-            argv = argv[1:]
-        elif argv[0] == 'out':
-            db_mode = 'out'
-            argv = argv[1:]
-        elif argv[0] == 'create':
-            db_mode = 'create'
-            argv = argv[1:]
-        elif argv[0] == 'destroy':
-            db_mode = 'destroy'
+        if argv[0] in possible_key_words:
+            db_mode = argv[0]
             argv = argv[1:]
         else:
             print(database_util_disclaimer)
@@ -762,10 +755,9 @@ if __name__ == "__main__":
 
     if database_util:
         if db_mode == 'reset':
-            db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
-            cursor = db.cursor()
-            database.reset(cursor)
-            db.close()
+            repairDB.empty(config)
+        elif db_mode == 'clear':
+            repairDB.clear(config)
         elif db_mode == 'out':
             db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
             cursor = db.cursor()
