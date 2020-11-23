@@ -415,7 +415,7 @@ def buildQueue(config,filename,already_split = False):
 
     if s > config.chunksize:
 
-        n_of_indel_batches = amount_of_indel_proteins//config.chunksize
+        n_of_indel_batches = int(amount_of_indel_proteins//config.chunksize)
         if amount_of_indel_proteins%config.chunksize != 0:
             n_of_indel_batches += 1
 

@@ -256,9 +256,9 @@ class Config:
         self.gigs_of_ram = mem.total/1024/1024/1024
         self.low_mem_system = self.gigs_of_ram < 20 #Less than 20Gb is a low memory system
         if self.low_mem_system:
-            self.chunksize = max([((self.gigs_of_ram*100)//self.proc_n)-60,self.proc_n])
+            self.chunksize = int(max([((self.gigs_of_ram*100)//self.proc_n)-60,self.proc_n]))
         else:
-            self.chunksize = max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n])
+            self.chunksize = int(max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n]))
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
