@@ -833,6 +833,7 @@ def paraAlignment(config,proteins,skip_db = False):
     if config.verbosity >= 2:
         print("Alignment Part 3: %s" % (str(t3-t2)))
 
+    already_called = False
     finished = False
     N = len(u_acs)
     n = 0
@@ -847,6 +848,9 @@ def paraAlignment(config,proteins,skip_db = False):
             for i in range(n,N):
                 u_ac = u_acs[i]
                 annotation_list = list(proteins.get_protein_annotation_list(u_ac))
+                seq = proteins.get_sequence(u_ac)
+                aaclist = proteins.getAACList(u_ac)
+                prot_specific_mapping_dump = ray.put((u_ac,seq,aaclist))
                 m = break_point
                 if m >= len(annotation_list):
                     break_point = 0
@@ -858,10 +862,8 @@ def paraAlignment(config,proteins,skip_db = False):
                         continue
 
                     oligo = proteins.get_oligo(pdb_id,chain)
-                    seq = proteins.get_sequence(u_ac)
-                    aaclist = proteins.getAACList(u_ac)
 
-                    alignment_results.append(align.remote(mapping_dump,u_ac,pdb_id,chain,oligo,seq,aaclist))
+                    alignment_results.append(align.remote(mapping_dump,pdb_id,chain,oligo,prot_specific_mapping_dump))
                     number_of_packaged_alignments += 1
                     if number_of_packaged_alignments == 100:
                         break_point = pos + 1
@@ -880,16 +882,21 @@ def paraAlignment(config,proteins,skip_db = False):
             finished = True #No need for multiple cycles here
             for u_ac in u_acs:
                 annotation_list = proteins.get_protein_annotation_list(u_ac)
+                seq = proteins.get_sequence(u_ac)
+                aaclist = proteins.getAACList(u_ac)
+                prot_specific_mapping_dump = ray.put((u_ac,seq,aaclist))
                 for (pdb_id,chain) in annotation_list:
 
                     if proteins.is_annotation_stored(pdb_id,chain,u_ac):
                         continue
 
                     oligo = proteins.get_oligo(pdb_id,chain)
-                    seq = proteins.get_sequence(u_ac)
-                    aaclist = proteins.getAACList(u_ac)
 
-                    alignment_results.append(align.remote(mapping_dump,u_ac,pdb_id,chain,oligo,seq,aaclist))
+                    alignment_results.append(align.remote(mapping_dump,pdb_id,chain,oligo,prot_specific_mapping_dump))
+
+        if not skip_db and not already_called:
+            database.getStoredResidues(proteins,config)
+            already_called = True
 
         align_outs = ray.get(alignment_results)
         alignment_insertion_list = []
@@ -949,12 +956,6 @@ def paraAlignment(config,proteins,skip_db = False):
                 t7 = time.time()
                 print("Alignment Part 7: %s" % (str(t7-t6)))
 
-            database.getStoredResidues(proteins,config)
-
-            if config.verbosity >= 2:
-                t8 = time.time()
-                print("Alignment Part 8: %s" % (str(t8-t7)))
-
     return
 
 @ray.remote(num_cpus=1)
@@ -977,13 +978,15 @@ def paraMap(mapping_dump,u_ac,pdb_id,chain,structure_id,target_seq,template_seq,
     return (u_ac,pdb_id,chain,sub_infos)
 
 @ray.remote(num_cpus=1)
-def align(align_dump,u_ac,pdb_id,chain,oligo,seq,aaclist):
+def align(align_dump,pdb_id,chain,oligo,prot_specific_mapping_dump):
     #hack proposed by the devs of ray to prevent too many processes being spawned
     resources = ray.ray.get_resource_ids() 
     cpus = [v[0] for v in resources['CPU']]
     psutil.Process().cpu_affinity(cpus) 
 
     config = align_dump
+
+    (u_ac,seq,aaclist) = prot_specific_mapping_dump
 
     pdb_path = config.pdb_path
     option_seq_thresh = config.option_seq_thresh
