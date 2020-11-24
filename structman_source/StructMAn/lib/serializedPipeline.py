@@ -797,31 +797,15 @@ def paraAlignment(config,proteins,skip_db = False):
     if not skip_db:
         database.getAlignments(proteins,config)
 
-    alignment_results = []
-
-    u_acs = proteins.get_protein_u_acs()
+    u_acs = list(proteins.get_protein_u_acs())
 
     mapping_dump = ray.put(config)
-
-    for u_ac in u_acs:
-        annotation_list = proteins.get_protein_annotation_list(u_ac)
-        for (pdb_id,chain) in annotation_list:
-
-            if proteins.is_annotation_stored(pdb_id,chain,u_ac):
-                continue
-
-            oligo = proteins.get_oligo(pdb_id,chain)
-            seq = proteins.get_sequence(u_ac)
-            aaclist = proteins.getAACList(u_ac)
-
-            alignment_results.append(align.remote(mapping_dump,u_ac,pdb_id,chain,oligo,seq,aaclist))
 
     t2 = time.time()
     if config.verbosity >= 2:
         print("Alignment Part 2: %s" % (str(t2-t1)))
 
     mapping_results = []
-    u_acs = proteins.get_protein_u_acs()
 
     for u_ac in u_acs:
         if not proteins.is_protein_stored(u_ac):
@@ -849,69 +833,127 @@ def paraAlignment(config,proteins,skip_db = False):
     if config.verbosity >= 2:
         print("Alignment Part 3: %s" % (str(t3-t2)))
 
-    align_outs = ray.get(alignment_results)
-    alignment_insertion_list = []
-    structure_insertion_list = set()
-    warn_map = set()
+    finished = False
+    N = len(u_acs)
+    n = 0
+    break_point = 0
+    while not finished:
+        alignment_results = []
+        if config.low_mem_system:
+            #This breaks after 100 started alignments, continues the while loop and then returns, where it has broken
+            number_of_packaged_alignments = 0
+            broken = False
 
-    for out in align_outs:
+            for i in range(n,N):
+                u_ac = u_acs[i]
+                annotation_list = list(proteins.get_protein_annotation_list(u_ac))
+                m = break_point
+                if m >= len(annotation_list):
+                    break_point = 0
+                    continue
+                for pos,(pdb_id,chain) in enumerate(annotation_list[m:]):
+                    if proteins.is_annotation_stored(pdb_id,chain,u_ac):
+                        if pos == (len(annotation_list) -1):
+                            break_point = 0
+                        continue
 
-        if len(out) == 3:
-            u_ac,pdb_id,chain = out
-            proteins.remove_annotation(u_ac,pdb_id,chain)
-            continue
+                    oligo = proteins.get_oligo(pdb_id,chain)
+                    seq = proteins.get_sequence(u_ac)
+                    aaclist = proteins.getAACList(u_ac)
 
-        if len(out) == 4:
-            (u_ac,pdb_id,chain,warn_text) = out
-            proteins.remove_annotation(u_ac,pdb_id,chain)
-            if not u_ac in warn_map:
-                errorlog.add_warning(warn_text)
-            warn_map.add(u_ac)
-            continue
+                    alignment_results.append(align.remote(mapping_dump,u_ac,pdb_id,chain,oligo,seq,aaclist))
+                    number_of_packaged_alignments += 1
+                    if number_of_packaged_alignments == 100:
+                        break_point = pos + 1
+                        broken = True
+                        number_of_packaged_alignments = 0
+                        break
+                    if pos == (len(annotation_list) -1):
+                        break_point = 0
+                if broken:
+                    n = i
+                    break
+                if i == (N-1):
+                    finished = True
 
-        (u_ac,pdb_id,chain,alignment,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos) = out
+        else:
+            finished = True #No need for multiple cycles here
+            for u_ac in u_acs:
+                annotation_list = proteins.get_protein_annotation_list(u_ac)
+                for (pdb_id,chain) in annotation_list:
 
-        proteins.set_coverage(u_ac,pdb_id,chain,coverage)
-        proteins.set_sequence_id(u_ac,pdb_id,chain,seq_id)
-        proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
-        proteins.set_alignment(u_ac,pdb_id,chain,alignment)
+                    if proteins.is_annotation_stored(pdb_id,chain,u_ac):
+                        continue
 
-        proteins.set_interaction_partners(pdb_id,interaction_partners)
-        proteins.set_chain_type_map(pdb_id,chain_type_map)
+                    oligo = proteins.get_oligo(pdb_id,chain)
+                    seq = proteins.get_sequence(u_ac)
+                    aaclist = proteins.getAACList(u_ac)
 
-        proteins.set_oligo(pdb_id,chain,oligo)
+                    alignment_results.append(align.remote(mapping_dump,u_ac,pdb_id,chain,oligo,seq,aaclist))
 
-        structure_insertion_list.add((pdb_id,chain))
-        prot_id = proteins.get_protein_db_id(u_ac)
-        alignment_insertion_list.append((u_ac,prot_id,pdb_id,chain,alignment))
+        align_outs = ray.get(alignment_results)
+        alignment_insertion_list = []
+        structure_insertion_list = set()
+        warn_map = set()
 
-    if config.verbosity >= 2:
-        t4 = time.time()
-        print("Alignment Part 4: %s" % (str(t4-t3)))
-        
+        for out in align_outs:
 
-    if not skip_db:
+            if len(out) == 3:
+                u_ac,pdb_id,chain = out
+                proteins.remove_annotation(u_ac,pdb_id,chain)
+                continue
+
+            if len(out) == 4:
+                (u_ac,pdb_id,chain,warn_text) = out
+                proteins.remove_annotation(u_ac,pdb_id,chain)
+                if not u_ac in warn_map:
+                    errorlog.add_warning(warn_text)
+                warn_map.add(u_ac)
+                continue
+
+            (u_ac,pdb_id,chain,alignment,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos) = out
+
+            proteins.set_coverage(u_ac,pdb_id,chain,coverage)
+            proteins.set_sequence_id(u_ac,pdb_id,chain,seq_id)
+            proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
+            proteins.set_alignment(u_ac,pdb_id,chain,alignment)
+
+            proteins.set_interaction_partners(pdb_id,interaction_partners)
+            proteins.set_chain_type_map(pdb_id,chain_type_map)
+
+            proteins.set_oligo(pdb_id,chain,oligo)
+
+            structure_insertion_list.add((pdb_id,chain))
+            prot_id = proteins.get_protein_db_id(u_ac)
+            alignment_insertion_list.append((u_ac,prot_id,pdb_id,chain,alignment))
+
         if config.verbosity >= 2:
-            t5 = time.time()
-            print("Alignment Part 5: %s" % (str(t5-t4)))
+            t4 = time.time()
+            print("Alignment Part 4: %s" % (str(t4-t3)))
+            
 
-        database.insertStructures(structure_insertion_list,proteins,config)
+        if not skip_db:
+            if config.verbosity >= 2:
+                t5 = time.time()
+                print("Alignment Part 5: %s" % (str(t5-t4)))
 
-        if config.verbosity >= 2:
-            t6 = time.time()
-            print("Alignment Part 6: %s" % (str(t6-t5)))
+            database.insertStructures(structure_insertion_list,proteins,config)
 
-        database.insertAlignments(alignment_insertion_list,proteins,config)
+            if config.verbosity >= 2:
+                t6 = time.time()
+                print("Alignment Part 6: %s" % (str(t6-t5)))
 
-        if config.verbosity >= 2:
-            t7 = time.time()
-            print("Alignment Part 7: %s" % (str(t7-t6)))
+            database.insertAlignments(alignment_insertion_list,proteins,config)
 
-        database.getStoredResidues(proteins,config)
+            if config.verbosity >= 2:
+                t7 = time.time()
+                print("Alignment Part 7: %s" % (str(t7-t6)))
 
-        if config.verbosity >= 2:
-            t8 = time.time()
-            print("Alignment Part 8: %s" % (str(t8-t7)))
+            database.getStoredResidues(proteins,config)
+
+            if config.verbosity >= 2:
+                t8 = time.time()
+                print("Alignment Part 8: %s" % (str(t8-t7)))
 
     return
 
