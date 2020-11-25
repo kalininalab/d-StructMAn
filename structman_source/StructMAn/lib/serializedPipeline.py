@@ -844,7 +844,8 @@ def paraAlignment(config,proteins,skip_db = False):
             #This breaks after 100 started alignments, continues the while loop and then returns, where it has broken
             number_of_packaged_alignments = 0
             broken = False
-
+            if n >= N:
+                finished = True
             for i in range(n,N):
                 u_ac = u_acs[i]
                 annotation_list = list(proteins.get_protein_annotation_list(u_ac))
@@ -854,14 +855,16 @@ def paraAlignment(config,proteins,skip_db = False):
                 m = break_point
                 if m >= len(annotation_list):
                     break_point = 0
-                    if i == (N-1):
+                    if i >= (N-1):
                         finished = True
                     continue
                 for pos,(pdb_id,chain) in enumerate(annotation_list[m:]):
                     if proteins.is_annotation_stored(pdb_id,chain,u_ac):
-                        if pos == (len(annotation_list) -1):
+                        if (pos + m) == (len(annotation_list) -1):
                             break_point = 0
                             n = i+1
+                        if i >= (N-1):
+                            finished = True
                         continue
 
                     oligo = proteins.get_oligo(pdb_id,chain)
@@ -869,20 +872,19 @@ def paraAlignment(config,proteins,skip_db = False):
                     alignment_results.append(align.remote(mapping_dump,pdb_id,chain,oligo,prot_specific_mapping_dump))
                     number_of_packaged_alignments += 1
                     if number_of_packaged_alignments >= config.chunksize*10:
-                        break_point = pos + 1
+                        break_point = m + pos + 1
                         broken = True
                         number_of_packaged_alignments = 0
                         break
-                    if pos == (len(annotation_list) -1):
+                    if (pos + m) == (len(annotation_list) -1):
                         break_point = 0
                         n = i+1
+                if i >= (N-1):
+                    finished = True
                 if broken:
                     n = i
-                    if i == (N-1):
-                        finished = True
                     break
-                if i == (N-1):
-                    finished = True
+
 
         else:
             finished = True #No need for multiple cycles here
