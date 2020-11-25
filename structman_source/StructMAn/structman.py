@@ -56,6 +56,7 @@ class Config:
 
         self.profiling = profiling
         self.skipref = cfg.getboolean('skipref', fallback=False)
+        self.test_low_mem_system = cfg.getboolean('test_low_mem_system',fallback=False)
 
         self.resources = cfg.get('resources', fallback='manu')
 
@@ -254,7 +255,9 @@ class Config:
 
         mem = virtual_memory()
         self.gigs_of_ram = mem.total/1024/1024/1024
-        self.low_mem_system = self.gigs_of_ram < 20 #Less than 20Gb is a low memory system
+        self.low_mem_system = self.gigs_of_ram < 20 or self.test_low_mem_system #Less than 20Gb is a low memory system
+        if self.test_low_mem_system:
+            self.gigs_of_ram = 8
         if self.low_mem_system:
             self.chunksize = int(max([((self.gigs_of_ram*100)//self.proc_n)-60,self.proc_n]))
         else:

@@ -854,26 +854,32 @@ def paraAlignment(config,proteins,skip_db = False):
                 m = break_point
                 if m >= len(annotation_list):
                     break_point = 0
+                    if i == (N-1):
+                        finished = True
                     continue
                 for pos,(pdb_id,chain) in enumerate(annotation_list[m:]):
                     if proteins.is_annotation_stored(pdb_id,chain,u_ac):
                         if pos == (len(annotation_list) -1):
                             break_point = 0
+                            n = i+1
                         continue
 
                     oligo = proteins.get_oligo(pdb_id,chain)
 
                     alignment_results.append(align.remote(mapping_dump,pdb_id,chain,oligo,prot_specific_mapping_dump))
                     number_of_packaged_alignments += 1
-                    if number_of_packaged_alignments == 100:
+                    if number_of_packaged_alignments >= config.chunksize*10:
                         break_point = pos + 1
                         broken = True
                         number_of_packaged_alignments = 0
                         break
                     if pos == (len(annotation_list) -1):
                         break_point = 0
+                        n = i+1
                 if broken:
                     n = i
+                    if i == (N-1):
+                        finished = True
                     break
                 if i == (N-1):
                     finished = True
