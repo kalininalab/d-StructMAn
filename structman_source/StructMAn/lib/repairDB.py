@@ -4,6 +4,7 @@ import getopt
 import os
 
 import database
+import gzip
 
 main_file_path = os.path.abspath(sys.argv[0])
 sys.path.append(main_file_path.rsplit('/',2)[0])
@@ -110,8 +111,10 @@ def load(config):
         return
 
 
-
-    f = open(config.database_source_path,'r')
+    if config.database_source_path[-3:] == '.gz':
+        f = gzip.open(config.database_source_path,'r')
+    else:
+        f = open(config.database_source_path,'r')
     text = f.read()
     f.close()
 

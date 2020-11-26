@@ -1383,7 +1383,7 @@ def getSI(pdb_id,name,res,chain,pdb_path, verbosity = 0):
 
         return (smiles,inchi)
 
-def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
+def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0,verbosity = 0):
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
 

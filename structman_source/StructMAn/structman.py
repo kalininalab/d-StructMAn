@@ -780,6 +780,8 @@ if __name__ == "__main__":
             database.getLigandList(db,cursor,session_id,outfile)
             db.close()
         elif db_mode == 'create':
+            if minus_p_path != None:
+                config.database_source_path = minus_p_path
             repairDB.load(config)
         elif db_mode == 'destroy':
             repairDB.destroy(config)
