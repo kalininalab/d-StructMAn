@@ -5,6 +5,7 @@ import sys
 import os
 import sdsc
 import database
+import socket
 
 def is_connected():
     try:
