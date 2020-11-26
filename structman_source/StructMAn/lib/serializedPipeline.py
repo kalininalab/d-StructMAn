@@ -1000,7 +1000,7 @@ def align(align_dump,pdb_id,chain,oligo,prot_specific_mapping_dump):
     option_seq_thresh = config.option_seq_thresh
 
     try:
-        parse_out = pdbParser.getStandardizedPdbFile(pdb_id,pdb_path,oligo=oligo)
+        parse_out = pdbParser.getStandardizedPdbFile(pdb_id,pdb_path,oligo=oligo,verbosity = config.verbosity)
 
         if parse_out == None:
             return (u_ac,pdb_id,chain,'pdbParser failed')

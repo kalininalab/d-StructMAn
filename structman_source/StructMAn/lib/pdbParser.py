@@ -6,6 +6,7 @@ import time
 import gzip
 import database
 import sdsc
+import socket
 
 threeToOne = {
     "00C": "C", "01W": "X", "02K": "A", "03Y": "C", "07O": "C",
@@ -291,6 +292,23 @@ oneToThree = {'C':'CYS',
 'M':'MET',
 'X':'UNK'}
 
+def is_connected():
+    try:
+        # connect to the host -- tells us if the host is actually
+        # reachable
+        socket.create_connection(("1.1.1.1", 53))
+        return True
+    except OSError:
+        pass
+    return False
+
+def connection_sleep_cycle(verbosity):
+    while not is_connected():
+        if verbosity >= 1:
+            print('No connection, sleeping a bit and then try again')
+        time.sleep(30)
+    return
+
 def getCurrentPDBID(pdb_id,pdb_path,debug=False):
     obsolete_path = '%s/data/structures/obsolete/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
 
@@ -309,7 +327,7 @@ def getCurrentPDBID(pdb_id,pdb_path,debug=False):
 
     return pdb_id
 
-def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=False):
+def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=False,verbosity = 0):
     if obsolete_check:
         pdb_id = getCurrentPDBID(pdb_id, pdb_path)
 
@@ -320,7 +338,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
             path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
             if not os.path.isfile(path):
                 url = 'https://files.rcsb.org/view/%s.pdb' %pdb_id
-                if pdb_path != '':
+                connection_sleep_cycle(verbosity)
+                if pdb_path != '' and verbosity >= 2:
                     print("Did not find asymetric unit entry in local pdb, searching online: ",url)
                 try:
                     request = urllib.request.Request(url)
@@ -328,7 +347,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                         return urllib.request.urlopen(request,timeout=60),None
                     return urllib.request.urlopen(request,timeout=60)
                 except:
-                    print("Did not find the PDB-file: %s" % pdb_id)
+                    if verbosity >= 2:
+                        print("Did not find the PDB-file: %s" % pdb_id)
                     if get_is_local:
                         return None,None
                     return None
@@ -348,7 +368,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
             path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
             if not os.path.isfile(path):
                 url = 'https://files.rcsb.org/view/%s.pdb1' %pdb_id
-                if pdb_path != '':
+                connection_sleep_cycle(verbosity)
+                if pdb_path != '' and verbosity >= 2:
                     print("Did not find entry in local pdb, searching online: ",url)
                 try:
                     request = urllib.request.Request(url)
@@ -356,7 +377,8 @@ def getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=False,get_is_local=Fals
                         return urllib.request.urlopen(request,timeout=60),None
                     return urllib.request.urlopen(request,timeout=60)
                 except:
-                    print("Did not find the PDB-file: %s" % pdb_id)
+                    if verbosity >= 2:
+                        print("Did not find the PDB-file: %s" % pdb_id)
                     if get_is_local:
                         return None,None
                     return None
@@ -379,6 +401,7 @@ def getMMCIFBuffer(pdb_id,pdb_path, AU=False, obsolete_check=False):
         path = '%s/data/structures/divided/pdb/%s/pdb%s.cif.gz' % (pdb_path,pdb_id[1:-1].lower(),pdb_id.lower())
         if not os.path.isfile(path):
             url = 'https://files.rcsb.org/view/%s.cif' %pdb_id
+            
             if path != '':
                 print("Did not find asymetric unit entry in local mmcif, searching online: ",url)
             try:
@@ -512,9 +535,9 @@ def parseMMCIFSequence(buf):
     buf.close()                                 
     return seq,res_pos_map
 
-def getSequenceAU(pdb_id,chain,pdb_path):
+def getSequenceAU(pdb_id,chain,pdb_path,verbosity = 0):
     isMMCIF_Flag = False
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=True,obsolete_check=False)
+    buf = getPDBBuffer(pdb_id,pdb_path,AU=True,obsolete_check=False,verbosity = verbosity)
     if buf == None:
         print('Trying MMCIF')
         buf = getMMCIFBuffer(pdb_id,pdb_path,AU=True)
@@ -530,9 +553,9 @@ def getSequenceAU(pdb_id,chain,pdb_path):
         buf.close()
     return seq,res_pos_map
 
-def getSequencePlain(pdb_id,chain,pdb_path):
+def getSequencePlain(pdb_id,chain,pdb_path,verbosity = 0):
     isMMCIF_Flag = False
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=True)
+    buf = getPDBBuffer(pdb_id,pdb_path,AU=False,obsolete_check=True, verbosity = verbosity)
     if buf == None:
         print('Trying MMCIF')
         buf = getMMCIFBuffer(pdb_id,pdb_path,AU=False)
@@ -735,21 +758,28 @@ def parseMMCIFSequence(buf,chain):
 
 #called by serializedPipeline
 #called by templateFiltering
-def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = False, get_is_local = False):
+def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = False, get_is_local = False, verbosity = 0):
     AU = False
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
         AU = True
 
     if get_is_local:
-        buf,path = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check,get_is_local = get_is_local)
+        buf,path = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check,get_is_local = get_is_local, verbosity = verbosity)
     else:
-        buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check)
+        buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=obsolete_check, verbosity = verbosity)
 
     if buf == None:
+        if return_10k_bool and get_is_local:
+            return '',None,None
+        elif return_10k_bool:
+            return '',None
+        elif get_is_local:
+            return '',None
+        return ''
     # Added automatization here, if pdb file not exist, automatically calls MMCIF version
-        print('PDB file does not exist, trying MMCIF file')
-        return standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False)      
+    #    print('PDB file does not exist, trying MMCIF file')
+    #    return standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False)      
         
 
     chain_ids = set()
@@ -900,7 +930,7 @@ def standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False):
     return template_page
 
 #called by serializedPipeline
-def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set()):
+def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set(), verbosity = 0):
 
     AU = False
 
@@ -908,7 +938,7 @@ def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set()):
         pdb_id = pdb_id[0:4]
         AU = True
 
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False)
+    buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False, verbosity = verbosity)
 
     if buf == None:
         # Added automatization here, if pdb file not exist, automatically calls MMCIF version
@@ -1247,7 +1277,7 @@ def updateLigandDB(new_ligands,smiles_path,inchi_path):
     return
 
 #get called by database
-def getSI(pdb_id,name,res,chain,pdb_path):
+def getSI(pdb_id,name,res,chain,pdb_path, verbosity = 0):
 
     MMCIF_Flag = False
     AU = False
@@ -1255,7 +1285,7 @@ def getSI(pdb_id,name,res,chain,pdb_path):
         pdb_id = pdb_id[0:4]
         AU = True
 
-    buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False)
+    buf = getPDBBuffer(pdb_id,pdb_path,AU=AU,obsolete_check=False, verbosity = verbosity)
     
     #Added automatization here if pdb buffer does not exist, it goes into mmcif buffer
     
@@ -1362,6 +1392,7 @@ def getPDBHeaderBuffer(pdb_id,pdb_path,tries = 0):
         url = 'https://files.rcsb.org/header/%s.pdb' % pdb_id
         #if pdb_path != '':
         #    print("Did not find asymetric unit entry in local pdb, searching online: ",url)
+        connection_sleep_cycle(verbosity)
         try:
             request = urllib.request.Request(url)
             return urllib.request.urlopen(request,timeout=(tries+1)*10)

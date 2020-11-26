@@ -26,7 +26,7 @@ import repairDB
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '', basic_util_mode = False,
                     util_mode = False, output_util = False,external_call = True,profiling = False, verbosity = None,
-                    print_all_errors = False):
+                    print_all_errors = False, print_all_warns = False):
         self.prog_start_time = time.time()
         # read config file, auto add section header so old config files work
         self.config_parser_obj = configparser.ConfigParser()
@@ -268,12 +268,12 @@ class Config:
                 os.mkdir(self.outfolder)
             if self.verbosity >= 1:
                 print('Using %s core(s)' % str(self.proc_n))
-            if (not external_call) and (not print_all_errors): #no need for errorlogs, when the config is generated not from the main script
+            if (not external_call) and (not print_all_warns): #no need for errorlogs, when the config is generated not from the main script
                 if not os.path.exists("%s/errorlogs" % self.outfolder):
                     os.mkdir("%s/errorlogs" % self.outfolder)
                 self.errorlog_path = "%s/errorlogs/errorlog.txt" % self.outfolder
 
-        self.errorlog = Errorlog(path = self.errorlog_path)
+        self.errorlog = Errorlog(path = self.errorlog_path,print_all_errors = print_all_errors,print_all_warns = print_all_warns)
 
         #Determine maximal package size from database
         try:
@@ -303,10 +303,12 @@ class Config:
         return db,cursor
 
 class Errorlog:
-    def __init__(self,path = None):
+    def __init__(self,path = None,print_all_errors = False, print_all_warns = False):
         self.path = path
         self.error_counter = 0
         self.warning_counter = 0
+        self.print_all_errors = print_all_errors
+        self.print_all_warns = print_all_warns
 
     def start(self,nfname,session):
         if self.path == None:
@@ -322,7 +324,7 @@ class Errorlog:
         self.error_counter += 1
         g = ''.join(traceback.format_list(traceback.extract_stack()))
         error_text = 'Error %s:\n%s\n%s\n' % (str(self.error_counter),error_text,g)
-        if self.path == None:
+        if self.path == None or self.print_all_errors or print_all_warns:
             print(error_text)
             return
         f = open(self.path,'a')
@@ -350,7 +352,7 @@ class Errorlog:
         self.warning_counter += 1
         g = ''.join(traceback.format_list(traceback.extract_stack()))
         warn_text = 'Warning %s:\n%s\n%s\n' % (str(self.warning_counter),warn_text,g)
-        if self.path == None:
+        if self.path == None or print_all_warns:
             print(warn_text)
             return
         if lock != None:
@@ -604,7 +606,7 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','chunksize=','norin'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','printwarnings','chunksize=','norin'])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -620,6 +622,7 @@ if __name__ == "__main__":
     profiling = False
     skipref = False
     print_all_errors = False
+    print_all_warns = False
     chunksize = None
     '''
     #mmcif mode flag is added
@@ -668,6 +671,9 @@ if __name__ == "__main__":
 
         if opt == '--printerrors':
             print_all_errors = True
+
+        if opt == '--printwarnings':
+            print_all_warns = True
 
         if opt == '--chunksize':
             chunksize = int(arg)
@@ -734,7 +740,7 @@ if __name__ == "__main__":
     config = Config(config_path,num_of_cores = num_of_cores,
                     output_path = outfolder, util_mode = util_mode,
                     basic_util_mode = basic_util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
-                    print_all_errors = print_all_errors)
+                    print_all_errors = print_all_errors, print_all_warns = print_all_warns)
 
     if chunksize != None:
         config.chunksize = chunksize

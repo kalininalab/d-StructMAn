@@ -6,7 +6,24 @@ import os
 import sdsc
 import database
 
-def getUniprotId(query,querytype):
+def is_connected():
+    try:
+        # connect to the host -- tells us if the host is actually
+        # reachable
+        socket.create_connection(("1.1.1.1", 53))
+        return True
+    except OSError:
+        pass
+    return False
+
+def connection_sleep_cycle(verbosity):
+    while not is_connected():
+        if verbosity >= 1:
+            print('No connection, sleeping a bit and then try again')
+        time.sleep(30)
+    return
+
+def getUniprotId(query,querytype,verbosity = 0):
     url = 'https://www.uniprot.org/uploadlists/'
     params = {
     'from':'%s' % (querytype),
@@ -15,6 +32,7 @@ def getUniprotId(query,querytype):
     'query':'%s' % (query)
     }
     #print params
+    connection_sleep_cycle(verbosity)
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
     contact = "" # Please set your email address here to help us debug in case of problems.
@@ -420,6 +438,7 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
         return {}
     query = ' '.join(query_ids)
     url = 'https://www.uniprot.org/uploadlists/'
+    connection_sleep_cycle(config.verbosity)
     params = {
     'from':'%s' % (querytype),
     'to':'%s' % (target_type),
@@ -697,13 +716,14 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
     else:
         url = 'https://www.uniprot.org/uniparc/%s.fasta' %uniprot_ac
+    connection_sleep_cycle(config.verbosity)
     try:
         request = urllib.request.Request(url)
         response = urllib.request.urlopen(request,timeout=(tries+1)*10)
         page = response.read(9000000).decode('utf-8')
     except:
         if tries < 3:
-            getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
+            return getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
         else:
             e,f,g = sys.exc_info()
             config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,str(e),str(f)))
