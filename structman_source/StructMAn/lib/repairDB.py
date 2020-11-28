@@ -6,6 +6,8 @@ import os
 import database
 import gzip
 
+import subprocess
+
 main_file_path = os.path.abspath(sys.argv[0])
 sys.path.append(main_file_path.rsplit('/',2)[0])
 import structman
@@ -79,6 +81,15 @@ def reset(cursor,keep_structures = False):
             print("Error: ",e,f,g)
     return
 
+def export(config,target_path):
+    target_path = os.path.abspath(target_path) + '/' + config.db_name + '.sql.gz'
+    cmds = ' '.join(['mysqldump','-n','-u',config.db_user_name,'-h',config.db_adress,'--password=%s' % config.db_password,'--single-transaction','--databases',config.db_name,
+            '|','pigz','--best','-p','8','>','"%s"' % target_path])
+    print(cmds)
+    p = subprocess.Popen(cmds,shell = True)
+    p.wait()
+    return
+
 def empty(config):
     db,cursor = config.getDB()
     reset(cursor)
@@ -113,9 +124,10 @@ def load(config):
 
     if config.database_source_path[-3:] == '.gz':
         f = gzip.open(config.database_source_path,'r')
+        text = f.read().decode('ascii')
     else:
         f = open(config.database_source_path,'r')
-    text = f.read()
+        text = f.read()
     f.close()
 
     db,cursor = config.getDB()

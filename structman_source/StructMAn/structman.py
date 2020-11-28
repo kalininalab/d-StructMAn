@@ -486,7 +486,7 @@ if __name__ == "__main__":
         database_util = True
         argv = argv[1:]
 
-        possible_key_words = set(['reset','out','create','destroy','clear'])
+        possible_key_words = set(['reset','out','create','destroy','clear','export'])
 
         if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
             print(database_util_disclaimer)
@@ -785,6 +785,11 @@ if __name__ == "__main__":
             repairDB.load(config)
         elif db_mode == 'destroy':
             repairDB.destroy(config)
+        elif db_mode == 'export':
+            if minus_p_path == None:
+                print('database export needs a target_path given with -p')
+                sys.exit(1)
+            repairDB.export(config,minus_p_path)
 
 
     elif output_util:

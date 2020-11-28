@@ -798,7 +798,7 @@ class Protein:
         if regions == None:
             return
         for [a,b,region_type] in regions:
-            for pos in range(int(a+1),int(b)):
+            for pos in range(int(a),int(b+1)):
                 if not pos in self.positions:
                     continue
                 self.positions[pos].set_disorder_region(region_type)

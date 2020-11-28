@@ -907,7 +907,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
     parent_dir = '/wibicom/SHARED_DATA/agress/structman'
     os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
-    if len(target_residues) > 10:
+    if len(target_residues) > 10 and not config.low_mem_system:
 
         analysis_dump = ray.put((pdb_id,config,target_residues,siss_coord_map,centroid_map,
                         res_contig_map,coordinate_map,fuzzy_dist_matrix,chain_type_map,
