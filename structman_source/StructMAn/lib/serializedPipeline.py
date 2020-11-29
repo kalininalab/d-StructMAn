@@ -1353,7 +1353,9 @@ def paraAnnotate(config,proteins, lite = False):
             cost = 1
         else:
             cost = min([s,config.annotation_processes])
-        
+        if config.low_mem_system and s >= 15: #Skip large structure for low mem systems
+            del size_map[s]
+            continue  
         del_list = []
         for pdb_id in size_map[s]:
 
