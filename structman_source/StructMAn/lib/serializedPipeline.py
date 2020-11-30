@@ -820,10 +820,12 @@ def paraAlignment(config,proteins,skip_db = False):
             if not proteins.is_annotation_stored(pdb_id,chain,u_ac):
                 continue
             structure_id = proteins.get_structure_db_id(pdb_id,chain)
-            target_seq,template_seq = proteins.get_alignment(u_ac,pdb_id,chain)
+            target_seq,template_seq = proteins.pop_alignment(u_ac,pdb_id,chain)
             aaclist = proteins.getAACList(u_ac)
             prot_id = proteins.get_protein_db_id(u_ac)
             mapping_results.append(paraMap.remote(mapping_dump,u_ac,pdb_id,chain,structure_id,target_seq,template_seq,aaclist,prot_id))
+
+    gc.collect()
 
     mappings_outs = ray.get(mapping_results)
     for (u_ac,pdb_id,chain,sub_infos) in mappings_outs:
@@ -849,7 +851,7 @@ def paraAlignment(config,proteins,skip_db = False):
             for i in range(n,N):
                 u_ac = u_acs[i]
                 annotation_list = list(proteins.get_protein_annotation_list(u_ac))
-                seq = proteins.get_sequence(u_ac)
+                seq = proteins.pop_sequence(u_ac)
                 aaclist = proteins.getAACList(u_ac)
                 prot_specific_mapping_dump = ray.put((u_ac,seq,aaclist))
                 m = break_point
@@ -906,6 +908,8 @@ def paraAlignment(config,proteins,skip_db = False):
             database.getStoredResidues(proteins,config)
             already_called = True
 
+        gc.collect()
+
         align_outs = ray.get(alignment_results)
         alignment_insertion_list = []
         structure_insertion_list = set()
@@ -931,7 +935,7 @@ def paraAlignment(config,proteins,skip_db = False):
             proteins.set_coverage(u_ac,pdb_id,chain,coverage)
             proteins.set_sequence_id(u_ac,pdb_id,chain,seq_id)
             proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
-            proteins.set_alignment(u_ac,pdb_id,chain,alignment)
+            #proteins.set_alignment(u_ac,pdb_id,chain,alignment)
 
             proteins.set_interaction_partners(pdb_id,interaction_partners)
             proteins.set_chain_type_map(pdb_id,chain_type_map)
@@ -1256,7 +1260,6 @@ def classification(proteins,config):
     for u_ac in u_acs:
         proteins.remove_protein_annotations(u_ac)
     proteins.semi_deconstruct()
-    gc.collect()
 
     if config.verbosity >= 2:
         t13 = time.time()
@@ -1273,6 +1276,9 @@ def classification(proteins,config):
         amount_of_positions = 0
 
         while True:
+            if config.low_mem_system:
+                gc.collect()
+
             ready, not_ready = ray.wait(classification_results)
 
             if len(ready) > 0:
@@ -1291,6 +1297,7 @@ def classification(proteins,config):
             if len(not_ready) == 0:
                 break
     else:
+        gc.collect()
         for outs,comp_time in classification_results:
             for u_ac,pos,mapping_results in outs:
                 proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results = mapping_results)
@@ -1329,6 +1336,7 @@ def paraAnnotate(config,proteins, lite = False):
 
     total_structural_analysis = {}
     interaction_structures = set()
+    background_insert_residues_process = None
     structure_list = proteins.get_structure_list()
 
     complex_list = proteins.get_complex_list()
@@ -1349,13 +1357,15 @@ def paraAnnotate(config,proteins, lite = False):
     assigned_costs = {}
     conf_dump = ray.put(config)
     for s in sorted_sizes:
-        if s < n_of_chain_thresh:
+        if s < n_of_chain_thresh or config.low_mem_system:
             cost = 1
         else:
             cost = min([s,config.annotation_processes])
+        '''
         if config.low_mem_system and s >= 15: #Skip large structure for low mem systems
             del size_map[s]
-            continue  
+            continue
+        '''
         del_list = []
         for pdb_id in size_map[s]:
 
@@ -1396,6 +1406,9 @@ def paraAnnotate(config,proteins, lite = False):
     amount_of_structures = 0
 
     while True:
+        if background_insert_residues_process != None:
+            background_insert_residues_process.join()
+
         ready, not_ready = ray.wait(anno_result_ids)
 
         if len(ready) > 0:
@@ -1457,6 +1470,16 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_ion_profile(ret_pdb_id,ion_profiles)
                 proteins.set_metal_profile(ret_pdb_id,metal_profiles)
                 proteins.set_chain_chain_profile(ret_pdb_id,chain_chain_profiles)
+
+                if config.low_mem_system:
+                    if len(interaction_structures) > 0:
+                        interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
+                        interaction_structures = set()
+                    if len(total_structural_analysis) > (config.chunksize//2):
+                        background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
+                        total_structural_analysis = {}
+                        gc.collect()
+
             anno_result_ids = new_anno_result_ids + not_ready
 
         if len(anno_result_ids) == 0 and len(size_map) == 0:
@@ -1468,7 +1491,8 @@ def paraAnnotate(config,proteins, lite = False):
         print('Longest computation for:',max_comp_time_structure,'with:',max_comp_time,'In total',amount_of_structures,'structures','Accumulated time:',total_comp_time)
 
     if not lite:
-        interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
+        if len(interaction_structures) > 0:
+            interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
 
         if config.verbosity >= 2:
             t32 = time.time()
@@ -1480,7 +1504,8 @@ def paraAnnotate(config,proteins, lite = False):
             t33 = time.time()
             print('Annotation Part 3.2:',t33-t32)
 
-        background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
+        if len(total_structural_analysis) > 0:
+            background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
 
         if config.verbosity >= 2:
             t34 = time.time()

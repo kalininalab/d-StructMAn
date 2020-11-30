@@ -741,6 +741,11 @@ class Protein:
     def get_sequence(self):
         return self.sequence
 
+    def pop_sequence(self):
+        seq = self.sequence
+        self.sequence = None
+        return seq
+
     def contains_position(self,pos):
         return pos in self.positions
 
@@ -896,6 +901,9 @@ class Protein:
 
     def get_alignment(self,pdb_id,chain):
         return self.structure_annotations[(pdb_id,chain)].get_alignment()
+
+    def pop_alignment(self,pdb_id,chain):
+        return self.structure_annotations[(pdb_id,chain)].pop_alignment()
 
     def set_coverage(self,pdb_id,chain,value):
         self.structure_annotations[(pdb_id,chain)].set_coverage(value)
@@ -1196,6 +1204,9 @@ class Proteins:
     def get_alignment(self,u_ac,pdb_id,chain):
         return self.protein_map[u_ac].get_alignment(pdb_id,chain)
 
+    def pop_alignment(self,u_ac,pdb_id,chain):
+        return self.protein_map[u_ac].pop_alignment(pdb_id,chain)
+
     def set_coverage_by_db_id(self,prot_id,pdb_id,chain,value):
         self.getByDbId(prot_id).set_coverage(pdb_id,chain,value)
         return
@@ -1304,6 +1315,9 @@ class Proteins:
 
     def get_sequence(self,u_ac):
         return self.protein_map[u_ac].get_sequence()
+
+    def pop_sequence(self,u_ac):
+        return self.protein_map[u_ac].pop_sequence()
 
     def add_ref_id(self,u_ac,ref):
         self.protein_map[u_ac].add_ref_id(ref)
@@ -1462,6 +1476,11 @@ class Structure_annotation:
 
     def get_alignment(self):
         return self.alignment
+
+    def pop_alignment(self):
+        aln = self.alignment
+        self.alignment = None
+        return aln
 
     def set_coverage(self,value):
         self.coverage = value
