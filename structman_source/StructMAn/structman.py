@@ -606,7 +606,7 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','printwarnings','chunksize=','norin'])
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','printwarnings','chunksize=','norin','dbname='])
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -624,6 +624,7 @@ if __name__ == "__main__":
     print_all_errors = False
     print_all_warns = False
     chunksize = None
+    dbname = None
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -679,6 +680,8 @@ if __name__ == "__main__":
             chunksize = int(arg)
         if opt == '--norin':
             norin = True
+        if opt == '--dbname':
+            dbname = arg
         '''
         #mmcif option added to call mmcif mode while calling structman
         if opt == '-mmcif':
@@ -780,15 +783,26 @@ if __name__ == "__main__":
             database.getLigandList(db,cursor,session_id,outfile)
             db.close()
         elif db_mode == 'create':
-            if minus_p_path != None:
-                config.database_source_path = minus_p_path
-            repairDB.load(config)
+            if infile != None:
+                config.database_source_path = infile
+
+            if dbname != None:
+                if dbname[:len(config.db_user_name)] != config.db_user_name:
+                    dbname = '%s_%s' % (config.db_user_name,dbname)
+                config.config_parser_obj.set('user','db_name',dbname)
+                config.db_name = dbname
+                f = open(config_path,'w')
+                config.config_parser_obj.write(f)
+                f.close()
+
+            repairDB.load(config,dbname=dbname)
         elif db_mode == 'destroy':
             repairDB.destroy(config)
         elif db_mode == 'export':
             if minus_p_path == None:
-                print('database export needs a target_path given with -p')
+                print('database export needs a target_path given with -p [path to the target folder]')
                 sys.exit(1)
+
             repairDB.export(config,minus_p_path)
 
 

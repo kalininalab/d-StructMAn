@@ -1404,6 +1404,7 @@ def paraAnnotate(config,proteins, lite = False):
     total_comp_time = 0.
     max_comp_time_structure = None
     amount_of_structures = 0
+    amount_of_chains_in_analysis_dict = 0
 
     while True:
         if background_insert_residues_process != None:
@@ -1462,6 +1463,7 @@ def paraAnnotate(config,proteins, lite = False):
                             proteins.add_residue(ret_pdb_id,chain,res_id,residue)
                     else:
                         total_structural_analysis[(ret_pdb_id,chain)] = structural_analysis_dict[chain]
+                        amount_of_chains_in_analysis_dict += 1
 
                         if not (ret_pdb_id,chain) in structure_list:
                             interaction_structures.add((ret_pdb_id,chain))
@@ -1472,12 +1474,12 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_chain_chain_profile(ret_pdb_id,chain_chain_profiles)
 
                 if config.low_mem_system:
-                    if len(interaction_structures) > 0:
+                    if amount_of_chains_in_analysis_dict > (config.chunksize*2):
                         interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
                         interaction_structures = set()
-                    if len(total_structural_analysis) > (config.chunksize//2):
                         background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
                         total_structural_analysis = {}
+                        amount_of_chains_in_analysis_dict = 0
                         gc.collect()
 
             anno_result_ids = new_anno_result_ids + not_ready

@@ -2,7 +2,7 @@
 import sys
 import getopt
 import os
-
+import traceback
 import database
 import gzip
 
@@ -82,12 +82,13 @@ def reset(cursor,keep_structures = False):
     return
 
 def export(config,target_path):
-    target_path = os.path.abspath(target_path) + '/' + config.db_name + '.sql.gz'
+    target_path = '%s/%s.sql.gz' % (os.path.abspath(target_path),config.db_name)
     cmds = ' '.join(['mysqldump','-n','-u',config.db_user_name,'-h',config.db_adress,'--password=%s' % config.db_password,'--single-transaction','--databases',config.db_name,
             '|','pigz','--best','-p','8','>','"%s"' % target_path])
-    print(cmds)
+
     p = subprocess.Popen(cmds,shell = True)
     p.wait()
+
     return
 
 def empty(config):
@@ -108,7 +109,7 @@ def destroy(config):
     cursor.execute(sql)
     db.close()
 
-def load(config):
+def load(config,dbname=None):
     db,cursor = config.getDB(server_connection = True)
 
     sql = 'CREATE DATABASE %s' % config.db_name
@@ -117,11 +118,39 @@ def load(config):
         cursor.execute(sql)
         db.close()
     except:
+        [e,f,g] = sys.exc_info()
+        g = traceback.format_exc()
+        print('\n'.join([str(e),str(f),str(g)]))
         db.close()
-        empty(config)
+        #empty(config)
         return
 
+    new_lines = []
+    f = gzip.open(config.database_source_path,'rb')
+    lines = f.readlines()
+    f.close()
 
+    for line in lines:
+        line = line.decode('ascii')
+        if line[:4] == 'USE ':
+            new_lines.append('USE `%s`;\n' % config.db_name)
+        else:
+            new_lines.append(line)
+
+    db_file = 'tmp_database_file.sql'
+    f = open(db_file,'w')
+    f.write(''.join(new_lines))
+    f.close()
+
+    cmds = ' '.join(['mysql','-u',config.db_user_name,'-h',config.db_adress,'--password=%s' % config.db_password,'<',db_file])
+
+    p = subprocess.Popen(cmds,shell = True)
+    p.wait()
+
+    os.remove(db_file)
+
+    #Old version, remove if new version is working
+    '''
     if config.database_source_path[-3:] == '.gz':
         f = gzip.open(config.database_source_path,'r')
         text = f.read().decode('ascii')
@@ -141,6 +170,8 @@ def load(config):
             pass
 
     db.close()
+    '''
+    return
 
 #destroys and reinitializes the database
 def reinit(config):
