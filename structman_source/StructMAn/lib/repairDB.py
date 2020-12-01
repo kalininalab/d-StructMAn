@@ -109,7 +109,7 @@ def destroy(config):
     cursor.execute(sql)
     db.close()
 
-def load(config,dbname=None):
+def load(config):
     db,cursor = config.getDB(server_connection = True)
 
     sql = 'CREATE DATABASE %s' % config.db_name
@@ -126,12 +126,18 @@ def load(config,dbname=None):
         return
 
     new_lines = []
-    f = gzip.open(config.database_source_path,'rb')
+    if config.database_source_path[-3:] == '.gz':
+        f = gzip.open(config.database_source_path,'rb')
+        binary = True
+    else:
+        f = open(config.database_source_path,'r')
+        binary = False
     lines = f.readlines()
     f.close()
 
     for line in lines:
-        line = line.decode('ascii')
+        if binary:
+            line = line.decode('ascii')
         if line[:4] == 'USE ':
             new_lines.append('USE `%s`;\n' % config.db_name)
         else:

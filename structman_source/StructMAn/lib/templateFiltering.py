@@ -196,6 +196,8 @@ def parsePDB(input_page):
 
     chain_type_map = {}
 
+    peptide_count = {}
+
     box_map = {}
 
     ligands = set()
@@ -292,7 +294,7 @@ def parsePDB(input_page):
                     b_factor = 0.0
             if record_name == "ATOM" or record_name == 'MODRES' or record_name == "HETATM":
                 if chain_id not in chain_type_map:
-                    if record_name == "ATOM":
+                    if record_name == "ATOM" or record_name == 'MODRES':
                         if len(res_name) == 1:
                             chain_type = "RNA"
                         elif len(res_name) == 2:
@@ -300,19 +302,16 @@ def parsePDB(input_page):
                         elif len(res_name) == 3:
                             chain_type = "Protein"
                         chain_type_map[chain_id] = chain_type
-                        
+                        peptide_count[chain_id] = [0,0]
                     elif record_name == 'HETATM':
-                        if res_name in pdbParser.threeToOne or not pdbParser.boring(res_name):#For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in threeToOne, which are hopefully some kind of anormal amino acids
-                            chain_type = 'Peptide'
-                            chain_type_map[chain_id] = chain_type
-                elif record_name == "ATOM" and chain_type_map[chain_id] == 'Peptide':
-                    if len(res_name) == 1:
-                        chain_type = "RNA"
-                    elif len(res_name) == 2:
-                        chain_type = "DNA"
-                    elif len(res_name) == 3:
-                        chain_type = "Protein"
-                    chain_type_map[chain_id] = chain_type
+                        if res_name in pdbParser.threeToOne or not pdbParser.boring(res_name):
+                            chain_type_map[chain_id] = "Protein"
+                            peptide_count[chain_id] = [0,0]
+                if record_name == 'HETATM':
+                    if res_name in pdbParser.threeToOne or not pdbParser.boring(res_name):#For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in threeToOne, which are hopefully some kind of anormal amino acids
+                        peptide_count[chain_id][1] += 1
+                elif record_name == "ATOM" or record_name == 'MODRES':
+                    peptide_count[chain_id][0] += 1
 
             if record_name == "ATOM":
                 if len(line) > 50 and not atom_name[0] in ('H','D'):
@@ -423,6 +422,13 @@ def parsePDB(input_page):
                             ions.add((chain_id,res_nr))
                         else:
                             ligands.add((chain_id,res_nr))
+
+    #New Peptide detection counts irregular amino acids
+    for chain_id in peptide_count:
+        if peptide_count[chain_id][0] <= peptide_count[chain_id][1]*2:
+            chain_type_map[chain_id] = 'Peptide'
+        elif (peptide_count[chain_id][0] + peptide_count[chain_id][1]) < 150: #Total number of atoms
+            chain_type_map[chain_id] = 'Peptide'
 
     return (coordinate_map,siss_map,res_contig_map,ligands,metals,ions,box_map,
             chain_type_map,b_factors,modres_map,ssbond_map,link_map,cis_conformation_map,cis_follower_map)

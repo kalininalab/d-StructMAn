@@ -98,6 +98,16 @@ def changeBackChains(changed_chains,n_sif_file,n_intsc_file,n_nrint_file,n_res_f
 
     return
 '''
+class Rinerator_server:
+    def __init__(self,rinerator_path):
+        rinerator_base_path = rinerator_path.rsplit('/',1)[0]
+        sys.path.append(rinerator_base_path)
+        import get_chains
+        return
+
+    def serv_calcRIN(self,page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
+        calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity)
+        return
 
 def calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
     original_chains,ligands,page = parsePDB(page)
@@ -120,8 +130,6 @@ def calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
     f.write("\n".join([','.join(x) for x in ligands]))
     f.close()
     rinerator_base_path = rinerator_path.rsplit('/',1)[0]
-    sys.path.append(rinerator_base_path)
-    import get_chains
 
     reduce_cmd = '%s/reduce' % rinerator_base_path
     probe_cmd = '%s/probe' % rinerator_base_path
@@ -333,6 +341,9 @@ def calculateRINsFromPdbList(pdbs,fromScratch=True,forceCentrality=True,remove_t
 
 
 def main(fromScratch=False,forceCentrality=False,update_days=2.,pdb_p='',rin_db_path='',n_proc=32,rinerator_base_path = ''):
+
+    sys.path.append(rinerator_base_path)
+    import get_chains
 
     pdb_path=pdb_p
     bio_assembly_path = '%s/data/biounit/PDB/divided' % pdb_path

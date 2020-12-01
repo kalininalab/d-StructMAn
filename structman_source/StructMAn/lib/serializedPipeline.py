@@ -1147,6 +1147,12 @@ def classification(proteins,config):
     for u_ac,size in size_sorted:
         classification_inp = []
         positions = proteins.get_position_ids(u_ac)
+        N = 0
+        if len(positions) > 500:
+            divisor = (len(positions)//500) + 1
+            max_package_size = (len(positions) // 2) + 1
+        else:
+            max_package_size = 500
         for pos in positions:
             if proteins.is_position_stored(u_ac,pos):
                 continue
@@ -1216,15 +1222,37 @@ def classification(proteins,config):
                             identical_aa,lig_dists,chain_distances,homomer_distances,chains,resolution,res_aa))
 
             classification_inp.append((pos,mappings,disorder_score,disorder_region))
+            N += 1
+            if N == max_package_size:
+                if len(packages) == package_counter:
+                    packages.append([])
+                packages[package_counter].append((u_ac,classification_inp))
 
+                if package_counter == config.proc_n - 1 and counter_direction_forward:
+                    counter_direction_forward = False
+                elif package_counter == config.proc_n - 1:
+                    package_counter -= 1
+                    if package_counter == -1:
+                        package_counter = 0
+                elif package_counter == 0 and not counter_direction_forward:
+                    counter_direction_forward = True
+                elif package_counter == 0:
+                    package_counter += 1
+                elif counter_direction_forward:
+                    package_counter += 1
+                else:
+                    package_counter -= 1
+
+                classification_inp = []
+                N = 0
 
         if len(packages) == package_counter:
             packages.append([])
         packages[package_counter].append((u_ac,classification_inp))
 
-        if package_counter == config.annotation_processes - 1 and counter_direction_forward:
+        if package_counter == config.proc_n - 1 and counter_direction_forward:
             counter_direction_forward = False
-        elif package_counter == config.annotation_processes - 1:
+        elif package_counter == config.proc_n - 1:
             package_counter -= 1
             if package_counter == -1:
                 package_counter = 0
@@ -1248,6 +1276,8 @@ def classification(proteins,config):
 
     if para:
         classification_dump = ray.put(config)
+        if config.verbosity >= 2:
+            print('Starting para classification with',len(packages),'number of packages')
         for package in packages:
             classification_results.append(para_classify_remote_wrapper.remote(classification_dump,package))
     else:
@@ -1313,7 +1343,7 @@ def classification(proteins,config):
 #@profile
 def paraAnnotate(config,proteins, lite = False):
 
-    annotation_processes = config.annotation_processes
+    annotation_processes = config.proc_n
 
     errorlog = config.errorlog
 
@@ -1325,11 +1355,6 @@ def paraAnnotate(config,proteins, lite = False):
     #a new structure-structure entry has to be created and has to be inserted into the database before the residue insertion
     #homooligomer information is not present for such cases, this information has to be updated, if the chain is mapped at a later iteration or run
 
-    '''
-    sys.path.append("/TL/sin/work/agress/RIN")
-    import createRINdb
-    createRINdb.calculateRINsFromPdbList(pdb_structure_map.keys(),fromScratch=True,forceCentrality=True)
-    '''
     n_of_chain_thresh = 10 #Structures with n_of_chain_thresh or more chains get a nested paralellization
 
     size_map = {}
@@ -1360,7 +1385,7 @@ def paraAnnotate(config,proteins, lite = False):
         if s < n_of_chain_thresh or config.low_mem_system:
             cost = 1
         else:
-            cost = min([s,config.annotation_processes])
+            cost = min([s,config.proc_n])
         '''
         if config.low_mem_system and s >= 15: #Skip large structure for low mem systems
             del size_map[s]
@@ -1369,7 +1394,7 @@ def paraAnnotate(config,proteins, lite = False):
         del_list = []
         for pdb_id in size_map[s]:
 
-            if cost + package_cost <= config.annotation_processes:
+            if cost + package_cost <= config.proc_n:
                 if not lite:
                     target_dict = None
                 else:
@@ -1424,11 +1449,11 @@ def paraAnnotate(config,proteins, lite = False):
                         if s < n_of_chain_thresh:
                             cost = 1
                         else:
-                            cost = min([s,config.annotation_processes])
+                            cost = min([s,config.proc_n])
 
                         del_list = []
                         for pdb_id in size_map[s]:
-                            if cost + package_cost <= config.annotation_processes:
+                            if cost + package_cost <= config.proc_n:
                                 if not lite:
                                     target_dict = None
                                 else:
@@ -1698,7 +1723,7 @@ def main(filename,config,output_path,main_file_path):
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/lib'
     os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
-    ray.init(num_cpus = config.annotation_processes, include_dashboard = False, ignore_reinit_error=True)
+    ray.init(num_cpus = config.proc_n, include_dashboard = False, ignore_reinit_error=True)
 
     '''
     mem_tracked_processes = [] 

@@ -26,7 +26,7 @@ import repairDB
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '', basic_util_mode = False,
                     util_mode = False, output_util = False,external_call = True,profiling = False, verbosity = None,
-                    print_all_errors = False, print_all_warns = False):
+                    print_all_errors = False, print_all_warns = False,restartlog = False):
         self.prog_start_time = time.time()
         # read config file, auto add section header so old config files work
         self.config_parser_obj = configparser.ConfigParser()
@@ -50,6 +50,8 @@ class Config:
         self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
         self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
         self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=True)
+
+        self.rinerator_server = None
 
         self.verbose = cfg.getboolean('verbose', fallback=False)
         self.verbosity = cfg.getint('verbosity', fallback=0)
@@ -272,6 +274,8 @@ class Config:
                 if not os.path.exists("%s/errorlogs" % self.outfolder):
                     os.mkdir("%s/errorlogs" % self.outfolder)
                 self.errorlog_path = "%s/errorlogs/errorlog.txt" % self.outfolder
+                if restartlog and os.path.isfile(self.errorlog_path):
+                    os.remove(self.errorlog_path)
 
         self.errorlog = Errorlog(path = self.errorlog_path,print_all_errors = print_all_errors,print_all_warns = print_all_warns)
 
@@ -555,19 +559,22 @@ if __name__ == "__main__":
             argv = argv[2:]
 
     output_util = False
-    ppi_output = False
+
     if len(argv) > 0:
         if argv[0] == 'out':
+            argv = argv[1:]
+            possible_key_words = set(['PPI','LSS'])
+            out_util_mode = None
             output_util = True
-            if argv[1] == 'PPI':
-                ppi_output = True
+            if argv[0] in possible_key_words:
+                out_util_mode = argv[0]
+                argv = argv[1:]
             else:
                 print(disclaimer)
                 sys.exit(1)
-            argv = argv[2:]
 
     basic_util_mode = database_util or configure_mode
-    util_mode = database_util or configure_mode or update_util
+    util_mode = database_util or configure_mode or update_util or output_util
 
     #Custom single line input preparsing
     insert_flag_pos = None
@@ -606,7 +613,12 @@ if __name__ == "__main__":
         del argv[pos]
     
     try:
-        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",['help','profile','skipref','rlimit=','verbosity=','printerrors','printwarnings','chunksize=','norin','dbname='])
+        long_paras = [
+                        'help','profile','skipref','rlimit=','verbosity=',
+                        'printerrors','printwarnings','chunksize=','norin',
+                        'dbname=','restartlog'
+                    ]
+        opts,args = getopt.getopt(argv,"c:i:n:o:h:lvdp:",long_paras)
 
     except getopt.GetoptError:
         print("Illegal Input\n\n",disclaimer)
@@ -625,6 +637,7 @@ if __name__ == "__main__":
     print_all_warns = False
     chunksize = None
     dbname = None
+    restartlog = False
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -682,6 +695,8 @@ if __name__ == "__main__":
             norin = True
         if opt == '--dbname':
             dbname = arg
+        if opt == '--restartlog':
+            restartlog = True
         '''
         #mmcif option added to call mmcif mode while calling structman
         if opt == '-mmcif':
@@ -743,7 +758,7 @@ if __name__ == "__main__":
     config = Config(config_path,num_of_cores = num_of_cores,
                     output_path = outfolder, util_mode = util_mode,
                     basic_util_mode = basic_util_mode,output_util = output_util ,external_call = False,profiling = profiling,verbosity = verbosity,
-                    print_all_errors = print_all_errors, print_all_warns = print_all_warns)
+                    print_all_errors = print_all_errors, print_all_warns = print_all_warns, restartlog = restartlog)
 
     if chunksize != None:
         config.chunksize = chunksize
@@ -807,7 +822,7 @@ if __name__ == "__main__":
 
 
     elif output_util:
-        if ppi_output:
+        if out_util_mode == 'PPI':
             db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
             cursor = db.cursor()
             if config.verbosity >= 1:
@@ -820,6 +835,9 @@ if __name__ == "__main__":
             output.create_ppi_network(session_id,config,outfile)
 
             db.close()
+        elif out_util_mode == 'LSS':
+            import searchLargeStructures
+            searchLargeStructures.search(config)
 
     elif update_util:
         import update

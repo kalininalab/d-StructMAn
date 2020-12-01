@@ -25,7 +25,7 @@ SET @@auto_increment_increment=1;
 CREATE DATABASE IF NOT EXISTS `struct_man_db_1` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 USE `struct_man_db_1`;
 --
-
+USE ; -- has to be replaced
 -- --------------------------------------------------------
 
 --
