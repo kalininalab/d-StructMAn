@@ -871,13 +871,13 @@ def calculateIAPProfiles(interaction_map,chains,ligands,metals,ions):
     return ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
 
 #called by templateFiltering
-def lookup(pdb_id,page,config,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map, encoded = True,rinerator_server = None):
+def lookup(pdb_id,page,config,inp_residues,chains,ligands,metals,ions,res_contig_map,base_path,chain_type_map, encoded = True):
     pdb_id = pdb_id.replace('_AU','').lower()
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
     interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
 
     if config.rinerator_server == None:
-        config.rinerator_server = createRINdb.Rinerator_server(rinerator_path)
+        config.rinerator_server = createRINdb.Rinerator_server(config.rinerator_path)
 
     remove_tmp_files = False
     if not os.path.isfile(interaction_score_file):

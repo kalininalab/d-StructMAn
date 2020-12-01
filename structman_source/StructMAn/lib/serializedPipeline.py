@@ -904,10 +904,6 @@ def paraAlignment(config,proteins,skip_db = False):
 
                     alignment_results.append(align.remote(mapping_dump,pdb_id,chain,oligo,prot_specific_mapping_dump))
 
-        if not skip_db and not already_called:
-            database.getStoredResidues(proteins,config)
-            already_called = True
-
         gc.collect()
 
         align_outs = ray.get(alignment_results)
@@ -952,12 +948,18 @@ def paraAlignment(config,proteins,skip_db = False):
             
 
         if not skip_db:
-            if config.verbosity >= 2:
-                t5 = time.time()
-                print("Alignment Part 5: %s" % (str(t5-t4)))
-
             database.insertStructures(structure_insertion_list,proteins,config)
+        else:
+            #even lite mode checks for stored structures
+            database.structureCheck(proteins,config)
 
+        if config.verbosity >= 2:
+            t5 = time.time()
+            print("Alignment Part 5: %s" % (str(t5-t4)))
+
+        database.getStoredResidues(proteins,config) #has to be called after insertStructures
+
+        if not skip_db:
             if config.verbosity >= 2:
                 t6 = time.time()
                 print("Alignment Part 6: %s" % (str(t6-t5)))

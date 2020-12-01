@@ -1127,6 +1127,24 @@ def getComplexMap(config,pdb_ids=None):
 
     return complex_map
 
+#called by serializedPipeline
+def structureCheck(proteins,config):
+    table = 'Structure'
+    rows = ['Structure_Id','PDB','Chain','Homooligomer']
+    results = select(config,rows,table)
+    
+    stored_complexes = set()
+
+    for row in results:
+        s_id = row[0]
+        pdb_id = row[1]
+        chain = row[2]
+        oligos = row[3]
+        if not proteins.contains_structure(pdb_id,chain):
+            continue
+        proteins.set_structure_db_id(pdb_id,chain,s_id)
+        proteins.set_structure_stored(pdb_id,chain,True) #all structures, mapped or not go into this dictionary, this is important for not reinserting residues from interacting structures
+    return
 
 #called by serializedPipeline
 def insertStructures(structurelist,proteins,config):
