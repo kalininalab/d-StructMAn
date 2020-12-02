@@ -876,8 +876,6 @@ def lookup(pdb_id,page,config,inp_residues,chains,ligands,metals,ions,res_contig
     folder_path = "%s/%s/%s" % (base_path,pdb_id[1:-1],pdb_id)
     interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
 
-    if config.rinerator_server == None:
-        config.rinerator_server = createRINdb.Rinerator_server(config.rinerator_path)
 
     remove_tmp_files = False
     if not os.path.isfile(interaction_score_file):
@@ -885,7 +883,7 @@ def lookup(pdb_id,page,config,inp_residues,chains,ligands,metals,ions,res_contig
         folder_path = config.temp_folder
         rinerator_path = config.rinerator_path
         remove_tmp_files = True
-        config.rinerator_server.serv_calcRIN(page.encode(),folder_path,pdb_id,rinerator_path,remove_tmp_files,config.verbosity)
+        createRINdb.calcRIN(page.encode(),folder_path,pdb_id,rinerator_path,remove_tmp_files,config.verbosity)
         interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path,pdb_id)
         
 

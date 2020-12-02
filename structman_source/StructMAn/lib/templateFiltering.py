@@ -312,6 +312,10 @@ def parsePDB(input_page):
                         peptide_count[chain_id][1] += 1
                 elif record_name == "ATOM" or record_name == 'MODRES':
                     peptide_count[chain_id][0] += 1
+                    if len(res_name) == 1:
+                        chain_type_map[chain_id] = "RNA"
+                    elif len(res_name) == 2:
+                        chain_type_map[chain_id] = "DNA"
 
             if record_name == "ATOM":
                 if len(line) > 50 and not atom_name[0] in ('H','D'):
@@ -907,11 +911,11 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
     if target_dict == None:
         target_residues = res_contig_map
 
-    parent_dir = '/wibicom/SHARED_DATA/agress/structman/lib'
-    os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+    #parent_dir = '/wibicom/SHARED_DATA/agress/structman/lib'
+    #os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
-    parent_dir = '/wibicom/SHARED_DATA/agress/structman'
-    os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+    #parent_dir = '/wibicom/SHARED_DATA/agress/structman'
+    #os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
     if len(target_residues) > 10 and not config.low_mem_system:
 

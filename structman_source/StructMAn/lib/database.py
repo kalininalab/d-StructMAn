@@ -1147,37 +1147,53 @@ def structureCheck(proteins,config):
     return
 
 #called by serializedPipeline
-def insertStructures(structurelist,proteins,config):
+def insertStructures(structurelist,proteins,config,results = None,return_results = False):
 
     table = 'Structure'
-    rows = ['Structure_Id','PDB','Chain','Homooligomer']
-    results = select(config,rows,table)
-    
-    stored_complexes = set()
+    rows = ['Structure_Id','PDB','Chain']
+    if results == None:
+        results = select(config,rows,table)
+        already_called = False
+    else:
+        already_called = True
 
-    for row in results:
-        s_id = row[0]
+    stored_complexes = set()
+    del_list = []
+
+    for pos,row in enumerate(results):
         pdb_id = row[1]
         chain = row[2]
-        oligos = row[3]
         if not proteins.contains_structure(pdb_id,chain):
+            if return_results:
+                del_list.append(pos)
             continue
-        proteins.set_structure_db_id(pdb_id,chain,s_id)
-        proteins.set_structure_stored(pdb_id,chain,True) #all structures, mapped or not go into this dictionary, this is important for not reinserting residues from interacting structures
-        stored_complexes.add(pdb_id)
+        if not already_called:
+            s_id = row[0]
+            proteins.set_structure_db_id(pdb_id,chain,s_id)
+            proteins.set_structure_stored(pdb_id,chain,True) #all structures, mapped or not go into this dictionary, this is important for not reinserting residues from interacting structures
+            stored_complexes.add(pdb_id)
         if (pdb_id,chain) in structurelist:
             structurelist.remove((pdb_id,chain))
 
-    results = select(config,['Complex_Id','PDB','Resolution','Chains','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile','Homooligomers'],'Complex')
+    if return_results:
+        results = list(results)
+        for pos in reversed(del_list):
+            del results[pos]
+        ret_results = results
+    else:
+        ret_results = None
 
-    for row in results:
-        pdb_id = row[1]
-        if not pdb_id in stored_complexes:
-            continue
+    if not already_called:
+        results = select(config,['Complex_Id','PDB','Resolution','Chains','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile','Homooligomers'],'Complex')
 
-        compl = sdsc.Complex(pdb_id,resolution = float(row[2]),chains_str = row[3],lig_profile_str = row[4],metal_profile_str = row[5], ion_profile_str = row[6], chain_chain_profile_str = row[7], stored = True, database_id = row[0],homomers_str = row[8])
+        for row in results:
+            pdb_id = row[1]
+            if not pdb_id in stored_complexes:
+                continue
 
-        proteins.add_complex(pdb_id,compl)
+            compl = sdsc.Complex(pdb_id,resolution = float(row[2]),chains_str = row[3],lig_profile_str = row[4],metal_profile_str = row[5], ion_profile_str = row[6], chain_chain_profile_str = row[7], stored = True, database_id = row[0],homomers_str = row[8])
+
+            proteins.add_complex(pdb_id,compl)
 
     values = []
     ligand_map = {}
@@ -1204,9 +1220,12 @@ def insertStructures(structurelist,proteins,config):
             if not (pdb_id,chain) in structurelist:
                 continue
 
+            if return_results:
+                ret_results.append(row)
+
             proteins.set_structure_db_id(pdb_id,chain,s_id)
 
-    return
+    return ret_results
 
 #called by serializedPipeline
 def insertInteractingChains(interaction_structures,proteins,config):

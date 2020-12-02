@@ -11,17 +11,6 @@ import subprocess
 import traceback
 from psutil import virtual_memory
 
-main_file_path = os.path.abspath(sys.argv[0])
-
-sys.path.append("%s/lib" % main_file_path.rsplit('/',1)[0])
-
-import output
-import database
-import serializedPipeline
-import lite_pipeline
-import resource
-import repairDB
-
 
 class Config:
     def __init__(self,config_path ,num_of_cores = 1,output_path = '', basic_util_mode = False,
@@ -50,8 +39,6 @@ class Config:
         self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
         self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
         self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=True)
-
-        self.rinerator_server = None
 
         self.verbose = cfg.getboolean('verbose', fallback=False)
         self.verbosity = cfg.getint('verbosity', fallback=0)
@@ -424,12 +411,14 @@ if __name__ == "__main__":
     main_file_path = os.path.realpath(__file__)
 
     sys.path.append("%s/lib" % main_file_path.rsplit('/',1)[0])
+    sys.path.append("%s/lib/rinerator" % main_file_path.rsplit('/',1)[0])
 
+    import resource
+    import repairDB
     import output
     import database
     import serializedPipeline
     import lite_pipeline
-
 
     #multiprocessing.freeze_support()
     #multiprocessing.set_start_method('forkserver')

@@ -840,8 +840,10 @@ def paraAlignment(config,proteins,skip_db = False):
     N = len(u_acs)
     n = 0
     break_point = 0
+    break_u_ac = None
     while not finished:
         alignment_results = []
+        database_structure_list = None
         if config.low_mem_system:
             #This breaks after 100 started alignments, continues the while loop and then returns, where it has broken
             number_of_packaged_alignments = 0
@@ -851,9 +853,10 @@ def paraAlignment(config,proteins,skip_db = False):
             for i in range(n,N):
                 u_ac = u_acs[i]
                 annotation_list = list(proteins.get_protein_annotation_list(u_ac))
-                seq = proteins.pop_sequence(u_ac)
-                aaclist = proteins.getAACList(u_ac)
-                prot_specific_mapping_dump = ray.put((u_ac,seq,aaclist))
+                if break_u_ac != u_ac:
+                    seq = proteins.pop_sequence(u_ac)
+                    aaclist = proteins.getAACList(u_ac)
+                    prot_specific_mapping_dump = ray.put((u_ac,seq,aaclist))
                 m = break_point
                 if m >= len(annotation_list):
                     break_point = 0
@@ -885,6 +888,7 @@ def paraAlignment(config,proteins,skip_db = False):
                     finished = True
                 if broken:
                     n = i
+                    break_u_ac = u_ac
                     break
 
 
@@ -948,16 +952,13 @@ def paraAlignment(config,proteins,skip_db = False):
             
 
         if not skip_db:
-            database.insertStructures(structure_insertion_list,proteins,config)
-        else:
-            #even lite mode checks for stored structures
-            database.structureCheck(proteins,config)
+            database_structure_list = database.insertStructures(structure_insertion_list,
+                                                                proteins,config,results = database_structure_list,
+                                                                return_results = config.low_mem_system)
 
         if config.verbosity >= 2:
             t5 = time.time()
             print("Alignment Part 5: %s" % (str(t5-t4)))
-
-        database.getStoredResidues(proteins,config) #has to be called after insertStructures
 
         if not skip_db:
             if config.verbosity >= 2:
@@ -969,6 +970,10 @@ def paraAlignment(config,proteins,skip_db = False):
             if config.verbosity >= 2:
                 t7 = time.time()
                 print("Alignment Part 7: %s" % (str(t7-t6)))
+
+    if skip_db:
+        #even lite mode checks for stored structures
+        database.structureCheck(proteins,config)
 
     return
 
@@ -1420,6 +1425,7 @@ def paraAnnotate(config,proteins, lite = False):
         t11 = time.time()
         print("Annotation Part 1.1: %s" % (str(t11-t0)))
 
+    database.getStoredResidues(proteins,config) #has to be called after insertStructures
     #anno_results = ray.get(anno_result_ids)
 
     if config.verbosity >= 2:
@@ -1723,6 +1729,9 @@ def main(filename,config,output_path,main_file_path):
     t0 = time.time()
 
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/lib'
+    os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/lib/rinerator'
     os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
     ray.init(num_cpus = config.proc_n, include_dashboard = False, ignore_reinit_error=True)

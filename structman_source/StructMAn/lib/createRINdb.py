@@ -11,14 +11,14 @@ import centrality
 import time
 from multiprocessing import Process, Queue, Manager, Value, Lock
 
+import get_chains
+
 #forbidden symbols: : _ ( ) . -
 
 #lowercase_map = {'a':'!','b':'@','c':'#'}#,'d':'$','e':'%','f':'^','g':'&','h':'*','i':'+','j':'=','k':'{','l':'}','m':'[','n':']','o':';','p':'<','q':'>','r':',','s':'?','t':'`','u':'~','v':'|','w':'/','x':'"','y':"'"}
 
 #lowercase_order = {y:x for x,y in lowercase_map.iteritems()}
 import pdbParser
-
-
 
 def parsePDB(page):
 
@@ -98,16 +98,6 @@ def changeBackChains(changed_chains,n_sif_file,n_intsc_file,n_nrint_file,n_res_f
 
     return
 '''
-class Rinerator_server:
-    def __init__(self,rinerator_path):
-        rinerator_base_path = rinerator_path.rsplit('/',1)[0]
-        sys.path.append(rinerator_base_path)
-        import get_chains
-        return
-
-    def serv_calcRIN(self,page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
-        calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity)
-        return
 
 def calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
     original_chains,ligands,page = parsePDB(page)
@@ -133,8 +123,6 @@ def calcRIN(page,out_path,pdb_id,rinerator_path,remove_tmp_files,verbosity):
 
     reduce_cmd = '%s/reduce' % rinerator_base_path
     probe_cmd = '%s/probe' % rinerator_base_path
-
-
     sys.stdout = open(os.devnull, 'w')
     sys.stderr = open(os.devnull, 'w')
     get_chains.main(tmp_pdb,out_path,tmp_chain,tmp_ligands,True,reduce_cmd,probe_cmd)
