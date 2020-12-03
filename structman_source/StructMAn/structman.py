@@ -479,7 +479,7 @@ if __name__ == "__main__":
         database_util = True
         argv = argv[1:]
 
-        possible_key_words = set(['reset','out','create','destroy','clear','export'])
+        possible_key_words = set(['reset','out','create','destroy','clear','export','reduce'])
 
         if len(argv) == 0 or argv[0] == '-h' or argv[0] == '--help':
             print(database_util_disclaimer)
@@ -798,8 +798,8 @@ if __name__ == "__main__":
                 f = open(config_path,'w')
                 config.config_parser_obj.write(f)
                 f.close()
-
-            repairDB.load(config,dbname=dbname)
+            
+            repairDB.load(config)
         elif db_mode == 'destroy':
             repairDB.destroy(config)
         elif db_mode == 'export':
@@ -808,6 +808,10 @@ if __name__ == "__main__":
                 sys.exit(1)
 
             repairDB.export(config,minus_p_path)
+        elif db_mode == 'reduce':
+            if infile == None:
+                sys.exit(1)
+            repairDB.reduceToStructures(config,infile)
 
 
     elif output_util:
@@ -826,7 +830,7 @@ if __name__ == "__main__":
             db.close()
         elif out_util_mode == 'LSS':
             import searchLargeStructures
-            searchLargeStructures.search(config)
+            searchLargeStructures.search(config,chunksize,infile=infile)
 
     elif update_util:
         import update

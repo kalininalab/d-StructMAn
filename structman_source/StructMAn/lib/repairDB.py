@@ -49,7 +49,6 @@ def reset(cursor,keep_structures = False):
     'TRUNCATE Pathway;',
     'TRUNCATE Session;',
     'TRUNCATE Alignment;',
-    'TRUNCATE Complex;',
     'TRUNCATE RS_Gene_Session;',
     'TRUNCATE RS_Gene_GO_Term;',
     'TRUNCATE RS_Mutation_Session;',
@@ -61,6 +60,7 @@ def reset(cursor,keep_structures = False):
         'TRUNCATE Ligand;',
         'TRUNCATE Structure;',
         'TRUNCATE Residue;',
+        'TRUNCATE Complex;',
         'TRUNCATE RS_Ligand_Structure;',
         'TRUNCATE RS_Residue_Residue;'
         ]
@@ -79,6 +79,66 @@ def reset(cursor,keep_structures = False):
             [e,f,g] = sys.exc_info()
             g = traceback.format_exc(g)
             print("Error: ",e,f,g)
+    return
+
+def reduceToStructures(config,infile):
+    f = open(infile,'r')
+    lines = f.readlines()
+    f.close()
+
+    complexes = set()
+    for line in lines:
+        words = line.replace('\t',' ').split()
+        pdb_tuple = words[0]
+        if pdb_tuple.count(':') != 1:
+            continue
+        pdb_id = pdb_tuple.split(':')[0]
+        complexes.add(pdb_id)
+
+    table = 'Structure'
+    rows = ['Structure_Id','PDB']
+    results = database.select(config,rows,table)
+
+    list_of_doom = []
+    for row in results:
+        if row[1] in complexes:
+            continue
+        list_of_doom.append(row[0])
+
+    results = database.select(config,['Complex_Id','PDB'],'Complex')
+
+    list_of_doom_c = []
+    for row in results:
+        if row[1] in complexes:
+            continue
+        list_of_doom_c.append(row[0])
+
+    statement = 'DELETE FROM Residue WHERE Structure IN (%s)' % (','.join(['%s']*len(list_of_doom)))
+    db,cursor = config.getDB()
+
+    cursor.execute(statement,list_of_doom)
+    results = cursor.fetchall()
+    db.commit()
+
+    db.close()
+
+    statement = 'DELETE FROM Structure WHERE Structure_Id IN (%s)' % (','.join(['%s']*len(list_of_doom)))
+    db,cursor = config.getDB()
+
+    cursor.execute(statement,list_of_doom)
+    results = cursor.fetchall()
+    db.commit()
+
+    db.close()
+
+    statement = 'DELETE FROM Complex WHERE Complex_Id IN (%s)' % (','.join(['%s']*len(list_of_doom_c)))
+    db,cursor = config.getDB()
+
+    cursor.execute(statement,list_of_doom_c)
+    results = cursor.fetchall()
+    db.commit()
+
+    db.close()
     return
 
 def export(config,target_path):

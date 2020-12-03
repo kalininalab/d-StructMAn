@@ -1151,15 +1151,16 @@ def classification(proteins,config):
     package_counter = 0
     counter_direction_forward = True
 
+    max_package_size = 10000
+    N = 0
+    package = []
+    classification_dump = ray.put(config)
+    send_packages = 0
+
     for u_ac,size in size_sorted:
         classification_inp = []
         positions = proteins.get_position_ids(u_ac)
-        N = 0
-        if len(positions) > 500:
-            divisor = (len(positions)//500) + 1
-            max_package_size = (len(positions) // 2) + 1
-        else:
-            max_package_size = 500
+        
         for pos in positions:
             if proteins.is_position_stored(u_ac,pos):
                 continue
@@ -1227,68 +1228,32 @@ def classification(proteins,config):
                             inter_chain_median_rsa,inter_chain_dist_weighted_rsa,intra_chain_median_kd,
                             intra_chain_dist_weighted_kd,intra_chain_median_rsa,intra_chain_dist_weighted_rsa,b_factor,modres,
                             identical_aa,lig_dists,chain_distances,homomer_distances,chains,resolution,res_aa))
+                N += 1
 
             classification_inp.append((pos,mappings,disorder_score,disorder_region))
-            N += 1
-            if N == max_package_size:
-                if len(packages) == package_counter:
-                    packages.append([])
-                packages[package_counter].append((u_ac,classification_inp))
-
-                if package_counter == config.proc_n - 1 and counter_direction_forward:
-                    counter_direction_forward = False
-                elif package_counter == config.proc_n - 1:
-                    package_counter -= 1
-                    if package_counter == -1:
-                        package_counter = 0
-                elif package_counter == 0 and not counter_direction_forward:
-                    counter_direction_forward = True
-                elif package_counter == 0:
-                    package_counter += 1
-                elif counter_direction_forward:
-                    package_counter += 1
-                else:
-                    package_counter -= 1
-
+            
+            if N >= max_package_size:
+                package.append((u_ac,classification_inp))
+                classification_results.append(para_classify_remote_wrapper.remote(classification_dump,package))
                 classification_inp = []
+                package = []
                 N = 0
+                send_packages += 1
+        package.append((u_ac,classification_inp))
 
-        if len(packages) == package_counter:
-            packages.append([])
-        packages[package_counter].append((u_ac,classification_inp))
+    para = send_packages > 0 #only use ray, when we have more than one package
 
-        if package_counter == config.proc_n - 1 and counter_direction_forward:
-            counter_direction_forward = False
-        elif package_counter == config.proc_n - 1:
-            package_counter -= 1
-            if package_counter == -1:
-                package_counter = 0
-        elif package_counter == 0 and not counter_direction_forward:
-            counter_direction_forward = True
-        elif package_counter == 0:
-            package_counter += 1
-        elif counter_direction_forward:
-            package_counter += 1
-        else:
-            package_counter -= 1
-
-    para = len(packages) > 1 #only use ray, when we have more than one package
-
-    if len(packages) == 0:
+    if para and len(package) > 0:
+        classification_results.append(para_classify_remote_wrapper.remote(classification_dump,package))
+    elif not para and len(package) > 0:
+        classification_results.append(para_classify(config,package))
+    elif not para and len(package) == 0:
         return
 
     if config.verbosity >= 2:
         t11 = time.time()
         print('Time for classification part 1.1:',t11-t0)
 
-    if para:
-        classification_dump = ray.put(config)
-        if config.verbosity >= 2:
-            print('Starting para classification with',len(packages),'number of packages')
-        for package in packages:
-            classification_results.append(para_classify_remote_wrapper.remote(classification_dump,package))
-    else:
-        classification_results.append(para_classify(config,packages[0]))
 
     if config.verbosity >= 2:
         t12 = time.time()
