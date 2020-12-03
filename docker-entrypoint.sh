@@ -7,12 +7,12 @@ set -euo pipefail
 echo "***** Container configuration starting for the host $HOSTNAME *****"
 
 # Get the default StructMAn database name from the source file stored under /usr/structman_library/sources/StructMAn_db/
-if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql | wc -l) == 1 ]]; then
-    for sql_file in /usr/structman_library/sources/StructMAn_db/*.sql; do
+if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 1 ]]; then
+    for sql_file in /usr/structman_library/sources/StructMAn_db/*.sql.gz; do
         STRUCTMAN_DB=$(basename $sql_file | cut -d "." -f 1)
         STRUCTMAN_DB_FOLDER_NAME=$(cat $sql_file | grep "Database" | awk '{print $NF}' | tr -d '`')
     done
-elif [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql | wc -l) == 0 ]]; then
+elif [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 0 ]]; then
     echo "===>    There does not seem to be any default StructMAn database file in the source directory (/usr/structman_library/sources/StructMAn_db/). Aborting the container setup!    <==="
     exit 1
 fi
@@ -150,7 +150,7 @@ configure_database() {
     sleep 60
     
     echo "===>    creating and importing the default database!    <==="
-    mysql --user=root < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB.sql
+    gunzip < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB.sql.gz | mysql --user=root
 
     if [[ $? == 0 ]]; then
         echo "===>    MySQL StructMAn default database has been created and imported successfully!    <==="

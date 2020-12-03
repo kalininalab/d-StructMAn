@@ -20,6 +20,7 @@ curl \
 vim \
 less \
 gcc \
+gzip \
 python3.7 \
 python3.7-dev \
 python3.7-distutils \
