@@ -11,7 +11,7 @@ echo "Cat done"
 if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 1 ]]; then
     for sql_file in /usr/structman_library/sources/StructMAn_db/*.sql.gz; do
         STRUCTMAN_DB=$(basename $sql_file | cut -d "." -f 1)
-        STRUCTMAN_DB_FOLDER_NAME=$(cat $sql_file | grep "Database" | awk '{print $NF}' | tr -d '`')
+        STRUCTMAN_DB_FOLDER_NAME=$(zless $sql_file | grep "Database" | awk '{print $NF}' | tr -d '`')
     done
 elif [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 0 ]]; then
     echo "===>    There does not seem to be any default StructMAn database file in the source directory (/usr/structman_library/sources/StructMAn_db/). Aborting the container setup!    <==="
