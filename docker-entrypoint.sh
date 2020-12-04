@@ -186,9 +186,13 @@ build_mmseqs_index() {
 
 # Initializing MySQL server configuration
 configure_structman
+echo "configure_structman done"
 create_mysql_dirs
+echo "create_mysql_dirs done"
 configure_mysql
+echo "configure_mysql done"
 build_mmseqs_index
+echo "build_mmseqs_index done"
 
 # Initialize MySQL server and create users
 if [[ ! -d /var/lib/mysql/mysql ]]; then
