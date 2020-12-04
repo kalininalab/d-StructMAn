@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo "***** Container configuration starting for the host $HOSTNAME *****"
-cat "/usr/structman_library/sources/StructMAn_db/db_split*" > "/usr/structman_library/sources/StructMAn_db/struct_man_db.sql.gz"
+cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/struct_man_db.sql.gz
 echo "Cat done"
 # Get the default StructMAn database name from the source file stored under /usr/structman_library/sources/StructMAn_db/
 if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 1 ]]; then
