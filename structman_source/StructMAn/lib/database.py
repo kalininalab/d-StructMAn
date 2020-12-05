@@ -1024,7 +1024,11 @@ def insertComplexes(proteins,config):
         pdb.updateLigandDB(update_ligands,smiles_path,inchi_path)
 
     if len(lig_values) > 0:
-        insert('Ligand',['Name','Smiles','Inchi'],lig_values,config)
+        try:
+            insert('Ligand',['Name','Smiles','Inchi'],lig_values,config)
+        except:
+            #There is a (or more than one) ligand that results in an sql error 1241. We need to find it, to figure out why.
+            config.errorlog.add_error('Error trying inserting ligands\n%s' % '\n'.join([str(x) for x in lig_values]))
 
     if len(values) > 0:
         insert('Complex',['PDB','Resolution','Chains','Homooligomers','Ligand_Profile','Metal_Profile','Ion_Profile','Chain_Chain_Profile'],values,config)
@@ -1051,7 +1055,7 @@ def insertComplexes(proteins,config):
             if ia_type != "Ligand":
                 continue
             name = iap[1]
-            if name == "UNK" or name == "UNX":
+            if name == "UNK" or name == "UNX" or not name in stored_ligands:
                 continue
             lig_id = stored_ligands[name]
             res = iap[2]
