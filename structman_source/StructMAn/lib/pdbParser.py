@@ -1253,6 +1253,8 @@ def parseLigandDB(smiles_path,inchi_path):
         inchi = words[0]
         name = words[1]
         smiles = ligand_db[name]
+        if not isinstance(smiles,str):
+            continue
         ligand_db[name] = (smiles,inchi)
     f.close()
 

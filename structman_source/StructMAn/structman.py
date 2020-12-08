@@ -117,7 +117,7 @@ class Config:
 
         trunk = os.path.realpath(__file__).rsplit('/',1)[0]
 
-        self.database_source_path = '%s/struct_man_db.sql' % trunk
+        self.database_source_path = cfg.get('database_source_path',fallback = '%s/struct_man_db.sql' % trunk)
         self.blast_db_path = '%s/lib/base/blast_db/pdbba' % trunk
         self.mmseqs2_db_path = '%s/lib/base/blast_db/pdbba_search_db_mmseqs2' % trunk
         self.smiles_path = '%s/lib/base/ligand_bases/Components-smiles-stereo-oe.smi' % trunk
@@ -248,7 +248,7 @@ class Config:
         if self.test_low_mem_system:
             self.gigs_of_ram = 8
         if self.low_mem_system:
-            self.chunksize = int(max([((self.gigs_of_ram*100)//self.proc_n)-100,self.proc_n]))
+            self.chunksize = int(max([((self.gigs_of_ram*100)//self.proc_n)-120,self.proc_n]))
         else:
             self.chunksize = int(max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n]))
 

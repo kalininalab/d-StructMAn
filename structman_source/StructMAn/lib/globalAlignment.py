@@ -417,7 +417,7 @@ def BPalign(config,u_ac,target_seq,template_seq,aaclist,seq_res_map,ignore_gaps=
     else:
         if config.verbosity >= 4:
             print('Alignment failed')
-        return 'Alignment produced no Output:\n%s\n%s\n' % (target_seq,template_seq)
+        return 'Alignment produced no Output, %s:\n%s\n%s\n' % (u_ac,target_seq,template_seq)
 
     sub_infos,aaclist = getSubPos(config,u_ac,target_aligned_sequence,template_aligned_sequence,aaclist,seq_res_map,ignore_gaps=ignore_gaps,lock=lock)
 

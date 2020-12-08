@@ -953,7 +953,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
         t7 = time.time()
         print('Time for structuralAnalysis Part 7:',t7-t6)
 
-    return structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles
+    return structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,chain_type_map
 
 
 #Return True, if the template is not good

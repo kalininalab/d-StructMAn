@@ -841,6 +841,12 @@ def paraAlignment(config,proteins,skip_db = False):
     n = 0
     break_point = 0
     break_u_ac = None
+
+    sus_complexes = set()
+    sus_structures = set()
+    safe_complexes = set()
+    safe_structures = set()
+
     while not finished:
         alignment_results = []
         database_structure_list = None
@@ -920,11 +926,15 @@ def paraAlignment(config,proteins,skip_db = False):
             if len(out) == 3:
                 u_ac,pdb_id,chain = out
                 proteins.remove_annotation(u_ac,pdb_id,chain)
+                sus_complexes.add(pdb_id)
+                sus_structures.add((pdb_id,chain))
                 continue
 
             if len(out) == 4:
                 (u_ac,pdb_id,chain,warn_text) = out
                 proteins.remove_annotation(u_ac,pdb_id,chain)
+                sus_complexes.add(pdb_id)
+                sus_structures.add((pdb_id,chain))
                 if not u_ac in warn_map:
                     errorlog.add_warning(warn_text)
                 warn_map.add(u_ac)
@@ -943,6 +953,10 @@ def paraAlignment(config,proteins,skip_db = False):
             proteins.set_oligo(pdb_id,chain,oligo)
 
             structure_insertion_list.add((pdb_id,chain))
+
+            safe_complexes.add(pdb_id)
+            safe_structures.add((pdb_id,chain))
+
             prot_id = proteins.get_protein_db_id(u_ac)
             alignment_insertion_list.append((u_ac,prot_id,pdb_id,chain,alignment))
 
@@ -970,6 +984,10 @@ def paraAlignment(config,proteins,skip_db = False):
             if config.verbosity >= 2:
                 t7 = time.time()
                 print("Alignment Part 7: %s" % (str(t7-t6)))
+
+    #Due the removal of annotations in the previous loop, we might to remove some structures and complexes
+    proteins.remove_structures(sus_structures-safe_structures)
+    proteins.remove_complexes(sus_complexes-safe_complexes)
 
     if skip_db:
         #even lite mode checks for stored structures
@@ -1411,7 +1429,7 @@ def paraAnnotate(config,proteins, lite = False):
         ready, not_ready = ray.wait(anno_result_ids)
 
         if len(ready) > 0:
-            for (ret_pdb_id,structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,comp_time) in ray.get(ready):
+            for (ret_pdb_id,structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,chain_type_map,comp_time) in ray.get(ready):
                 new_anno_result_ids = []
                 if len(size_map) > 0:
                 #Start new jobs regarding the freed resources
@@ -1470,6 +1488,7 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_ion_profile(ret_pdb_id,ion_profiles)
                 proteins.set_metal_profile(ret_pdb_id,metal_profiles)
                 proteins.set_chain_chain_profile(ret_pdb_id,chain_chain_profiles)
+                proteins.set_chain_type_map(ret_pdb_id,chain_type_map)
 
                 if config.low_mem_system:
                     if amount_of_chains_in_analysis_dict > (config.chunksize):
@@ -1545,13 +1564,13 @@ def annotate(config,pdb_id,target_dict):
     psutil.Process().cpu_affinity(cpus)
 
     t0 = time.time()
-    (structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles) = templateFiltering.structuralAnalysis(pdb_id,config,target_dict = target_dict)
+    (structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,chain_type_map) = templateFiltering.structuralAnalysis(pdb_id,config,target_dict = target_dict)
     t1 = time.time()
 
     if config.verbosity >= 3:
         print('Time for structural analysis of',pdb_id,':',t1-t0)
 
-    return (pdb_id,structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,t1-t0)
+    return (pdb_id,structural_analysis_dict,errorlist,ligand_profiles,metal_profiles,ion_profiles,chain_chain_profiles,chain_type_map,t1-t0)
 
 
 def core(protein_list,indels,config,session,outfolder,session_name,out_objects):

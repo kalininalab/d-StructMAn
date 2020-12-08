@@ -1428,6 +1428,16 @@ class Proteins:
         self.protein_map[u_ac].remove_annotation(pdb_id,chain)
         return
 
+    def remove_structures(self,structure_ids):
+        for structure_id in structure_ids:
+            del self.structures[structure_id]
+        return
+
+    def remove_complexes(self,pdb_ids):
+        for pdb_id in pdb_ids:
+            del self.complexes[pdb_id]
+        return
+
     def get_target_dict(self,pdb_id):
         target_dict = {}
         chains = self.get_complex_chains(pdb_id)
