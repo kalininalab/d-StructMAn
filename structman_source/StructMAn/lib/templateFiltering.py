@@ -307,9 +307,19 @@ def parsePDB(input_page):
                         if res_name in pdbParser.threeToOne or not pdbParser.boring(res_name):
                             chain_type_map[chain_id] = "Protein"
                             peptide_count[chain_id] = [0,0]
+                        elif len(res_name) == 1:
+                            chain_type_map[chain_id] = "RNA"
+                            peptide_count[chain_id] = [0,0]
+                        elif len(res_name) == 2:
+                            chain_type_map[chain_id] = "DNA"
+                            peptide_count[chain_id] = [0,0]
+
                 if record_name == 'HETATM':
                     if res_name in pdbParser.threeToOne or not pdbParser.boring(res_name):#For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in threeToOne, which are hopefully some kind of anormal amino acids
                         peptide_count[chain_id][1] += 1
+                    elif len(res_name) < 3:
+                        peptide_count[chain_id][0] += 1
+
                 elif record_name == "ATOM" or record_name == 'MODRES':
                     peptide_count[chain_id][0] += 1
                     if len(res_name) == 1:
@@ -429,6 +439,8 @@ def parsePDB(input_page):
 
     #New Peptide detection counts irregular amino acids
     for chain_id in peptide_count:
+        if chain_type_map[chain_id] == 'DNA' or chain_type_map[chain_id] == 'RNA':
+            continue
         if peptide_count[chain_id][0] <= peptide_count[chain_id][1]*2:
             chain_type_map[chain_id] = 'Peptide'
         elif (peptide_count[chain_id][0] + peptide_count[chain_id][1]) < 150: #Total number of atoms
@@ -825,9 +837,11 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
         t1 = time.time()
         print('Time for structuralAnalysis Part 1:',t1-t0)
 
+    errorlist = []
+
     if page == '':
-        print("Error while parsing: ",pdb_id)
-        return {},{},[]
+        errorlist.append("Error while parsing: %s" % pdb_id)
+        return {},errorlist,{},{},{},{},{}
 
     (coordinate_map,siss_coord_map,res_contig_map,ligands,metals,ions,box_map,chain_type_map,
         b_factors,modres_map,ssbond_map,link_map,cis_conformation_map,cis_follower_map) = parsePDB(page)
@@ -855,7 +869,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
         t4 = time.time()
         print('Time for structuralAnalysis Part 4:',t4-t3)
 
-    errorlist = []
+    
     structural_analysis_dict = {}
 
     milieu_dict = {}

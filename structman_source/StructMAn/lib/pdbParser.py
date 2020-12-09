@@ -826,7 +826,7 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = Fals
             res_nr = line[22:27].strip().decode('ascii')
 
             if record_name == b'HETATM':
-                if res_name not in threeToOne and boring(res_name):
+                if res_name not in threeToOne and boring(res_name) and (len(res_name) == 3):
                     continue
 
             if not chain_id in chain_ids:
