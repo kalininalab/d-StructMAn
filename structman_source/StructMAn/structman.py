@@ -523,6 +523,8 @@ if __name__ == "__main__":
             conf_update_pdb_path = None
             conf_update_iupred_path = None
 
+            config_variable_name = None
+
             if argv[0] == 'set_local_pdb_path':
                 if len(argv) == 1:
                     print(config_util_disclaimer)
@@ -542,8 +544,11 @@ if __name__ == "__main__":
                     sys.exit(1)
 
             else:
-                print(config_util_disclaimer)
-                sys.exit(1)
+                if len(argv) == 1:
+                    print(config_util_disclaimer)
+                    sys.exit(1)
+                config_variable_name = argv[0]
+                config_variable_value = argv[1]
 
             argv = argv[2:]
 
@@ -855,6 +860,10 @@ if __name__ == "__main__":
             config.config_parser_obj.set('user','pdb_path',conf_update_pdb_path)
         if conf_update_iupred_path != None:
             config.config_parser_obj.set('user','iupred_path',conf_update_iupred_path)
+
+        if config_variable_name != None:
+            config.config_parser_obj.set('user',config_variable_name,config_variable_value)
+
         f = open(config_path,'w')
         config.config_parser_obj.write(f)
         f.close()
