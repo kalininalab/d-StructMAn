@@ -734,6 +734,9 @@ class Protein:
         stat = '\n'.join([self.u_ac,self.pdb_id,str(len(self.positions)),self.sequence,self.stored,self.database_id,str(len(self.structure_annotations))])
         return stat
 
+    def is_sequence_set(self):
+        return self.sequence == None
+
     def set_sequence(self,value):
         self.sequence = value
         return
@@ -1232,6 +1235,9 @@ class Proteins:
 
     def get_sequence_id(self,u_ac,pdb_id,chain):
         return self.protein_map[u_ac].get_sequence_id(pdb_id,chain)
+
+    def is_sequence_set(self,u_ac):
+        return self.protein_map[u_ac].is_sequence_set()
 
     def set_annotation_db_id_by_db_id(self,prot_id,pdb_id,chain,value):
         self.getByDbId(prot_id).set_annotation_db_id(pdb_id,chain,value)

@@ -83,6 +83,8 @@ def sequenceScan(config,proteins,indels):
         if u_ac.count(':') > 0:
             sequenceScanPDB[u_ac] = tags,uni_pos #PDB inputs are always processed by the sequence scan, but the positions are only added if uni_pos is true
         elif not sdsc.is_mutant_ac(u_ac):
+            if proteins.is_sequence_set(u_ac):
+                continue
             sequenceScanProteins[u_ac] = tags,uni_pos #New: process everything to filter input by sanity checks
 
     if len(sequenceScanProteins) > 0:
@@ -168,12 +170,12 @@ def parseFasta(config,nfname):
             continue
         if line[0] == '>':
             entry_id = line[1:].split()[0]
+            if entry_id.count('|') > 1:
+                entry_id = entry_id.split('|')[1]
             seq_map[entry_id] = ''
 
         else:
             seq_map[entry_id] += line.replace('\n','').upper()
-
-    
 
     proteins = {}
     for prot_id in seq_map:
