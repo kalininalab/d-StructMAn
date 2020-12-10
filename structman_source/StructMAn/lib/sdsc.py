@@ -1082,6 +1082,8 @@ class Proteins:
         return self.complexes[pdb_id].get_homomers(chain)
 
     def get_resolution(self,pdb_id):
+        if not pdb_id in self.complexes:
+            return None
         return self.complexes[pdb_id].get_resolution()
 
     def get_structures(self):
@@ -1124,6 +1126,8 @@ class Proteins:
         return
 
     def contains_residue(self,pdb_id,chain,res_nr):
+        if not (pdb_id,chain) in self.structures:
+            return False
         return self.structures[(pdb_id,chain)].contains_residue(res_nr)
 
     def get_residue_db_id(self,pdb_id,chain,res_nr):
@@ -1687,6 +1691,19 @@ class Complex:
 
     def set_chain_type_map(self,value):
         self.chains = value
+        del_list = []
+        for chain in self.homomers:
+            if not chain in self.chains:
+                del_list.append(chain)
+            else:
+                del_pos = []
+                for pos,h_chain in enumerate(self.homomers[chain]):
+                    if not h_chain in self.chains:
+                        del_pos.append(pos)
+                for pos in reversed(del_pos):
+                    del self.homomers[chain][pos]
+        for chain in del_list:
+            del self.homomers[chain]
         return
 
     def set_interaction_partners(self,value):

@@ -1197,6 +1197,8 @@ def classification(proteins,config):
                     continue
 
                 resolution = proteins.get_resolution(pdb_id)
+                if resolution == None:
+                    continue
                 chains = proteins.get_complex_chains(pdb_id)
 
                 seq_id = proteins.get_sequence_id(u_ac,pdb_id,chain)
