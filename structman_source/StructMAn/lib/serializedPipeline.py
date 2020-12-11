@@ -83,7 +83,7 @@ def sequenceScan(config,proteins,indels):
         if u_ac.count(':') > 0:
             sequenceScanPDB[u_ac] = tags,uni_pos #PDB inputs are always processed by the sequence scan, but the positions are only added if uni_pos is true
         elif not sdsc.is_mutant_ac(u_ac):
-            if proteins.is_sequence_set(u_ac):
+            if proteins[u_ac].is_sequence_set():
                 continue
             sequenceScanProteins[u_ac] = tags,uni_pos #New: process everything to filter input by sanity checks
 
