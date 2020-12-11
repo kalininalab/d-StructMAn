@@ -735,7 +735,7 @@ class Protein:
         return stat
 
     def is_sequence_set(self):
-        return self.sequence == None
+        return self.sequence != None
 
     def set_sequence(self,value):
         self.sequence = value
