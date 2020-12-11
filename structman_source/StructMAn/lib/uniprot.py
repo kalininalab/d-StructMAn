@@ -41,7 +41,7 @@ def getUniprotId(query,querytype,verbosity = 0):
     try:
         response = urllib.request.urlopen(request,timeout=60)
     except:
-        return "-"
+        return None
     page = response.read(200000).decode('utf-8')
     #print page
     try:
@@ -55,7 +55,7 @@ def getUniprotId(query,querytype,verbosity = 0):
             query = query[0]
             return getUniprotId(query,querytype)
         else:
-            return "-"
+            return None
 
     return uniprot_id
 
@@ -396,13 +396,14 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
 
         else:
             ac_id_map = getUniprotIds(config,id_search,'ACC',target_type="ID")
-            for u_ac in ac_id_map:
-                u_id = ac_id_map[u_ac]
-                if u_ac in proteins:
-                    proteins[u_ac].u_id = u_id
-                if u_ac in ac_iso_map:
-                    for iso in ac_iso_map[u_ac]:
-                        proteins['%s-%s' % (u_ac,iso)].u_id = u_id
+            if ac_id_map != None:
+                for u_ac in ac_id_map:
+                    u_id = ac_id_map[u_ac]
+                    if u_ac in proteins:
+                        proteins[u_ac].u_id = u_id
+                    if u_ac in ac_iso_map:
+                        for iso in ac_iso_map[u_ac]:
+                            proteins['%s-%s' % (u_ac,iso)].u_id = u_id
 
     if db != None:
         sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(list(proteins.keys()))
@@ -491,6 +492,8 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
 
     #If unusable result, try without version number
     except:
+        #This seems not up-to-date
+        '''
         if query.count(".") > 0:
             ids = query.split("\t")
             nids = []
@@ -502,6 +505,8 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
                 return getUniprotId(nquery,querytype,target_type=target_type)
             else:
                 return {}
+        '''
+        return {}
     return uniprot_ids
 
 #called by serializedPipeline
