@@ -848,10 +848,10 @@ def paraAlignment(config,proteins,skip_db = False):
     sus_structures = set()
     safe_complexes = set()
     safe_structures = set()
-
+    database_structure_list = None
     while not finished:
         alignment_results = []
-        database_structure_list = None
+        
         if config.low_mem_system:
             #This breaks after 100 started alignments, continues the while loop and then returns, where it has broken
             number_of_packaged_alignments = 0
@@ -954,7 +954,8 @@ def paraAlignment(config,proteins,skip_db = False):
 
             proteins.set_oligo(pdb_id,chain,oligo)
 
-            structure_insertion_list.add((pdb_id,chain))
+            if (pdb_id,chain) not in safe_structures:
+                structure_insertion_list.add((pdb_id,chain))
 
             safe_complexes.add(pdb_id)
             safe_structures.add((pdb_id,chain))
@@ -1200,11 +1201,15 @@ def classification(proteins,config):
 
                 resolution = proteins.get_resolution(pdb_id)
                 if resolution == None:
+                    if config.verbosity >= 3:
+                        print('Skipped classification of',u_ac,'due to',pdb_id,'got no resolution')
                     continue
                 chains = proteins.get_complex_chains(pdb_id)
 
                 seq_id = proteins.get_sequence_id(u_ac,pdb_id,chain)
                 if seq_id == None:
+                    if config.verbosity >= 3:
+                        print('Skipped classification of',u_ac,'due to',pdb_id,'got no sequence identity')
                     continue
                 cov = proteins.get_coverage(u_ac,pdb_id,chain)
 
@@ -1214,6 +1219,8 @@ def classification(proteins,config):
                 res_nr = sub_info[0]
 
                 if res_nr == None:
+                    if config.verbosity >= 3:
+                        print('Skipped classification of',u_ac,pos,'due to res_nr is None in ',pdb_id,chain)
                     continue
 
                 if not proteins.contains_residue(pdb_id,chain,res_nr):
@@ -1360,13 +1367,24 @@ def paraAnnotate(config,proteins, lite = False):
 
     complex_list = proteins.get_complex_list()
 
+    n_of_stored_complexes = 0
+    n_of_comps = 0
+    n_of_chains_to_analyze = 0
+
     for pdb_id in complex_list:
         if proteins.is_complex_stored(pdb_id):
+            n_of_stored_complexes += 1
             continue
         s = len(proteins.get_complex_chains(pdb_id))
         if not s in size_map:
             size_map[s] = set()
         size_map[s].add(pdb_id)
+        n_of_comps += 1
+        n_of_chains_to_analyze += s
+
+    if config.verbosity >= 2:
+        print('Starting structural analysis with',n_of_comps,'complexes.',n_of_stored_complexes,' complexes are already stored.')
+        print('Total amount in structure_list:',len(structure_list),'. Amount of structures to analyze:',n_of_chains_to_analyze)
 
     sorted_sizes = sorted(size_map.keys(),reverse = True)
 
@@ -1426,9 +1444,10 @@ def paraAnnotate(config,proteins, lite = False):
     amount_of_structures = 0
     amount_of_chains_in_analysis_dict = 0
 
+    interacting_structure_ids = {}
+
     while True:
-        if background_insert_residues_process != None:
-            background_insert_residues_process.join()
+
 
         ready, not_ready = ray.wait(anno_result_ids)
 
@@ -1441,7 +1460,7 @@ def paraAnnotate(config,proteins, lite = False):
                     package_cost -= freed_cost
                     
                     for s in sorted_sizes:
-                        if s < n_of_chain_thresh:
+                        if s < n_of_chain_thresh or config.low_mem_system:
                             cost = 1
                         else:
                             cost = min([s,config.proc_n])
@@ -1496,8 +1515,11 @@ def paraAnnotate(config,proteins, lite = False):
 
                 if config.low_mem_system:
                     if amount_of_chains_in_analysis_dict > (config.chunksize):
+                        if background_insert_residues_process != None:
+                            background_insert_residues_process.join()
                         interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
                         interaction_structures = set()
+                        
                         background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
                         total_structural_analysis = {}
                         amount_of_chains_in_analysis_dict = 0
@@ -1512,6 +1534,9 @@ def paraAnnotate(config,proteins, lite = False):
         t2 = time.time()
         print("Annotation Part 2: %s" % (str(t2-t1)))
         print('Longest computation for:',max_comp_time_structure,'with:',max_comp_time,'In total',amount_of_structures,'structures','Accumulated time:',total_comp_time)
+
+    if background_insert_residues_process != None:
+        background_insert_residues_process.join()
 
     if not lite:
         interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
