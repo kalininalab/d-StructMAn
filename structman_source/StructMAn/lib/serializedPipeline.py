@@ -1513,17 +1513,17 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_chain_chain_profile(ret_pdb_id,chain_chain_profiles)
                 proteins.set_chain_type_map(ret_pdb_id,chain_type_map)
 
-                if config.low_mem_system:
-                    if amount_of_chains_in_analysis_dict > (config.chunksize):
-                        if background_insert_residues_process != None:
-                            background_insert_residues_process.join()
-                        interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
-                        interaction_structures = set()
-                        
-                        background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
-                        total_structural_analysis = {}
-                        amount_of_chains_in_analysis_dict = 0
-                        gc.collect()
+            if config.low_mem_system:
+                if amount_of_chains_in_analysis_dict > (config.chunksize):
+                    if background_insert_residues_process != None:
+                        background_insert_residues_process.join()
+                    interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
+                    interaction_structures = set()
+                    
+                    background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
+                    total_structural_analysis = {}
+                    amount_of_chains_in_analysis_dict = 0
+                    gc.collect()
 
             anno_result_ids = new_anno_result_ids + not_ready
 
