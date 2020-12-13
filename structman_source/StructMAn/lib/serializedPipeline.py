@@ -451,6 +451,7 @@ def buildQueue(config,filename,already_split = False):
         n_of_batches = n_of_batches - len(outlist)
         if s%config.chunksize != 0:
             n_of_batches += 1
+        batchsize = s//n_of_batches
         rest = s%n_of_batches
 
         for i in range(0,n_of_batches):
