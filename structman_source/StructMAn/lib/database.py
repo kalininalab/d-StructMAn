@@ -1457,7 +1457,7 @@ def getAlignments(proteins,config):
             else:
                 proteins.add_mapping_to_structure(pdb_id,chain,u_ac)
 
-            if not proteins.contains_complex(pdb_id):
+            if not proteins.contains_complex(pdb_id) and (pdb_id in complex_map):
                 (comp_id,resolution,chains_str,homooligomers,lig_profile,metal_profile,ion_profile,cc_profile) = complex_map[pdb_id]
                 compl = sdsc.Complex(pdb_id,resolution = resolution,chains_str = chains_str,lig_profile = lig_profile,
                                         metal_profile = metal_profile, ion_profile = ion_profile,

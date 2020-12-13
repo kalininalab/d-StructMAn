@@ -94,7 +94,7 @@ def sequenceScan(config,proteins,indels):
         gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(),config)
         for u_ac in gene_sequence_map:
             if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0:
-                config.errorlog.add_error("Error in sequenceScan with gene: %s" % u_ac)
+                config.errorlog.add_warning("Error in sequenceScan with gene: %s" % u_ac)
                 continue
             seq,disorder_scores,disorder_regions_datastruct = gene_sequence_map[u_ac]
             proteins[u_ac].sequence = seq
