@@ -1395,8 +1395,10 @@ def paraAnnotate(config,proteins, lite = False):
     assigned_costs = {}
     conf_dump = ray.put(config)
     for s in sorted_sizes:
-        if s < n_of_chain_thresh or config.low_mem_system:
+        if s < n_of_chain_thresh:
             cost = 1
+        elif config.low_mem_system:
+            cost = 4
         else:
             cost = min([s,config.proc_n])
         '''
@@ -1461,8 +1463,10 @@ def paraAnnotate(config,proteins, lite = False):
                     package_cost -= freed_cost
                     
                     for s in sorted_sizes:
-                        if s < n_of_chain_thresh or config.low_mem_system:
+                        if s < n_of_chain_thresh:
                             cost = 1
+                        elif config.low_mem_system:
+                            cost = 4
                         else:
                             cost = min([s,config.proc_n])
 
@@ -1515,7 +1519,7 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_chain_type_map(ret_pdb_id,chain_type_map)
 
             if config.low_mem_system:
-                if amount_of_chains_in_analysis_dict > (config.chunksize):
+                if amount_of_chains_in_analysis_dict > 2*(config.chunksize):
                     if background_insert_residues_process != None:
                         background_insert_residues_process.join()
                     interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
