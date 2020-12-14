@@ -1398,7 +1398,7 @@ def paraAnnotate(config,proteins, lite = False):
         if s < n_of_chain_thresh:
             cost = 1
         elif config.low_mem_system:
-            cost = min([config.proc_n,(4*config.gigs_of_ram)//config.proc_n])
+            cost = min([config.proc_n,(5*config.gigs_of_ram)//config.proc_n])
         else:
             cost = min([s,config.proc_n])
         '''
@@ -1466,7 +1466,7 @@ def paraAnnotate(config,proteins, lite = False):
                         if s < n_of_chain_thresh:
                             cost = 1
                         elif config.low_mem_system:
-                            cost = min([config.proc_n,(4*config.gigs_of_ram)//config.proc_n])
+                            cost = min([config.proc_n,(5*config.gigs_of_ram)//config.proc_n])
                         else:
                             cost = min([s,config.proc_n])
 
