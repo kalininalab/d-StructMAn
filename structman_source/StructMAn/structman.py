@@ -248,7 +248,7 @@ class Config:
         if self.test_low_mem_system:
             self.gigs_of_ram = 8
         if self.low_mem_system:
-            self.chunksize = int(max([((self.gigs_of_ram*90)//self.proc_n)-120,self.proc_n,1]))
+            self.chunksize = int(max([((self.gigs_of_ram*90)//self.proc_n)-120,(self.proc_n*3)//4,1]))
         else:
             self.chunksize = int(max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n,1]))
 

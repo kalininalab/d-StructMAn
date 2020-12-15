@@ -1410,7 +1410,7 @@ def paraAnnotate(config,proteins, lite = False):
     conf_dump = ray.put(config)
     for s in sorted_sizes:
         if config.low_mem_system:
-            cost = max([1,min([config.proc_n,((s/2)*config.proc_n)//config.gigs_of_ram])])
+            cost = max([1,min([config.proc_n,(((s**2)/10)*config.proc_n)//config.gigs_of_ram])])
         elif s < n_of_chain_thresh:
             cost = 1
         else:
@@ -1478,7 +1478,7 @@ def paraAnnotate(config,proteins, lite = False):
                     
                     for s in sorted_sizes:
                         if config.low_mem_system:
-                            cost = max([1,min([config.proc_n,((s/2)*config.proc_n)//config.gigs_of_ram])])
+                            cost = max([1,min([config.proc_n,(((s**2)/10)*config.proc_n)//config.gigs_of_ram])])
                         elif s < n_of_chain_thresh:
                             cost = 1
                         else:
