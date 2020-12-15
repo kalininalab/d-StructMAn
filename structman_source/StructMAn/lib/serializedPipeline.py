@@ -251,7 +251,8 @@ def buildQueue(config,filename,already_split = False):
             for i in range(num_of_infiles):
                 temp_file_lines = []
                 for j in range(i*num_of_prots_per_file,(i+1)*num_of_prots_per_file):
-                    temp_file_lines += prot_lines[prots[j]]
+                    if j < len(prots):
+                        temp_file_lines += prot_lines[prots[j]]
                 temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
                 f = open(temp_file_path,'w')
                 f.write('\n'.join(temp_file_lines))
