@@ -215,7 +215,8 @@ def buildQueue(config,filename,already_split = False):
         lines = ['\t'.join(filename)]
 
     if config.low_mem_system and not already_split:
-        gids = set()
+        prot_lines = {}
+        prots = []
         for line in lines:
             if line == '':
                 continue
@@ -230,19 +231,27 @@ def buildQueue(config,filename,already_split = False):
                     print("Skipped input line:\n%s\nToo few words.\n" % line)
                 continue
             sp_id = words[0]#.replace("'","\\'")
-            gids.add(sp_id)
+            if not sp_id in prot_lines:
+                prot_lines[sp_id] = [line]
+                prots.append(sp_id)
+            else:
+                prot_lines[sp_id].append(line)
 
-        total_num_of_raw_ids = len(gids)
+        total_num_of_raw_ids = len(prot_lines)
         if total_num_of_raw_ids > (10*config.chunksize):
             temp_infiles = []
             num_of_infiles = total_num_of_raw_ids//(10*config.chunksize)
             if total_num_of_raw_ids%(10*config.chunksize) != 0:
                 num_of_infiles += 1
-            num_of_lines_per_file = len(lines)//num_of_infiles
-            if len(lines)%num_of_infiles != 0:
-                num_of_lines_per_file += 1
+
+            num_of_prots_per_file = total_num_of_raw_ids//num_of_infiles
+            if total_num_of_raw_ids%num_of_infiles != 0:
+                num_of_prots_per_file += 1
+
             for i in range(num_of_infiles):
-                temp_file_lines = lines[num_of_lines_per_file*i:num_of_lines_per_file*(i+1)]
+                temp_file_lines = []
+                for j in range(i*num_of_prots_per_file,(i+1)*num_of_prots_per_file):
+                    temp_file_lines += prot_lines[prots[j]]
                 temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
                 f = open(temp_file_path,'w')
                 f.write('\n'.join(temp_file_lines))
@@ -423,6 +432,8 @@ def buildQueue(config,filename,already_split = False):
 
         n_of_batches = s//config.chunksize
         batchsize = s//n_of_batches
+        if s%n_of_batches != 0:
+            batchsize += 1
         if n_of_indel_batches > 0:
             indel_rest = s%n_of_indel_batches
         outlist = []
@@ -452,6 +463,8 @@ def buildQueue(config,filename,already_split = False):
         if s%config.chunksize != 0:
             n_of_batches += 1
         batchsize = s//n_of_batches
+        if s%n_of_batches != 0:
+            batchsize += 1
         rest = s%n_of_batches
 
         for i in range(0,n_of_batches):
@@ -1395,10 +1408,10 @@ def paraAnnotate(config,proteins, lite = False):
     assigned_costs = {}
     conf_dump = ray.put(config)
     for s in sorted_sizes:
-        if s < n_of_chain_thresh:
+        if config.low_mem_system:
+            cost = max([1,min([config.proc_n,((s/2)*config.proc_n)//config.gigs_of_ram])])
+        elif s < n_of_chain_thresh:
             cost = 1
-        elif config.low_mem_system:
-            cost = min([config.proc_n,(5*config.gigs_of_ram)//config.proc_n])
         else:
             cost = min([s,config.proc_n])
         '''
@@ -1463,10 +1476,10 @@ def paraAnnotate(config,proteins, lite = False):
                     package_cost -= freed_cost
                     
                     for s in sorted_sizes:
-                        if s < n_of_chain_thresh:
+                        if config.low_mem_system:
+                            cost = max([1,min([config.proc_n,((s/2)*config.proc_n)//config.gigs_of_ram])])
+                        elif s < n_of_chain_thresh:
                             cost = 1
-                        elif config.low_mem_system:
-                            cost = min([config.proc_n,(5*config.gigs_of_ram)//config.proc_n])
                         else:
                             cost = min([s,config.proc_n])
 
@@ -1518,17 +1531,17 @@ def paraAnnotate(config,proteins, lite = False):
                 proteins.set_chain_chain_profile(ret_pdb_id,chain_chain_profiles)
                 proteins.set_chain_type_map(ret_pdb_id,chain_type_map)
 
-            if config.low_mem_system:
-                if amount_of_chains_in_analysis_dict > 2*(config.chunksize):
-                    if background_insert_residues_process != None:
-                        background_insert_residues_process.join()
-                    interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
-                    interaction_structures = set()
-                    
-                    background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
-                    total_structural_analysis = {}
-                    amount_of_chains_in_analysis_dict = 0
-                    gc.collect()
+                if config.low_mem_system:
+                    if amount_of_chains_in_analysis_dict > 2*(config.chunksize):
+                        if background_insert_residues_process != None:
+                            background_insert_residues_process.join()
+                        interacting_structure_ids = database.insertInteractingChains(interaction_structures,proteins,config)
+                        interaction_structures = set()
+                        
+                        background_insert_residues_process = database.insertResidues(total_structural_analysis,interacting_structure_ids,proteins,config)
+                        total_structural_analysis = {}
+                        amount_of_chains_in_analysis_dict = 0
+                        gc.collect()
 
             anno_result_ids = new_anno_result_ids + not_ready
 
@@ -1826,9 +1839,9 @@ def main(filename,config,output_path,main_file_path):
 
     for nr_temp_file,temp_infile in enumerate(temp_infiles):
         if temp_infile != None:
-            proteins_chunks,nothing = buildQueue(config,temp_infile,already_split = True)
             if config.verbosity >= 1:
                 print('Infile splitting due to low memory system, processing infile split nr.:',nr_temp_file+1,'out of',len(temp_infiles))
+            proteins_chunks,nothing = buildQueue(config,temp_infile,already_split = True)
             os.remove(temp_infile)
 
         chunk_nr = 1 
