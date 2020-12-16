@@ -216,7 +216,7 @@ def search(proteins,config):
 
     t1 = time.time()
 
-    if config.verbosity >= 1:
+    if config.verbosity >= 2:
         print(mmseqs2_path,'easy-search',temp_fasta,search_db,temp_outfile,mmseqs_tmp_folder)
 
     if config.verbosity >= 3:

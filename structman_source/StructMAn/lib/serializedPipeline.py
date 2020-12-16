@@ -253,6 +253,8 @@ def buildQueue(config,filename,already_split = False):
                 for j in range(i*num_of_prots_per_file,(i+1)*num_of_prots_per_file):
                     if j < len(prots):
                         temp_file_lines += prot_lines[prots[j]]
+                if len(temp_file_lines) == 0:
+                    continue
                 temp_file_path = '%s/infile_split_%s.smlf' % (config.temp_folder,str(i))
                 f = open(temp_file_path,'w')
                 f.write('\n'.join(temp_file_lines))
@@ -1602,7 +1604,7 @@ def paraAnnotate(config,proteins, lite = False):
         t6 = time.time()
         print("Time for garbage collection: %s" % (str(t6-t5)))
 
-    return background_insert_residues_process
+    return background_insert_residues_process,amount_of_structures
 
 @ray.remote(num_cpus=1)
 def annotate(config,pdb_id,target_dict):
@@ -1699,7 +1701,7 @@ def core(protein_list,indels,config,session,outfolder,session_name,out_objects):
         if config.verbosity >= 1:
             print("Before paraAnnotate")
 
-        background_insert_residues_process = paraAnnotate(config,proteins, lite = config.lite)
+        background_insert_residues_process,amount_of_structures = paraAnnotate(config,proteins, lite = config.lite)
 
         t7 = time.time()
         if config.verbosity >= 2:
@@ -1745,7 +1747,7 @@ def core(protein_list,indels,config,session,outfolder,session_name,out_objects):
         if background_insert_residues_process != None:
             background_insert_residues_process.join()
 
-    return out_objects
+    return out_objects,amount_of_structures
 
 #@profile
 def main(filename,config,output_path,main_file_path):
@@ -1838,6 +1840,8 @@ def main(filename,config,output_path,main_file_path):
 
     out_objects = None
 
+    total_amount_of_analyzed_structures = 0
+
     for nr_temp_file,temp_infile in enumerate(temp_infiles):
         if temp_infile != None:
             if config.verbosity >= 1:
@@ -1855,7 +1859,9 @@ def main(filename,config,output_path,main_file_path):
             if config.low_mem_system:
                 protein_list,indels = sequenceScan(config,protein_list,indels)
 
-            out_objects = core(protein_list,indels,config,session,output_path,session_name,out_objects)
+            out_objects,amount_of_structures = core(protein_list,indels,config,session,output_path,session_name,out_objects)
+
+            total_amount_of_analyzed_structures += amount_of_structures
 
     os.chdir(output_path)
 
@@ -1879,6 +1885,7 @@ def main(filename,config,output_path,main_file_path):
 
     tend = time.time()
     if config.verbosity >= 1:
+        print(total_amount_of_analyzed_structures,'structures in total got analyzed')
         print('Total runtime of StructMAn:',(tend-t0))
 
     '''

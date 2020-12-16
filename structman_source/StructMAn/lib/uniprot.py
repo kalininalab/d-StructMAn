@@ -766,7 +766,7 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
 
         else:
             #print uniprot_ac
-            return (1,"",{},{})
+            return None
 
     lines = page.split("\n")
     #print(lines)

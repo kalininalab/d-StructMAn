@@ -248,7 +248,7 @@ class Config:
         if self.test_low_mem_system:
             self.gigs_of_ram = 8
         if self.low_mem_system:
-            self.chunksize = int(max([((self.gigs_of_ram*90)//self.proc_n)-120,(self.proc_n*3)//4,1]))
+            self.chunksize = int(max([((self.gigs_of_ram*90)//self.proc_n)-120,(self.proc_n*2)//3,1]))
         else:
             self.chunksize = int(max([((self.gigs_of_ram*200)//self.proc_n)-60,self.proc_n,1]))
 
@@ -436,43 +436,26 @@ if __name__ == "__main__":
                 '<-d> :                   database mode\n\n',
                 '<-l> :                   lite-mode\n\n',
                 '<--verbosity> [1-4]:     verbose output\n\n',
+                '<--printerrors> :        prints error messages in the console instead of logging them. Warning messages still go into the log.\n\n',
+                '<--printwarnings> :      prints error and warning messages in the console instead of logging them.\n\n',
+                '<--restartlog> :         wipes the log before starting the session.\n\n',
                 '<--norin>                disable all RIN-based calculation'])
-
-    database_util_disclaimer = ''.join([
-                'Usage: structman.py database [command] <-c config_file>\n\n',
-                '#### Commands: ####\n\n',
-                'reset :     deletes all content of the database\n\n',
-                'destroy :   completely removes the database\n\n',
-                'create :    creates an empty instance of the database, usually called after database destroy'
-                ])
-
-    update_util_disclaimer = ''.join([
-                'Usage: structman.py update [commands] <-c config_file> <-p path_to_local_pdb>\n',
-                'The update functionalities manage local database, that significantly increases the performance of StructMAn.\n',
-                'They need a lot of disk space though. Thus the usage of local databases is only recommended when one wants to process larger inputs with StructMAn.\n'
-                'Only needs the path to the local instance of the PDB (-p), if it is not already specified in the config file.\n\n'
-                '#### Commands: ####\n\n',
-
-                'pdb :       uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
-                '            If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
-
-                'rindb :     calculates and stores the RIN for each PDB structure in the local PDB.\n',
-                '            When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
-                ])
-
-    config_util_disclaimer = ''.join([
-                'Usage: structman.py config [command] [value] <-c config_file>\n',
-                'The config commands enable the expansion of StructMAn by giving it access to additional functionalities, which are too large to be included by default or require an external license.\n\n',
-                '#### Commands: ####\n\n',
-                'set_local_pdb_path <path_to_local_pdb> :               enables the usage of a local instance of the PDB. If this is not available, StructMAn has to download all structural information from the web.\n\n',
-                'set_local_iupred_path <path_to_iupred_executable> :    enables StructMAn to use the predicted disordered regions performed by iupred2a.'
-                ])
 
     argv = sys.argv[1:]
 
     if len(argv) == 0:
         print(disclaimer)
         sys.exit(1)
+
+    database_util_disclaimer = ''.join([
+                'Usage: structman.py database [command] <-c config_file>\n\n',
+                '#### Commands: ####\n\n',
+                'reset :\n  deletes all content of the database\n\n',
+                'clear :\n  deletes all content of the database, but keeps the results of all stored structures\n\n',
+                'export <-p path_to_a_folder> :\n  exports the database to a .sql.gz format file\n\n',
+                'destroy :\n  completely removes the database\n\n',
+                'create <-i sql_file> <--dbname name_of_database> :\n  creates an instance of the database'
+                ])
 
     database_util = False
     if argv[0] == 'database':
@@ -490,6 +473,20 @@ if __name__ == "__main__":
         else:
             print(database_util_disclaimer)
             sys.exit(1)
+
+    update_util_disclaimer = ''.join([
+                'Usage: structman.py update [commands] <-c config_file> <-p path_to_local_pdb>\n',
+                'The update functionalities manage local database, that significantly increases the performance of StructMAn.\n',
+                'They need a lot of disk space though. Thus the usage of local databases is only recommended when one wants to process larger inputs with StructMAn.\n'
+                'Only needs the path to the local instance of the PDB (-p), if it is not already specified in the config file.\n\n'
+                '#### Commands: ####\n\n',
+
+                'pdb :       uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
+                '            If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
+
+                'rindb :     calculates and stores the RIN for each PDB structure in the local PDB.\n',
+                '            When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
+                ])
 
     update_util = False
     update_pdb = False
@@ -509,6 +506,15 @@ if __name__ == "__main__":
             if not (update_pdb or update_rindb):
                 print(update_util_disclaimer)
                 sys.exit(1)
+
+    config_util_disclaimer = ''.join([
+                'Usage: structman.py config [command] [value] <-c config_file>\n',
+                'The config commands enable the expansion of StructMAn by giving it access to additional functionalities, which are too large to be included by default or require an external license.\n\n',
+                '#### Commands: ####\n\n',
+                'set_local_pdb_path <path_to_local_pdb> :               enables the usage of a local instance of the PDB. If this is not available, StructMAn has to download all structural information from the web.\n\n',
+                'set_local_iupred_path <path_to_iupred_executable> :    enables StructMAn to use the predicted disordered regions performed by iupred2a.\n\n',
+                '<any config variable name> <any value> :               modifies any variable in the config file. Warning: does not check if given input makes sense.',
+                ])
 
     configure_mode = False
     if len(argv) > 0:
