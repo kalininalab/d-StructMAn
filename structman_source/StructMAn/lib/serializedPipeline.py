@@ -826,6 +826,9 @@ def paraAlignment(config,proteins,skip_db = False):
 
     mapping_results = []
 
+    sus_complexes = set()
+    sus_structures = set()
+
     for u_ac in u_acs:
         if not proteins.is_protein_stored(u_ac):
             continue
@@ -847,8 +850,9 @@ def paraAlignment(config,proteins,skip_db = False):
     gc.collect()
 
     mappings_outs = ray.get(mapping_results)
-    for (u_ac,pdb_id,chain,sub_infos) in mappings_outs:
+    for (u_ac,pdb_id,chain,sub_infos,atom_count) in mappings_outs:
         proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
+        proteins.set_atom_count(pdb_id,atom_count)
 
     t3 = time.time()
     if config.verbosity >= 2:
@@ -861,15 +865,14 @@ def paraAlignment(config,proteins,skip_db = False):
     break_point = 0
     break_u_ac = None
 
-    sus_complexes = set()
-    sus_structures = set()
     safe_complexes = set()
     safe_structures = set()
     database_structure_list = None
     while not finished:
         alignment_results = []
         
-        if config.low_mem_system:
+        #if config.low_mem_system and not config.lite:
+        if False: #something is broken here. Since I had to reduce the chunksize, I can try to safe this contraption
             #This breaks after 100 started alignments, continues the while loop and then returns, where it has broken
             number_of_packaged_alignments = 0
             broken = False
@@ -959,11 +962,12 @@ def paraAlignment(config,proteins,skip_db = False):
                 warn_map.add(u_ac)
                 continue
 
-            (u_ac,pdb_id,chain,alignment,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos) = out
+            (u_ac,pdb_id,chain,alignment,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos,atom_count) = out
 
             proteins.set_coverage(u_ac,pdb_id,chain,coverage)
             proteins.set_sequence_id(u_ac,pdb_id,chain,seq_id)
             proteins.set_sub_infos(u_ac,pdb_id,chain,sub_infos)
+            proteins.set_atom_count(pdb_id,atom_count)
             #proteins.set_alignment(u_ac,pdb_id,chain,alignment)
 
             proteins.set_interaction_partners(pdb_id,interaction_partners)
@@ -1007,7 +1011,10 @@ def paraAlignment(config,proteins,skip_db = False):
 
     #Due the removal of annotations in the previous loop, we might to remove some structures and complexes
     proteins.remove_structures(sus_structures-safe_structures)
-    proteins.remove_complexes(sus_complexes-safe_complexes)
+    complexes_to_remove = sus_complexes-safe_complexes
+    if config.verbosity >= 2:
+        print('Remove complexes:',complexes_to_remove)
+    proteins.remove_complexes(complexes_to_remove)
 
     if skip_db:
         #even lite mode checks for stored structures
@@ -1026,13 +1033,13 @@ def paraMap(mapping_dump,u_ac,pdb_id,chain,structure_id,target_seq,template_seq,
 
     pdb_path = config.pdb_path
 
-    template_page = pdbParser.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
+    template_page,atom_count = pdbParser.standardParsePDB(pdb_id,pdb_path,obsolete_check=True)
 
     seq_res_map = globalAlignment.createTemplateFasta(template_page,pdb_id,chain,config,onlySeqResMap = True)
 
     sub_infos,aaclist = globalAlignment.getSubPos(config,u_ac,target_seq,template_seq,aaclist,seq_res_map)
 
-    return (u_ac,pdb_id,chain,sub_infos)
+    return (u_ac,pdb_id,chain,sub_infos,atom_count)
 
 @ray.remote(num_cpus=1)
 def align(align_dump,pdb_id,chain,oligo,prot_specific_mapping_dump):
@@ -1054,7 +1061,7 @@ def align(align_dump,pdb_id,chain,oligo,prot_specific_mapping_dump):
         if parse_out == None:
             return (u_ac,pdb_id,chain,'pdbParser failed')
 
-        (template_page,interaction_partners,chain_type_map,oligo) = parse_out
+        (template_page,interaction_partners,chain_type_map,oligo,atom_count) = parse_out
 
         align_out = globalAlignment.alignBioPython(config,u_ac,seq,pdb_id,template_page,chain,aaclist)
 
@@ -1067,7 +1074,7 @@ def align(align_dump,pdb_id,chain,oligo,prot_specific_mapping_dump):
             return (u_ac,pdb_id,chain)
 
         if 100.0*seq_id >= option_seq_thresh:
-            return (u_ac,pdb_id,chain,alignment_pir,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos)
+            return (u_ac,pdb_id,chain,alignment_pir,seq_id,coverage,interaction_partners,chain_type_map,oligo,sub_infos,atom_count)
         else:
             return (u_ac,pdb_id,chain)
 
@@ -1393,9 +1400,12 @@ def paraAnnotate(config,proteins, lite = False):
             n_of_stored_complexes += 1
             continue
         s = len(proteins.get_complex_chains(pdb_id))
+        ac = proteins.get_atom_count(pdb_id)
+        if ac == None:
+            config.errorlog.add_warning('Complex with None as atom count: %s' % pdb_id)
         if not s in size_map:
-            size_map[s] = set()
-        size_map[s].add(pdb_id)
+            size_map[s] = {}
+        size_map[s][pdb_id] = ac
         n_of_comps += 1
         n_of_chains_to_analyze += s
 
@@ -1411,9 +1421,7 @@ def paraAnnotate(config,proteins, lite = False):
     assigned_costs = {}
     conf_dump = ray.put(config)
     for s in sorted_sizes:
-        if config.low_mem_system:
-            cost = max([1,min([config.proc_n,(((s**2)/10)*config.proc_n)//config.gigs_of_ram])])
-        elif s < n_of_chain_thresh:
+        if s < n_of_chain_thresh:
             cost = 1
         else:
             cost = min([s,config.proc_n])
@@ -1424,6 +1432,9 @@ def paraAnnotate(config,proteins, lite = False):
         '''
         del_list = []
         for pdb_id in size_map[s]:
+            ac = size_map[s][pdb_id]
+            if config.low_mem_system:
+                cost = max([1,min([config.proc_n,(((ac**2)/5000000)*config.proc_n)//config.gigs_of_ram])])
 
             if cost + package_cost <= config.proc_n:
                 if not lite:
@@ -1439,7 +1450,7 @@ def paraAnnotate(config,proteins, lite = False):
                 break
 
         for pdb_id in del_list:
-            size_map[s].remove(pdb_id)
+            del size_map[s][pdb_id]
         if len(size_map[s]) == 0:
             del size_map[s]
     sorted_sizes = sorted(size_map.keys(),reverse = True)
@@ -1479,15 +1490,16 @@ def paraAnnotate(config,proteins, lite = False):
                     package_cost -= freed_cost
                     
                     for s in sorted_sizes:
-                        if config.low_mem_system:
-                            cost = max([1,min([config.proc_n,(((s**2)/10)*config.proc_n)//config.gigs_of_ram])])
-                        elif s < n_of_chain_thresh:
+                        if s < n_of_chain_thresh:
                             cost = 1
                         else:
                             cost = min([s,config.proc_n])
 
                         del_list = []
                         for pdb_id in size_map[s]:
+                            ac = size_map[s][pdb_id]
+                            if config.low_mem_system:
+                                cost = max([1,min([config.proc_n,(((ac**2)/5000000)*config.proc_n)//config.gigs_of_ram])])
                             if cost + package_cost <= config.proc_n:
                                 if not lite:
                                     target_dict = None
@@ -1502,7 +1514,7 @@ def paraAnnotate(config,proteins, lite = False):
                                 break
 
                         for pdb_id in del_list:
-                            size_map[s].remove(pdb_id)
+                            del size_map[s][pdb_id]
                         if len(size_map[s]) == 0:
                             del size_map[s]
                     sorted_sizes = sorted(size_map.keys(),reverse = True)
@@ -1746,6 +1758,7 @@ def core(protein_list,indels,config,session,outfolder,session_name,out_objects):
             background_process_MS.join()
         if background_insert_residues_process != None:
             background_insert_residues_process.join()
+        amount_of_structures = 0
 
     return out_objects,amount_of_structures
 

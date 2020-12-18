@@ -1008,6 +1008,8 @@ class Proteins:
         return self.complexes.keys()
 
     def add_complex(self,pdb_id,complex_obj):
+        if pdb_id in self.complexes:
+            complex_obj.set_atom_count(self.complexes[pdb_id].get_atom_count())
         self.complexes[pdb_id] = complex_obj
         return
 
@@ -1088,6 +1090,13 @@ class Proteins:
         if not pdb_id in self.complexes:
             return None
         return self.complexes[pdb_id].get_resolution()
+
+    def set_atom_count(self,pdb_id,atom_count):
+        self.complexes[pdb_id].set_atom_count(atom_count)
+        return
+
+    def get_atom_count(self,pdb_id):
+        return self.complexes[pdb_id].get_atom_count()
 
     def get_structures(self):
         return self.structures
@@ -1553,11 +1562,15 @@ class Structure_annotation:
         return False
 
 class Complex:
-    __slots__ = ['pdb_id','resolution','interaction_partners','database_id','chains','stored','lig_profile','metal_profile','ion_profile','chain_chain_profile','homomers']
+    __slots__ = [
+                    'pdb_id','resolution','interaction_partners','database_id','chains','stored',
+                    'lig_profile','metal_profile','ion_profile','chain_chain_profile','homomers',
+                    'atom_count'
+                ]
 
     def __init__(self,pdb_id,resolution = None,chains_str = None,lig_profile = None, lig_profile_str = None, metal_profile = None,
                     metal_profile_str = None, ion_profile = None, ion_profile_str = None, chain_chain_profile = None,
-                    chain_chain_profile_str = None, stored = False, database_id = None, homomers = {}, homomers_str = None):
+                    chain_chain_profile_str = None, stored = False, database_id = None, homomers = {}, homomers_str = None,atom_count = None):
         self.pdb_id = pdb_id
         self.chains = {} #{One-letter-chain-id:chaintype} ; possible chaintypes: 'Protein','DNA','RNA,'Peptide'
         self.resolution = resolution
@@ -1569,6 +1582,7 @@ class Complex:
         self.ion_profile = ion_profile
         self.chain_chain_profile = chain_chain_profile
         self.homomers = homomers #Output of pdbParser.getInfo
+        self.atom_count = atom_count
 
         if homomers_str != None:
             self.parseHomomersStr(homomers_str)
@@ -1730,6 +1744,13 @@ class Complex:
 
     def set_database_id(self,value):
         self.database_id = value
+        return
+
+    def get_atom_count(self):
+        return self.atom_count
+
+    def set_atom_count(self,atom_count):
+        self.atom_count = atom_count
         return
 
 class Structure:

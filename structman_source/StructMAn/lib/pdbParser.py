@@ -771,12 +771,12 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = Fals
 
     if buf == None:
         if return_10k_bool and get_is_local:
-            return '',None,None
+            return '',None,None,0
         elif return_10k_bool:
-            return '',None
+            return '',None,0
         elif get_is_local:
-            return '',None
-        return ''
+            return '',None,0
+        return '',0
     # Added automatization here, if pdb file not exist, automatically calls MMCIF version
     #    print('PDB file does not exist, trying MMCIF file')
     #    return standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False)      
@@ -851,12 +851,12 @@ def standardParsePDB(pdb_id,pdb_path,obsolete_check=False,return_10k_bool = Fals
     buf.close()
 
     if return_10k_bool and get_is_local:
-        return template_page,fixed_10k_bug,path
+        return template_page,fixed_10k_bug,path,current_serial
     elif return_10k_bool:
-        return template_page,fixed_10k_bug
+        return template_page,fixed_10k_bug,current_serial
     elif get_is_local:
-        return template_page,path
-    return template_page
+        return template_page,path,current_serial
+    return template_page,current_serial
     
 # Called by standardParsePDB if PDB file does not exist
 def standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False):
@@ -1075,8 +1075,8 @@ def getStandardizedPdbFile(pdb_id,pdb_path,oligo=set(), verbosity = 0):
 
     template_page = '\n'.join(newlines)
     
-    return template_page,interaction_partners,chain_type_map,oligo
-    
+    return template_page,interaction_partners,chain_type_map,oligo,current_serial
+
 # Newly written MMCIF version
 # Called by getStandardizedPDBFile if PDB file does not exist
 def getStandardizedMMCIFFile(pdb_id,chain,structure,pdb_path):

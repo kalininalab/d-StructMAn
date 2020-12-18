@@ -831,7 +831,7 @@ def structuralAnalysis(pdb_id,config,target_dict = None):
         t0 = time.time()
         print('Start structuralAnalysis of:',pdb_id)
 
-    page,fixed_10k_bug,path = pdbParser.standardParsePDB(pdb_id,pdb_path,return_10k_bool = True,get_is_local = True)
+    page,fixed_10k_bug,path,atom_count = pdbParser.standardParsePDB(pdb_id,pdb_path,return_10k_bool = True,get_is_local = True)
 
     if verbosity >= 4:
         t1 = time.time()
