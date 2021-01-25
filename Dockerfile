@@ -57,8 +57,10 @@ RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.
 # Install and setup MMseqs2
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/; ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
 
-# Install xssp-3.0.7-mkdssp
+# Install our patched version of xssp-3.0.7-mkdssp
 RUN wget -O /opt/xssp-3.0.7.tar.gz https://github.com/cmbi/hssp/releases/download/3.0.7/xssp-3.0.7.tar.gz; tar xvzf /opt/xssp-3.0.7.tar.gz -C /opt/; rm /opt/xssp-3.0.7.tar.gz
+COPY patches/xssp /tmp/xssp-patches
+RUN (cd /opt/xssp-3.0.7/; for PATCH in /tmp/xssp-patches/*; do patch -p1 < "$PATCH"; done; rm -rf /tmp/xssp-patches)
 RUN (cd /opt/xssp-3.0.7/; ./autogen.sh; ./configure; make mkdssp; make install)
 
 # Add the StructMAn source
