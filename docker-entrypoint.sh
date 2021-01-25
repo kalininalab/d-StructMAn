@@ -33,14 +33,14 @@ configure_structman() {
 # Create necessary directories for the MySQL server setup with proper permissions and ownership
 create_mysql_dirs(){
     # Setup the MySQL data directory
-    mkdir -p /var/lib/mysql
-    chmod -R 777 /var/lib/mysql
-    chown -R mysql:mysql /var/lib/mysql
+    #mkdir -p /var/lib/mysql
+    #chmod -R 770 /var/lib/mysql
+    #chown -R mysql:mysql /var/lib/mysql
 
     # Setup the MySQL run directory
     mkdir -p /var/run/mysqld
     chmod -R 777 /var/run/mysqld
-    rm -rf var/run/mysqld/mysqld.sock.lock
+    rm -rf /var/run/mysqld/mysqld.sock.lock
     chown -R mysql:mysql /var/run/mysqld
 
     # Setup the MySQL log directory
@@ -85,24 +85,21 @@ log-error = /var/log/mysql/error.log
 basedir = /usr
 lc-messages-dir = /usr/share/mysql
 init_connect = 'SET NAMES utf8'
-character-set-server = utf8
-collation-server = utf8_unicode_ci
+character-set-server = UTF8MB4
+collation-server = utf8mb4_unicode_ci
 key_buffer_size = 16M
 max_allowed_packet = 16M
 thread_stack = 192K
 thread_cache_size = 8
 myisam-recover-options = BACKUP
-query_cache_limit = 1M
-query_cache_size = 16M
-expire_logs_days = 10
 max_binlog_size = 100M
 
 [client]
-default-character-set = utf8
+default-character-set = UTF8MB4
 socket = /var/run/mysqld/mysqld.sock
 
 [mysql]
-default-character-set = utf8
+default-character-set = UTF8MB4
 socket = /var/run/mysqld/mysqld.sock" > /etc/mysql/mysql.conf.d/mysqld.cnf
     fi
 

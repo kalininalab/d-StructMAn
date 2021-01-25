@@ -283,13 +283,13 @@ class Config:
 
     def getDB(self,server_connection = False,mapping_db = False):
         if server_connection:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,None)
+            db = MySQLdb.connect(host=self.db_adress,user=self.db_user_name,passwd=self.db_password,db=None)
             cursor = db.cursor()
         elif mapping_db:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.mapping_db)
+            db = MySQLdb.connect(host=self.db_adress,user=self.db_user_name,passwd=self.db_password,db=self.mapping_db)
             cursor = db.cursor()
         else:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.db_name)
+            db = MySQLdb.connect(host=self.db_adress,user=self.db_user_name,passwd=self.db_password,db=self.db_name)
             cursor = db.cursor()
         return db,cursor
 
@@ -786,7 +786,7 @@ if __name__ == "__main__":
         elif db_mode == 'clear':
             repairDB.clear(config)
         elif db_mode == 'out':
-            db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
+            db = MySQLdb.connect(host=config.db_adress,user=config.db_user_name,passwd=config.db_password,db=config.db_name)
             cursor = db.cursor()
             print(infile)
             session_id = database.getSessionId(infile,db,cursor)
@@ -827,7 +827,7 @@ if __name__ == "__main__":
 
     elif output_util:
         if out_util_mode == 'PPI':
-            db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.db_name)
+            db = MySQLdb.connect(host=config.db_adress,user=config.db_user_name,passwd=config.db_password,db=config.db_name)
             cursor = db.cursor()
             if config.verbosity >= 1:
                 print(infile)

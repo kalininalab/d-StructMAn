@@ -1,7 +1,7 @@
 # StructMAn docker container
 
-# Using Ubuntu 18.04 as the base image
-FROM ubuntu:18.04
+# Using Ubuntu 20.04 as the base image
+FROM ubuntu:20.04
 
 # Meta-data
 LABEL maintainer="Alexander Gress (agress@mpi-inf.mpg.de)" \
@@ -21,9 +21,10 @@ vim \
 less \
 gcc \
 gzip \
-python3.7 \
-python3.7-dev \
-python3.7-distutils \
+python3 \
+python3-dev \
+python3-distutils \
+python3-pip \
 libboost-all-dev \
 libzeep-dev \
 libbz2-dev \
@@ -34,32 +35,19 @@ autotools-dev \
 rsync \
 openbabel \
 ncbi-blast+ \
-python-mysqldb \
+python3-mysqldb \
 mysql-client && \
-rm -rf /var/lib/apt/lists/* && \
-rm -rf /var/lib/mysql
-
-# Register the python version 3.7 in alternatives
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
-
-# Set python 3.7 as the default python3
-RUN update-alternatives --set python3 /usr/bin/python3.7
-
-# Upgrade pip to the latest version
-RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-python3 get-pip.py --force-reinstall && \
-rm get-pip.py
+rm -rf /var/lib/apt/lists/*
 
 # Install StructMAn Python dependencies
-RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph pickle5>=0.0.10 psutil
-RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp37-cp37m-manylinux1_x86_64.whl
+RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph "pickle5>=0.0.10" psutil "chardet>=3.0.2,<4.0" ray
 
 # Install and setup MMseqs2
-RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/; ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
+RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
 
 # Install xssp-3.0.7-mkdssp
-RUN wget -O /opt/xssp-3.0.7.tar.gz https://github.com/cmbi/hssp/releases/download/3.0.7/xssp-3.0.7.tar.gz; tar xvzf /opt/xssp-3.0.7.tar.gz -C /opt/; rm /opt/xssp-3.0.7.tar.gz
-RUN (cd /opt/xssp-3.0.7/; ./autogen.sh; ./configure; make mkdssp; make install)
+RUN wget -O /opt/xssp-3.0.7.tar.gz https://github.com/cmbi/hssp/releases/download/3.0.7/xssp-3.0.7.tar.gz && tar xvzf /opt/xssp-3.0.7.tar.gz -C /opt/ && rm /opt/xssp-3.0.7.tar.gz
+RUN cd /opt/xssp-3.0.7/ && ./autogen.sh && ./configure && make mkdssp && make install
 
 # Add the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
