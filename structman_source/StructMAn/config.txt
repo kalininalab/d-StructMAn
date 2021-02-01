@@ -1,0 +1,11 @@
+db_adress=localhost
+db_user_name=structman
+db_password=structman_rocks
+db_name=struct_man_db_1
+
+blast_path=
+dssp_path=mkdssp
+mmseqs2_path=mmseqs
+lite=True
+
+resources=auto
