@@ -283,13 +283,13 @@ class Config:
 
     def getDB(self,server_connection = False,mapping_db = False):
         if server_connection:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,None)
+            db = MySQLdb.connect(host = self.db_adress, user = self.db_user_name, password = self.db_password)
             cursor = db.cursor()
         elif mapping_db:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.mapping_db)
+            db = MySQLdb.connect(host = self.db_adress, user = self.db_user_name, password = self.db_password, database = self.mapping_db)
             cursor = db.cursor()
         else:
-            db = MySQLdb.connect(self.db_adress,self.db_user_name,self.db_password,self.db_name)
+            db = MySQLdb.connect(host = self.db_adress, user = self.db_user_name, password = self.db_password, database = self.db_name)
             cursor = db.cursor()
         return db,cursor
 

@@ -1639,7 +1639,7 @@ def annotate(config,pdb_id,target_dict):
 
 def core(protein_list,indels,config,session,outfolder,session_name,out_objects):
     if len(protein_list) == 0:
-        return
+        return None
 
     background_insert_residues_process = None
     background_process_MS = None
@@ -1796,8 +1796,8 @@ def main(filename,config,output_path,main_file_path):
         if not os.path.exists(mrna_fasta):
             raise NameError("mRNA path not found: %s" % mrna_fasta)
 
-    #annovar-pipeline in case of vcf-file
     if isinstance(filename,str):
+        #annovar-pipeline in case of vcf-file
         if filename.rsplit(".",1)[1] == "vcf":
             anno_db = "%s_annovar" % db_name.rsplit("_",1)[0]
             if config.verbosity >= 1:
@@ -1807,9 +1807,13 @@ def main(filename,config,output_path,main_file_path):
             nfname = annovar.annovar_pipeline(filename,config.tax_id,config.annovar_path,config.db_adress,config.db_user_name,config.db_password,anno_db,mrna_fasta,ref_id=config.ref_genome_id)
         else:
             nfname = filename
+
+    #Single line input check
     else:
         nfname = 'Single line input'
         single_line_inputs = filename
+        if config.verbosity >= 1:
+            print('=== Single line input mode ===')
 
     t01 = time.time()
 
@@ -1874,11 +1878,20 @@ def main(filename,config,output_path,main_file_path):
             if config.low_mem_system:
                 protein_list,indels = sequenceScan(config,protein_list,indels)
 
-            out_objects,amount_of_structures = core(protein_list,indels,config,session,output_path,session_name,out_objects)
+            core_out = core(protein_list,indels,config,session,output_path,session_name,out_objects)
+
+            if core_out == None:
+                continue
+
+            out_objects,amount_of_structures = core_out
 
             total_amount_of_analyzed_structures += amount_of_structures
 
     os.chdir(output_path)
+
+    if out_objects == None:
+        if config.verbosity >= 1:
+            print("=== Nothing got processed, probably the input didn't contain any usable protein ID. ===")
 
     if config.verbosity >= 2:
         t03 = time.time()
