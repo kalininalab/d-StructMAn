@@ -1,6 +1,6 @@
 #!/bin/bash
 # Description: StructMAn docker container setup script, that will setup a structman container with a default folder structure and a compose file.
-# Author: Sanjay kumar Srikakulam (sanjaysrikakulam@gmail.com)
+# Author: Sanjay Kumar Srikakulam
 # Changelog:
 # 13-07-2018 Init
 
@@ -44,7 +44,7 @@ echo "version: '3.5'
 services:
     structman_db:
         shm_size: 8GB
-        image: docker.io/sanjaysrikakulam/structman:latest
+        image: docker.io/alexgress/d-structman:latest
         container_name: $container_name
         hostname: structman-container
         ports:
