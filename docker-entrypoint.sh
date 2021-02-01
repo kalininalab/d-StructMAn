@@ -5,18 +5,12 @@
 set -euo pipefail
 
 echo "***** Container configuration starting for the host $HOSTNAME *****"
-cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/struct_man_db.sql.gz
-echo "Cat done"
-# Get the default StructMAn database name from the source file stored under /usr/structman_library/sources/StructMAn_db/
-if [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 1 ]]; then
-    for sql_file in /usr/structman_library/sources/StructMAn_db/*.sql.gz; do
-        STRUCTMAN_DB=$(basename $sql_file | cut -d "." -f 1)
-        STRUCTMAN_DB_FOLDER_NAME=$(zless $sql_file | grep "Database" | awk '{print $NF}' | tr -d '`')
-    done
-elif [[ $(ls -L /usr/structman_library/sources/StructMAn_db/*.sql.gz | wc -l) == 0 ]]; then
-    echo "===>    There does not seem to be any default StructMAn database file in the source directory (/usr/structman_library/sources/StructMAn_db/). Aborting the container setup!    <==="
-    exit 1
-fi
+# Default StructMAn database details from the source files stored under /usr/structman_library/sources/StructMAn_db/
+STRUCTMAN_DB='struct_man_db.sql.gz'
+STRUCTMAN_DB_FOLDER_NAME='struct_man_db_1'
+
+# Concatenate the database
+cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB
 
 # Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
 configure_structman() {
@@ -151,7 +145,7 @@ configure_database() {
     sleep 60
     
     echo "===>    creating and importing the default database!    <==="
-    gunzip < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB.sql.gz | mysql --user=root
+    gunzip < /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB | mysql --user=root
 
     if [[ $? == 0 ]]; then
         echo "===>    MySQL StructMAn default database has been created and imported successfully!    <==="
@@ -186,13 +180,9 @@ build_mmseqs_index() {
 
 # Initializing MySQL server configuration
 configure_structman
-echo "configure_structman done"
 create_mysql_dirs
-echo "create_mysql_dirs done"
 configure_mysql
-echo "configure_mysql done"
 build_mmseqs_index
-echo "build_mmseqs_index done"
 
 # Initialize MySQL server and create users
 if [[ ! -d /var/lib/mysql/mysql ]]; then
