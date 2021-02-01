@@ -55,11 +55,11 @@ RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph p
 RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp37-cp37m-manylinux1_x86_64.whl
 
 # Install and setup MMseqs2
-RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz; tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/; ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
+RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/
 
 # Install xssp-3.0.7-mkdssp
-RUN wget -O /opt/xssp-3.0.7.tar.gz https://github.com/cmbi/hssp/releases/download/3.0.7/xssp-3.0.7.tar.gz; tar xvzf /opt/xssp-3.0.7.tar.gz -C /opt/; rm /opt/xssp-3.0.7.tar.gz
-RUN (cd /opt/xssp-3.0.7/; ./autogen.sh; ./configure; make mkdssp; make install)
+RUN wget -O /opt/xssp-3.0.7.tar.gz https://github.com/cmbi/hssp/releases/download/3.0.7/xssp-3.0.7.tar.gz && tar xvzf /opt/xssp-3.0.7.tar.gz -C /opt/ && rm /opt/xssp-3.0.7.tar.gz
+RUN cd /opt/xssp-3.0.7/ && ./autogen.sh && ./configure && make mkdssp && make install
 
 # Add the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
