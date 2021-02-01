@@ -1420,6 +1420,8 @@ def paraAnnotate(config,proteins, lite = False):
     package_cost = 0
     assigned_costs = {}
     conf_dump = ray.put(config)
+    cost_function_constant = 1280000000
+
     for s in sorted_sizes:
         if s < n_of_chain_thresh:
             cost = 1
@@ -1434,7 +1436,7 @@ def paraAnnotate(config,proteins, lite = False):
         for pdb_id in size_map[s]:
             ac = size_map[s][pdb_id]
             if config.low_mem_system:
-                cost = max([1,min([config.proc_n,(((ac**2)/5000000)*config.proc_n)//config.gigs_of_ram])])
+                cost = max([1,min([config.proc_n,(((ac**2)/cost_function_constant)*config.proc_n)//config.gigs_of_ram])])
 
             if cost + package_cost <= config.proc_n:
                 if not lite:
@@ -1499,7 +1501,7 @@ def paraAnnotate(config,proteins, lite = False):
                         for pdb_id in size_map[s]:
                             ac = size_map[s][pdb_id]
                             if config.low_mem_system:
-                                cost = max([1,min([config.proc_n,(((ac**2)/5000000)*config.proc_n)//config.gigs_of_ram])])
+                                cost = max([1,min([config.proc_n,(((ac**2)/cost_function_constant)*config.proc_n)//config.gigs_of_ram])])
                             if cost + package_cost <= config.proc_n:
                                 if not lite:
                                     target_dict = None
