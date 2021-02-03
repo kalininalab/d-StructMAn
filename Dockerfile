@@ -54,7 +54,7 @@ rm get-pip.py
 RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph pickle5>=0.0.10 psutil
 RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp37-cp37m-manylinux1_x86_64.whl
 
-# Clear pip cache, we don't need it anymore
+# Clear pip cache
 RUN rm -rf /root/.cache/pip
 
 # Install and setup MMseqs2
