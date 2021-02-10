@@ -8,7 +8,6 @@
 
 * A container will help a user to setup their own local installation of StructMAn
 * Here we present [docker](https://www.docker.com/) and [podman](https://podman.io/) versions of containers for StructMAn
-* Alternatively, you can also use the webserver version of [StructMAn](http://structman.mpi-inf.mpg.de/)
 
 # Docker version of StructMAn
 
