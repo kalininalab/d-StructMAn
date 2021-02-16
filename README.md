@@ -51,7 +51,8 @@ Download this utility script [setup_structman_docker_container.sh](https://raw.g
 
 #  chmod +x <path>/setup_structman_docker_container.sh
 
-- Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>"), make sure you always use the latest version of the sript, as there might be some updates from time to time.
+- Now use the script to create default setup and configuration for StructMAn (Please change the values in the angular brackets "<>"),
+make sure you always use the latest version of the sript, as there might be some updates from time to time.
 
 # ./setup_structman_docker_container.sh -p <path/to/create/the/container_directory_name> -c <container_name>
 
@@ -79,7 +80,7 @@ Where:
 - **mysql_logs:** MySQL will use this folder to store error logs
 - **structman:** This is where we organize all the files, so that we can keep them under one roof
 - **input_data:** A user has to upload their input files into this directory
-- **reuslts:** StructMAn by default will write all the generated output to this directory
+- **results:** StructMAn by default will write all the generated output to this directory
 - **resources:** Useful resources such as local PDB or other executables required by StructMAn should be put here before starting the container. For more on resources read [here](https://github.com/kalininalab/d-StructMAn/wiki/Local-resources)
 - **NOTE 1: All these volumes are bind mounted and for more information on bind mounts read [here](https://docs.docker.com/storage/bind-mounts/)**
 - **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
