@@ -84,7 +84,7 @@ Where:
 - **resources:** Useful resources such as local PDB or other executables required by StructMAn should be put here before starting the container. For more on resources read [here](https://github.com/kalininalab/d-StructMAn/wiki/Local-resources)
 - **NOTE 1: All these volumes are bind mounted and for more information on bind mounts read [here](https://docs.docker.com/storage/bind-mounts/)**
 - **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
-
+- **NOTE 3: d-StructMAn should be provided with at least 4Gb of RAM. __MAC__ users have to be aware of the memory given to the container ([see](https://docs.docker.com/docker-for-mac/) for more information). 
 
 ## Docker Compose
 
@@ -124,6 +124,8 @@ Once an alias is set, you can easily access the structman.py from your current t
 ```
 
 **Refer this [tutorial](https://github.com/kalininalab/d-StructMAn/wiki/Tutorial) for more details on how to use StructMAn**
+
+**More information about d-StructMAn can be found in its [wiki](https://github.com/kalininalab/d-StructMAn/wiki)** 
 
 **NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
 
@@ -236,6 +238,8 @@ Once an alias is set, you can easily access the structman.py from your current t
 ```
 
 **Refer this [tutorial](https://github.com/kalininalab/d-StructMAn/wiki/Tutorial) for more details on how to use StructMAn**
+
+**More information about d-StructMAn can be found in its [wiki](https://github.com/kalininalab/d-StructMAn/wiki)** 
 
 **NOTE: If you do not provide an input file using the "-i" option StructMAn will by default use all input files found in the <container_directory>/structman/input_data directory and store the output in the <container_directory>/structman/results directory. These paths are bind mounted to the container.**
 
