@@ -32,7 +32,7 @@
 
 **NOTE 2: After installing docker, start and enable docker by doing the following (this is the case for CentOS only, check the [docker documentation](https://docs.docker.com/install/) if your OS requires you to do so)**
 
-**NOTE 3: d-StructMAn should be provided with at least 4Gb of RAM. __MAC__ users have to be aware of the memory given to the container ([see](https://docs.docker.com/docker-for-mac/) for more information). **
+**NOTE 3: d-StructMAn should be provided with at least 4Gb of RAM. MAC users have to be aware of the memory given to the container ([see](https://docs.docker.com/docker-for-mac/) for more information).**
 
 ```bash
 # systemctl start docker
