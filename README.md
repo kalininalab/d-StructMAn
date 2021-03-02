@@ -85,7 +85,7 @@ Where:
 - **results:** StructMAn by default will write all the generated output to this directory
 - **resources:** Useful resources such as local PDB or other executables required by StructMAn should be put here before starting the container. For more on resources read [here](https://github.com/kalininalab/d-StructMAn/wiki/Local-resources)
 - **NOTE 1: All these volumes are bind mounted and for more information on bind mounts read [here](https://docs.docker.com/storage/bind-mounts/)**
-- **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want to have a clean setup, please delete all the files located under mysql_lib directory that was created using the utility script. Similarly, delete all the files located under input_data and results directories as well.**
+- **NOTE 2: Since the mysql_lib directory is bind mounted, every time when the container starts with either new or old image the database will not be reset, therefore at any time if you want [to have a clean setup](https://github.com/kalininalab/d-StructMAn#to-reset-structman-database-to-have-a-clean-structman-container), please delete all the files located under mysql_lib directory that was created using the utility script before starting the container. Similarly, delete all the files located under input_data and results directories as well.**
 
 ## Docker Compose
 
