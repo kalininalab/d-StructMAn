@@ -96,7 +96,7 @@ Where:
 
 # docker-compose up -d
 ```
-- Wait for a while (minimum 5 minutes) before you start running the commands. To check if the container has properly started or not, check the logs
+- Wait for a while (minimum 5 minutes) before you start running the commands. **To check if the container has properly started or not, check the logs**
 
 ```bash
 # docker-compose logs
