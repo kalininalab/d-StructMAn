@@ -151,6 +151,11 @@ Once an alias is set, you can easily access the structman.py from your current t
  
  # docker-compose -f <docker-compose.yml> up -d
 ```
+- Wait for a while (minimum 5 minutes) before you start running the commands. **To check if the container has properly started or not, check the logs**
+
+```bash
+# docker-compose logs
+```
 
 ## To reset StructMAn database/ To have a clean StructMAn container 
 
@@ -172,6 +177,11 @@ Once an alias is set, you can easily access the structman.py from your current t
  - Finally start the container in the detach mode
  
  # docker-compose -f <docker-compose.yml> up -d
+```
+- Wait for a while (minimum 5 minutes) before you start running the commands. **To check if the container has properly started or not, check the logs**
+
+```bash
+# docker-compose logs
 ```
 
 ## To have more than one StructMAn container
