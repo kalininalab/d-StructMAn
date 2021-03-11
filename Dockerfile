@@ -57,6 +57,9 @@ RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.
 # Clear pip cache
 RUN rm -rf /root/.cache/pip
 
+# Increase TCP backlog connection
+sysctl -w net.core.somaxconn=1024
+
 # Install and setup MMseqs2
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/ && rm /opt/mmseqs-linux-sse41.tar.gz
 
