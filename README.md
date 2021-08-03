@@ -110,7 +110,7 @@ Where:
  ```bash
  # docker ps
 ```
-Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
+Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data. **Note:** the path in the command is the path *in the container*, not the path on the host.
 
  ```bash
  # docker exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
@@ -234,7 +234,7 @@ Now Wait for a while (minimum 5 minutes) before you start running the commands. 
  ```bash
  $ podman ps
 ```
-Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data
+Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data. **Note:** the path in the command is the path *in the container*, not the path on the host.
 
  ```bash
  $ podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
