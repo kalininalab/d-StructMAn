@@ -1,18 +1,19 @@
 def main():
-    #get all proteins and their sequences
+    # get all proteins and their sequences
 
-    #partition the proteins into chunks and iterate over them
+    # partition the proteins into chunks and iterate over them
 
-    #get all alignments from DB
-    
-    #perform the template search
+    # get all alignments from DB
 
-    #compare alignments with results from template search
+    # perform the template search
 
-    #calculate alignments between proteins and potential new structures
+    # compare alignments with results from template search
 
-    #look for potential new structures in the database and stage truly new structures for the annotation
+    # calculate alignments between proteins and potential new structures
 
-    #perform the annotation
+    # look for potential new structures in the database and stage truly new structures for the annotation
 
-    #reclassify all positions from all proteins with new alignments
+    # perform the annotation
+
+    # reclassify all positions from all proteins with new alignments
+    pass

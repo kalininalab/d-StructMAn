@@ -1,11 +1,16 @@
-import urllib.request, urllib.parse, urllib.error,urllib.request,urllib.error,urllib.parse
-import time
-import pymysql as MySQLdb
-import sys
 import os
-import sdsc
-import database
 import socket
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from Bio import Entrez
+import pymysql as MySQLdb
+
+from structman.lib import database, sdsc
+
 
 def is_connected():
     try:
@@ -17,57 +22,59 @@ def is_connected():
         pass
     return False
 
+
 def connection_sleep_cycle(verbosity):
     while not is_connected():
         if verbosity >= 1:
             print('No connection, sleeping a bit and then try again')
         time.sleep(30)
-    return
 
-def getUniprotId(query,querytype,verbosity = 0):
+
+def getUniprotId(query, querytype, verbosity=0):
     url = 'https://www.uniprot.org/uploadlists/'
     params = {
-    'from':'%s' % (querytype),
-    'to':'ID',
-    'format':'tab',
-    'query':'%s' % (query)
+        'from': '%s' % (querytype),
+        'to': 'ID',
+        'format': 'tab',
+        'query': '%s' % (query)
     }
-    #print params
+    # print params
     connection_sleep_cycle(verbosity)
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
-    contact = "" # Please set your email address here to help us debug in case of problems.
+    contact = ""  # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib.request.urlopen(request,timeout=60)
+        response = urllib.request.urlopen(request, timeout=60)
     except:
         return None
     page = response.read(200000).decode('utf-8')
-    #print page
+    # print page
     try:
         lines = page.split("\n")
         line = lines[1].split()
         uniprot_id = line[1]
-    #If unusable result, try without version number
+    # If unusable result, try without version number
     except:
         query = query.split(".")
         if len(query) > 1:
             query = query[0]
-            return getUniprotId(query,querytype)
+            return getUniprotId(query, querytype)
         else:
             return None
 
     return uniprot_id
 
-def tag_update(tag_map,u_ac,new_entry):
-    if not u_ac in tag_map:
+
+def tag_update(tag_map, u_ac, new_entry):
+    if u_ac not in tag_map:
         tag_map[u_ac] = new_entry
         return tag_map
     else:
         old_entry = tag_map[u_ac]
 
     for aac in new_entry:
-        if not aac in old_entry:
+        if aac not in old_entry:
             tag_map[u_ac][aac] = new_entry[aac]
         else:
             tags = set([])
@@ -78,24 +85,25 @@ def tag_update(tag_map,u_ac,new_entry):
             tag_map[u_ac][aac] = ','.join(tags)
     return tag_map
 
-def updateMappingDatabase(u_acs,db,config):
+
+def updateMappingDatabase(u_acs, db, config):
     cursor = db.cursor()
     ac_id_values = []
     ac_ref_values = []
     seq_values = []
     for u_ac in u_acs:
-        seq_out = getSequence(u_ac,config,return_id=True)
-        if seq_out == None:
+        seq_out = getSequence(u_ac, config, return_id=True)
+        if seq_out is None:
             continue
 
-        seq,refseqs,go_terms,pathways,u_id = seq_out
-        if u_id == None: #This can happen for uniprot entries, which got deleted from uniprot
-            print("Warning: Uniprot entry:",u_ac," not found, most probably the entry got deleted from uniprot")
+        seq, refseqs, go_terms, pathways, u_id = seq_out
+        if u_id is None:  # This can happen for uniprot entries, which got deleted from uniprot
+            print("Warning: Uniprot entry:", u_ac, " not found, most probably the entry got deleted from uniprot")
             continue
-        ac_id_values.append("('%s','%s','%s','%s')" % (u_ac,u_ac[-2:],u_id,u_id[:2]))
+        ac_id_values.append("('%s','%s','%s','%s')" % (u_ac, u_ac[-2:], u_id, u_id[:2]))
         for refseq in refseqs.split(','):
-            ac_ref_values.append("('%s','%s','%s','%s')" % (u_ac,u_ac.split('-')[0][-2:],refseq,refseq[:2]))
-        seq_values.append("('%s','%s')" % (u_ac,seq))
+            ac_ref_values.append("('%s','%s','%s','%s')" % (u_ac, u_ac.split('-')[0][-2:], refseq, refseq[:2]))
+        seq_values.append("('%s','%s')" % (u_ac, seq))
 
     # Don't insert into database if in lite mode
     if config.lite:
@@ -110,9 +118,8 @@ def updateMappingDatabase(u_acs,db,config):
                 cursor.execute(sql)
                 db.commit()
             except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
-
+                [e, f, g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql, f))
 
         if len(ac_ref_values) > 0:
 
@@ -121,8 +128,8 @@ def updateMappingDatabase(u_acs,db,config):
                 cursor.execute(sql)
                 db.commit()
             except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+                [e, f, g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql, f))
 
         if len(seq_values) > 0:
 
@@ -131,51 +138,100 @@ def updateMappingDatabase(u_acs,db,config):
                 cursor.execute(sql)
                 db.commit()
             except:
-                [e,f,g] = sys.exc_info()
-                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql,f))
+                [e, f, g] = sys.exc_info()
+                raise NameError("Error in updateMappingDatabase: %s\n%s" % (sql, f))
     except:
-        #this happens for Devs without insert rights to the mapping DB, just ignore for the moment
-        return
+        # this happens for Devs without insert rights to the mapping DB, just ignore for the moment
+        pass
 
+
+# called by serializedPipeline
+def u_ac_isoform_search(gene_sequence_map, stems, ref_stem_map, config):
+    isoform_map = get_all_isoforms(stems, config)
+    isoform_specific_id_map = {}
+    for nm_ref in gene_sequence_map:
+        if nm_ref not in ref_stem_map:
+            continue
+        seq = gene_sequence_map[nm_ref]
+        u_ac_stem = ref_stem_map[nm_ref]
+        if u_ac_stem not in isoform_map:
+            continue
+        for u_ac in isoform_map[u_ac_stem]:
+            if seq == isoform_map[u_ac_stem][u_ac][0]:
+                isoform_specific_id_map[nm_ref] = u_ac
+                break
+    return isoform_specific_id_map
+
+# called by serializedPipeline
+
+
+def integrate_protein(config, proteins, indels, primary_protein_id, input_id, prot_map, u_ac=None, u_id=None, ref=None, pdb_id = None, other_ids={}, is_pdb_input = False):
+    if ref is not None:
+        ref_ids = set([ref])
+    else:
+        ref_ids = set()
+    if primary_protein_id not in proteins:
+        protein = sdsc.Protein(config.errorlog, primary_protein_id=primary_protein_id, u_ac=u_ac, u_id=u_id, ref_ids=ref_ids, positions=prot_map[input_id][0], input_id=input_id, pdb_id = pdb_id)
+        proteins[primary_protein_id] = protein
+    else:
+        proteins[primary_protein_id].u_id = u_id
+        if is_pdb_input:
+            proteins[primary_protein_id].add_residues(prot_map[input_id][0])
+        else:
+            proteins[primary_protein_id].add_positions(prot_map[input_id][0])
+    for other_id_type in other_ids:
+        proteins[primary_protein_id].add_other_ids(other_id_type, other_ids[other_id_type])
+
+    if len(prot_map[input_id][1]) > 0:
+        indel_insert(config, proteins, indels, prot_map[input_id][1], primary_protein_id)
+
+    for multi_mutation in prot_map[input_id][2]:
+        if len(multi_mutation) > 1:
+            proteins[primary_protein_id].add_multi_mutation(multi_mutation)
     return
 
-#called by serializedPipeline
-def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
-    def indel_insert(indels,ac):
-        for indel in indels:
-            indel_protein_name = indel.create_protein_name(ac)
-            if indel_protein_name in proteins:
-                while indel_protein_name in proteins:
-                    indel_protein_name = indel.create_other_protein_name(ac,indel_protein_name)
-                    if indel_protein_name == None:
-                        config.errorlog.add_error('All indel protein names are reserved, duplicate indels in input?')
-                        break
-            indel_mut_protein = sdsc.Protein(config.errorlog,u_ac = indel_protein_name)
-            proteins[indel_protein_name] = indel_mut_protein
-            indel.set_proteins(ac,indel_protein_name)
-            indel_map.append(indel)
-        return
 
-    if config.mapping_db != None:
-        db,cursor = config.getDB(mapping_db = True)
+def indel_insert(config, proteins, indel_map, indels, ac):
+    if ac not in indel_map:
+        indel_map[ac] = []
+    for indel in indels:
+        indel.wt_prot = ac
+        indel_protein_name = indel.create_protein_name(ac)
+        if indel_protein_name in proteins:
+            broken = False
+            while indel_protein_name in proteins:
+                indel_protein_name = indel.create_other_protein_name(ac, indel_protein_name)
+                if indel_protein_name is None:  # Duplicate entry
+                    #config.errorlog.add_error('All indel protein names are reserved, duplicate indels in input?')
+                    broken = True
+                    break
+            if broken:
+                continue
+        indel_mut_protein = sdsc.Protein(config.errorlog, primary_protein_id=indel_protein_name)
+        proteins[indel_protein_name] = indel_mut_protein
+        indel.set_proteins(ac, indel_protein_name)
+        indel_map[ac].append(indel)
+    return
+
+# called by serializedPipeline
+
+
+def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
+    if config.mapping_db is not None:
+        db, cursor = config.getDB(mapping_db=True)
     else:
         db = None
         cursor = None
 
     proteins = {}
-    indel_map = []
+    indel_map = {}
 
     for ac in ac_map:
-        positions = ac_map[ac][0]
-        indels = ac_map[ac][1]
+        integrate_protein(config, proteins, indel_map, ac, ac, ac_map, u_ac=ac)
 
-        protein = sdsc.Protein(config.errorlog,u_ac=ac,positions = positions)
-        proteins[ac] = protein
-        indel_insert(indels,ac)
-
-    #Step one: map everything to uniprot-ac
+    # Step one: map everything to uniprot-ac
     if len(id_map) > 0:
-        if db != None:
+        if db is not None:
             sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Id IN ('%s')" % "','".join(list(id_map.keys()))
             try:
                 cursor.execute(sql)
@@ -188,56 +244,38 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 u_ac = row[0]
                 u_id = row[1]
                 stored_ids.add(u_id)
-                if not u_ac in proteins:
-                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
-                    proteins[u_ac] = protein
-                else:
-                    proteins[u_ac].u_id = u_id
-                    proteins[u_ac].add_positions(id_map[u_id][0])
-                indel_insert(id_map[u_id][1],u_ac)
+                integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
             unstored_ids = []
             for u_id in id_map:
-                if not u_id in stored_ids:
+                if u_id not in stored_ids:
                     unstored_ids.append(u_id)
             update_acs = []
-            if len(unstored_ids) > 0: #whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
+            if len(unstored_ids) > 0:  # whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
 
-                #This part is identical to the part, when no local database is used
-                id_ac_map = getUniprotIds(config,unstored_ids,'ID',target_type="ACC")
+                # This part is identical to the part, when no local database is used
+                id_ac_map = getUniprotIds(config, unstored_ids, 'ID', target_type="ACC")
                 for u_id in id_ac_map:
                     u_ac = id_ac_map[u_id]
-                    if not u_ac in proteins:
-                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
-                        proteins[u_ac] = protein
+                    integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
-                    else:
-                        proteins[u_ac].u_id = u_id
-                        proteins[u_ac].add_positions(id_map[u_id][0])
-                    indel_insert(id_map[u_id][1],u_ac)
-                    #This part is different
+                    # This part is different
                     if not sdsc.is_mutant_ac(u_ac):
                         update_acs.append(u_ac)
-                #updateMappingDatabase(update_acs,db,config)
+                # updateMappingDatabase(update_acs,db,config)
 
         else:
-            id_ac_map = getUniprotIds(config,list(id_map.keys()),'ID',target_type="ACC")
+            id_ac_map = getUniprotIds(config, list(id_map.keys()), 'ID', target_type="ACC")
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
-                if not u_ac in proteins:
-                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,u_id=u_id,positions = id_map[u_id][0])
-                    proteins[u_ac] = protein
-                else:
-                    proteins[u_ac].u_id = u_id
-                    proteins[u_ac].add_positions(id_map[u_id][0])
-                indel_insert(id_map[u_id][1],u_ac)
+                integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
     if len(np_map) > 0:
-        if db != None:
-            results = database.select(config,['Uniprot_Ac','Refseq'],'AC_Refseq',in_rows={'Refseq':np_map.keys()},from_mapping_db=True)
+        if db is not None:
+            results = database.select(config, ['Uniprot_Ac', 'Refseq'], 'AC_Refseq', in_rows={'Refseq': np_map.keys()}, from_mapping_db=True)
 
-            ref_u_ac_map = {} #different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
-            gene_id_snap = set(proteins.keys()) #snapshot of u_acs not originating from refseq-mapping
+            ref_u_ac_map = {}  # different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
+            gene_id_snap = set(proteins.keys())  # snapshot of u_acs not originating from refseq-mapping
 
             stored_refs = set()
 
@@ -245,106 +283,84 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                 u_ac = row[0]
                 ref = row[1]
                 stored_refs.add(ref)
-                if not ref in ref_u_ac_map:
+                if ref not in ref_u_ac_map:
                     ref_u_ac_map[ref] = u_ac
-                    if not u_ac in proteins:
-                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
-                        proteins[u_ac] = protein
-                    else:
-                        proteins[u_ac].add_ref_id(ref)
-                        proteins[u_ac].add_positions(np_map[ref][0])
-                    indel_insert(np_map[ref][1],u_ac)
+                    integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
 
                 elif u_ac in gene_id_snap:
                     if ref_u_ac_map[ref].count('-') == 0 and u_ac.count('-') > 0:
                         ref_u_ac_map[ref] = u_ac
-                    if not u_ac in proteins:
-                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
-                        proteins[u_ac] = protein
-                    else:
-                        proteins[u_ac].add_ref_id(ref)
-                        proteins[u_ac].add_positions(np_map[ref][0])
-                    indel_insert(np_map[ref][1],u_ac)
+                    integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
 
                 elif ref_u_ac_map[ref].count('-') == 0:
                     if u_ac.count('-') > 0:
-                        #if the current u_ac does not contain a '-' and the new found u_ac contains a '-': replace the corresponding ids
+                        # if the current u_ac does not contain a '-' and the new found u_ac contains a '-': replace the corresponding ids
                         old_ac = ref_u_ac_map[ref]
                         ref_u_ac_map[ref] = u_ac
                         del proteins[old_ac]
-                        if not u_ac in proteins:
-                            protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
-                            proteins[u_ac] = protein
-                        else:
-                            proteins[u_ac].add_ref_id(ref)
-                            proteins[u_ac].add_positions(np_map[ref][0])
-                        indel_insert(np_map[ref][1],u_ac)
-            #similar to uniprot-id mapping, we have to go to uniprot to get search for unstored refseq entries and if we find them, we have to update the local mapping database
+                        integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
+            # similar to uniprot-id mapping, we have to go to uniprot to get search for unstored refseq entries and if we find them, we have to update the local mapping database
             unstored_refs = []
             for ref in np_map:
-                if not ref in stored_refs:
+                if ref not in stored_refs:
                     unstored_refs.append(ref)
             update_acs = []
             if len(unstored_refs) > 0:
-                np_ac_map = getUniprotIds(config,unstored_refs,'P_REFSEQ_AC',target_type="ACC")
+                np_ac_map = getUniprotIds(config, unstored_refs, 'P_REFSEQ_AC', target_type="ACC")
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
-                    if not u_ac in proteins:
-                        protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
-                        proteins[u_ac] = protein
-                    else:
-                        proteins[u_ac].add_ref_id(ref)
-                        proteins[u_ac].add_positions(np_map[ref][0])
-                    indel_insert(np_map[ref][1],u_ac)
+                    integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
                     if not sdsc.is_mutant_ac(u_ac):
                         update_acs.append(u_ac)
-                #updateMappingDatabase(update_acs,db,config)
+                # updateMappingDatabase(update_acs,db,config)
 
         else:
-            np_ac_map = getUniprotIds(config,list(np_map.keys()),'P_REFSEQ_AC',target_type="ACC")
+            np_ac_map = getUniprotIds(config, list(np_map.keys()), 'P_REFSEQ_AC', target_type="ACC")
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
-                if not u_ac in proteins:
-                    protein = sdsc.Protein(config.errorlog,u_ac=u_ac,ref_ids=set([ref]),positions = np_map[ref][0])
-                    proteins[u_ac] = protein
-                else:
-                    proteins[u_ac].add_ref_id(ref)
-                    proteins[u_ac].add_positions(np_map[ref][0])
-                indel_insert(np_map[ref][1],u_ac)
+                integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
 
-    if len(hgnc_map) > 0: #No support for mapping DB yet
-        hgnc_ac_map = getUniprotIds(config,list(hgnc_map.keys()),'HGNC_ID',target_type="ACC")
+    if len(nm_map) > 0:
+        iso_unspec_nm_keys = [x.split('.')[0] for x in nm_map.keys()]
+        nm_ac_map = getUniprotIds(config, iso_unspec_nm_keys, 'REFSEQ_NT_ID', target_type="ACC")
+        for ref in nm_map:
+            iso_unspec_nm = ref.split('.')[0]
+            if iso_unspec_nm in nm_ac_map:
+                u_ac = nm_ac_map[iso_unspec_nm]
+                integrate_protein(config, proteins, indel_map, ref, ref, nm_map, u_ac=u_ac)
+
+            else:
+                integrate_protein(config, proteins, indel_map, ref, ref, nm_map)
+
+    if len(hgnc_map) > 0:  # No support for mapping DB yet
+        hgnc_ac_map = getUniprotIds(config, list(hgnc_map.keys()), 'HGNC_ID', target_type="ACC")
         for hgnc in hgnc_ac_map:
             u_ac = hgnc_ac_map[hgnc]
-            if not u_ac in proteins:
-                protein = sdsc.Protein(config.errorlog,u_ac=u_ac,positions = hgnc_map[hgnc][0], other_ids = [('HGNC_ID',hgnc)])
-                proteins[u_ac] = protein
-            else:
-                proteins[u_ac].add_other_ids('HGNC_ID',hgnc)
-                proteins[u_ac].add_positions(hgnc_map[hgnc][0])
-            indel_insert(hgnc_map[hgnc][1],u_ac)
+            integrate_protein(config, proteins, indel_map, u_ac, hgnc, hgnc_map, u_ac=u_ac, other_ids={'HGNC_ID': hgnc})
 
-    #Step two: get uniprot-id and refseqs from uniprot-ac
+    # Step two: get uniprot-id and refseqs from uniprot-ac
 
     ac_iso_map = {}
     id_search = []
-    for u_ac in proteins:
-        if proteins[u_ac].u_id != None:
+    for primary_protein_id in proteins:
+        if proteins[primary_protein_id].u_id is not None:
             continue
-        split = u_ac.split('-')
+        if primary_protein_id.count('_') > 0:
+            continue
+        split = primary_protein_id.split('-')
         if len(split) == 2:
-            base,iso = split
-            if not base in ac_iso_map:
+            base, iso = split
+            if base not in ac_iso_map:
                 ac_iso_map[base] = [iso]
             else:
                 ac_iso_map[base].append(iso)
 
             id_search.append(base)
         else:
-            id_search.append(u_ac)
+            id_search.append(primary_protein_id)
 
     if len(id_search) > 0:
-        if db != None:
+        if db is not None:
             stored_u_acs = set()
             sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(id_search)
             try:
@@ -364,17 +380,17 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
 
                 if u_ac in ac_iso_map:
                     for iso in ac_iso_map[u_ac]:
-                        proteins['%s-%s' % (u_ac,iso)].u_id = u_id
-                        stored_u_acs.add('%s-%s' % (u_ac,iso))
+                        proteins['%s-%s' % (u_ac, iso)].u_id = u_id
+                        stored_u_acs.add('%s-%s' % (u_ac, iso))
 
             unstored_u_acs = []
             for u_ac in id_search:
-                if not u_ac in stored_u_acs:
+                if u_ac not in stored_u_acs:
                     if not sdsc.is_mutant_ac(u_ac):
                         unstored_u_acs.append(u_ac)
 
             if len(unstored_u_acs) > 0:
-                updateMappingDatabase(unstored_u_acs,db,config)
+                updateMappingDatabase(unstored_u_acs, db, config)
 
                 sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(unstored_u_acs)
                 try:
@@ -392,20 +408,20 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
                         proteins[u_ac].u_id = u_id
                     if u_ac in ac_iso_map:
                         for iso in ac_iso_map[u_ac]:
-                            proteins['%s-%s' % (u_ac,iso)].u_id = u_id
+                            proteins['%s-%s' % (u_ac, iso)].u_id = u_id
 
         else:
-            ac_id_map = getUniprotIds(config,id_search,'ACC',target_type="ID")
-            if ac_id_map != None:
+            ac_id_map = getUniprotIds(config, id_search, 'ACC', target_type="ID")
+            if ac_id_map is not None:
                 for u_ac in ac_id_map:
                     u_id = ac_id_map[u_ac]
                     if u_ac in proteins:
                         proteins[u_ac].u_id = u_id
                     if u_ac in ac_iso_map:
                         for iso in ac_iso_map[u_ac]:
-                            proteins['%s-%s' % (u_ac,iso)].u_id = u_id
+                            proteins['%s-%s' % (u_ac, iso)].u_id = u_id
 
-    if db != None:
+    if db is not None:
         sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(list(proteins.keys()))
         try:
             cursor.execute(sql)
@@ -419,44 +435,43 @@ def IdMapping(config,ac_map,id_map,np_map,pdb_map,hgnc_map):
             ref = row[1]
             proteins[u_ac].add_ref_id(ref)
     else:
-        ac_np_map = getUniprotIds(config,list(proteins.keys()),'ACC',target_type="P_REFSEQ_AC")
+        ac_np_map = getUniprotIds(config, list(proteins.keys()), 'ACC', target_type="P_REFSEQ_AC")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
             proteins[u_ac].add_ref_id(ref)
 
     for pdb_tuple in pdb_map:
-        protein = sdsc.Protein(config.errorlog,pdb_id=pdb_tuple,positions = pdb_map[pdb_tuple])
-        proteins[pdb_tuple] = protein
+        integrate_protein(config, proteins, indel_map, pdb_tuple, pdb_tuple, pdb_map, is_pdb_input = True, pdb_id = pdb_tuple)
 
-    if db != None:
+    if db is not None:
         db.close()
 
-    return proteins,indel_map
+    return proteins, indel_map
 
 
-def getUniprotIds(config,query_ids,querytype,target_type="ID"):
-    #print query_ids
+def getUniprotIds(config, query_ids, querytype, target_type="ID"):
+    # print query_ids
     if len(query_ids) == 0:
         return {}
     query = ' '.join(query_ids)
     url = 'https://www.uniprot.org/uploadlists/'
     connection_sleep_cycle(config.verbosity)
     params = {
-    'from':'%s' % (querytype),
-    'to':'%s' % (target_type),
-    'format':'tab',
-    'query':'%s' % (query)
+        'from': '%s' % (querytype),
+        'to': '%s' % (target_type),
+        'format': 'tab',
+        'query': '%s' % (query)
     }
-    #print params
+    # print params
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
-    contact = "agress@mpi-inf.mpg.de" # Please set your email address here to help us debug in case of problems.
+    contact = "agress@mpi-inf.mpg.de"  # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib.request.urlopen(request,timeout=60)
+        response = urllib.request.urlopen(request, timeout=60)
     except:
-        e,f,g = sys.exc_info()
-        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e),str(f)))
+        e, f, g = sys.exc_info()
+        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e), str(f)))
         return {}
 
     page = response.read(2000000).decode('utf-8')
@@ -469,7 +484,7 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
             if len(words) > 1:
                 quer = words[0]
                 target = words[1]
-                if not quer in query_ids:
+                if quer not in query_ids:
                     error = True
                     break
                 if quer == target:
@@ -478,21 +493,21 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
         if error:
 
             if len(query_ids) == 1:
-                return {query_ids.pop():None}
-            #try a divide and conqer solution
+                return {query_ids.pop(): None}
+            # try a divide and conqer solution
             set_A = set()
             set_B = set()
             while len(query_ids) > 0:
                 set_A.add(query_ids.pop())
                 if len(query_ids) > 0:
                     set_B.add(query_ids.pop())
-            map_A = getUniprotIds(config,set_A,querytype,target_type=target_type)
-            map_B = getUniprotIds(config,set_B,querytype,target_type=target_type)
+            map_A = getUniprotIds(config, set_A, querytype, target_type=target_type)
+            map_B = getUniprotIds(config, set_B, querytype, target_type=target_type)
             return map_A.update(map_B)
 
-    #If unusable result, try without version number
+    # If unusable result, try without version number
     except:
-        #This seems not up-to-date
+        # This seems not up-to-date
         '''
         if query.count(".") > 0:
             ids = query.split("\t")
@@ -509,28 +524,102 @@ def getUniprotIds(config,query_ids,querytype,target_type="ID"):
         return {}
     return uniprot_ids
 
-#called by serializedPipeline
-def getSequencesPlain(u_acs,config,max_seq_len=None,filtering_db=None):
+# First version of refseq sequence retrieval. Uses biopython.
+# called by serializePipeline
+
+
+def get_refseq_sequences(refseqs, config, seq_type='nucleotide'):
+    Entrez.email = config.user_mail
+
+    ret_type = 'fasta_cds_aa'
+    if seq_type == 'protein':
+        ret_type = 'fasta'
+
+    net_handle = Entrez.efetch(
+        db=seq_type, id=refseqs, rettype=ret_type, retmode="text"
+    )
+    page = net_handle.read()
+    net_handle.close()
+    right_split = '_prot'
+    left_split = '|'
+    if seq_type == 'protein':
+        right_split = ' '
+        left_split = None
+    seq_map = sdsc.parseFasta(page=page, left_split=left_split, right_split=right_split)
+
+    return seq_map
+
+
+def translateGNSMap(gene_nuc_sequence_map):
+    gene_sequence_map = {}
+    for ref in gene_nuc_sequence_map:
+        nuc_seq = gene_nuc_sequence_map[ref]
+        aa_seq = sdsc.translate(nuc_seq)
+        gene_sequence_map[ref] = aa_seq
+    return gene_sequence_map
+
+
+def get_all_isoforms(u_ac_stems, config):
+
+    could_find_more = True
+    isoform_counter = 1
+    isoform_counter_steps = 20
+    isoform_map = {}
+    while could_find_more:
+        u_acs = []
+        last_isoforms = {}
+        for u_ac_stem in u_ac_stems:
+            isoform_map[u_ac_stem] = {}
+            stem_isoform_counter = isoform_counter
+            for i in range(isoform_counter_steps):
+                if stem_isoform_counter == 1:
+                    u_acs.append(u_ac_stem)
+                else:
+                    isoform = '%s-%s' % (u_ac_stem, str(stem_isoform_counter))
+                    u_acs.append(isoform)
+                    if stem_isoform_counter == ((isoform_counter + isoform_counter_steps) - 1):
+                        last_isoforms[u_ac_stem] = isoform
+                stem_isoform_counter += 1
+        isoform_counter += isoform_counter_steps
+
+        gene_sequence_map = getSequencesPlain(u_acs, config, save_errors=False, skip_missing_routine=True)
+        for u_ac in gene_sequence_map:
+            u_ac_stem = u_ac.split('-')[0]
+            isoform_map[u_ac_stem][u_ac] = gene_sequence_map[u_ac]
+        could_find_more = False
+        for u_ac_stem in last_isoforms:
+            last_isoform = last_isoforms[u_ac_stem]
+            if last_isoform in isoform_map[u_ac_stem]:
+                could_find_more = True
+            else:
+                u_ac_stems.remove(u_ac_stem)
+
+    return isoform_map
+
+# called by serializedPipeline
+
+
+def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_errors=True, skip_missing_routine=False):
     gene_sequence_map = {}
     filtered_set = set()
 
     missing_set = set()
 
     try:
-        if config.mapping_db != None:
-            db = MySQLdb.connect(config.db_adress,config.db_user_name,config.db_password,config.mapping_db)
+        if config.mapping_db is not None:
+            db = MySQLdb.connect(host=config.db_address, user=config.db_user_name, password=config.db_password, database=config.mapping_db)
             cursor = db.cursor()
         else:
             db = None
     except:
         db = None
-        [e,f,g] = sys.exc_info()
+        [e, f, g] = sys.exc_info()
         config.errorlog.add_warning('Connection to mapping DB failed\n%s' % f)
 
-    if filtering_db != None:
-        filtering_db_path,dbs = filtering_db
+    if filtering_db is not None:
+        filtering_db_path, dbs = filtering_db
 
-    if db != None:
+    if db is not None:
         if len(u_acs) == 0:
             return {}
         if config.verbosity >= 2:
@@ -541,55 +630,55 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,filtering_db=None):
             results = cursor.fetchall()
             db.commit()
         except:
-            [e,f,g] = sys.exc_info()
-            config.errorlog.add_warning("Error selecting in getSequencesPlain: %s,%s" % (sql,f))
+            [e, f, g] = sys.exc_info()
+            config.errorlog.add_warning("Error selecting in getSequencesPlain: %s,%s" % (sql, f))
 
         db.close()
 
         if config.verbosity >= 2:
             t1 = time.time()
-            print("getSequences Part 1: ",str(t1-t0))
+            print("getSequencesPlain Part 1: ", str(t1 - t0))
 
         n = 0
         for row in results:
             u_ac = row[0]
-            if not u_ac in u_acs:
+            if u_ac not in u_acs:
                 continue
             seq = row[1]
             disorder_scores = row[2]
             disorder_regions = row[3]
-            if max_seq_len != None:
+            if max_seq_len is not None:
                 if len(seq) > max_seq_len:
                     filtered_set.add(u_ac)
                     n += 1
                     continue
-            if disorder_scores != None:
+            if disorder_scores is not None:
                 disorder_score_list = [float(x) for x in disorder_scores[1:-1].split(',')]
                 disorder_scores = {}
-                for pos,score in enumerate(disorder_score_list):
-                    disorder_scores[pos+1] = score
-                if len(disorder_regions) == 2: #this happens for completely globular proteins
+                for pos, score in enumerate(disorder_score_list):
+                    disorder_scores[pos + 1] = score
+                if len(disorder_regions) == 2:  # this happens for completely globular proteins
                     disorder_regions_datastruct = []
                 else:
-                    disorder_regions = disorder_regions[:-2].replace('[','').replace(' ','')
+                    disorder_regions = disorder_regions[:-2].replace('[', '').replace(' ', '')
                     disorder_regions_datastruct = []
                     for region in disorder_regions.split('],'):
-                        lower_bound,upper_bound,region_type = region.split(',')
+                        lower_bound, upper_bound, region_type = region.split(',')
                         lower_bound = int(lower_bound)
                         upper_bound = int(upper_bound)
-                        disorder_regions_datastruct.append((lower_bound,upper_bound,region_type))
+                        disorder_regions_datastruct.append((lower_bound, upper_bound, region_type))
             else:
                 disorder_scores = None
                 disorder_regions_datastruct = None
 
-            gene_sequence_map[u_ac] = seq,disorder_scores,disorder_regions_datastruct
+            gene_sequence_map[u_ac] = seq, disorder_scores, disorder_regions_datastruct
 
         if n > 0 and config.verbosity >= 2:
-            print('Filtered ',n,' Sequences due to max length: ',max_seq_len)
+            print('Filtered ', n, ' Sequences due to max length: ', max_seq_len)
 
         if config.verbosity >= 2:
             t2 = time.time()
-            print("getSequences Part 2: ",str(t2-t1))
+            print("getSequencesPlain Part 2: ", str(t2 - t1))
 
     else:
         missing_set = set(u_acs)
@@ -599,13 +688,13 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,filtering_db=None):
 
     in_db = set()
     for u_ac in u_acs:
-        if filtering_db != None:
+        if filtering_db is not None:
             inside_all = True
             for db_name in dbs:
                 folder_key = u_ac.split('-')[0][-2:]
-                filename = '%s/%s/%s_%s_gpw.fasta.gz' % (filtering_db_path,folder_key,u_ac,db_name)
+                filename = '%s/%s/%s_%s_gpw.fasta.gz' % (filtering_db_path, folder_key, u_ac, db_name)
                 if not os.path.isfile(filename):
-                     inside_all = False
+                    inside_all = False
             if inside_all:
                 in_db.add(u_ac)
                 continue
@@ -613,67 +702,72 @@ def getSequencesPlain(u_acs,config,max_seq_len=None,filtering_db=None):
         if u_ac in filtered_set:
             continue
 
-        if not u_ac in gene_sequence_map:
+        if u_ac not in gene_sequence_map:
             missing_set.add(u_ac)
-            #print u_ac
+            # print u_ac
 
     if config.verbosity >= 2:
         t3 = time.time()
-        print("getSequences Part 3: ",str(t3-t2))
+        print("getSequencesPlain Part 3: ", str(t3 - t2))
 
-    if config.verbosity >= 2:
-        print('Size of missing set: ',len(missing_set))
-    if config.verbosity >= 3:
-        print(missing_set)
+    if not skip_missing_routine:
 
-    for u_ac in missing_set:
-        seq_out = getSequence(u_ac,config)
-        if seq_out == None:
-            config.errorlog.add_warning('getSequence output is None for %s' % u_ac)
-            gene_sequence_map[u_ac] = 0,None,None
-            continue
-        seq,refseqs,go_terms,pathways = seq_out
-        gene_sequence_map[u_ac] = seq,None,None
+        if config.verbosity >= 2:
+            print('Size of missing set: ', len(missing_set))
+        if config.verbosity >= 3:
+            print(missing_set)
 
-    if config.verbosity >= 2:
-        t4 = time.time()
-        print("getSequences Part 4: ",str(t4-t3))
+        for u_ac in missing_set:
+            seq_out = getSequence(u_ac, config)
+            if seq_out is None and save_errors:
+                config.errorlog.add_warning('getSequence output is None for %s' % u_ac)
+                gene_sequence_map[u_ac] = 0, None, None
+                continue
+            elif seq_out is None:
+                continue
+            seq, refseqs, go_terms, pathways = seq_out
+            gene_sequence_map[u_ac] = seq, None, None
 
-    if filtering_db != None:
-        return gene_sequence_map,in_db
+        if config.verbosity >= 2:
+            t4 = time.time()
+            print("getSequencesPlain Part 4: ", str(t4 - t3))
+
+    if filtering_db is not None:
+        return gene_sequence_map, in_db
     return gene_sequence_map
 
-#called by serializePipeline
-def getSequences(proteins,config):
+
+# called by serializePipeline
+def getSequences(proteins, config):
 
     t0 = time.time()
     u_acs = set()
     iso_map = {}
     protein_map = proteins.get_protein_map()
-    for u_ac in protein_map:
-        if protein_map[u_ac].sequence == None:
-            u_acs.add(u_ac)
+    for prot_id in protein_map:
+        if protein_map[prot_id].sequence is None:
+            u_acs.add(prot_id)
 
-        if u_ac.count('-') == 1:
-            [base,iso] = u_ac.split('-')
+        if prot_id.count('-') == 1:
+            [base, iso] = prot_id.split('-')
         else:
-            base = u_ac
+            base = prot_id
             iso = 'c'
-        if not base in iso_map:
+        if base not in iso_map:
             iso_map[base] = [iso]
         else:
             iso_map[base].append(iso)
 
-    gene_sequence_map = getSequencesPlain(u_acs,config)
+    gene_sequence_map = getSequencesPlain(u_acs, config)
 
     for u_ac in u_acs:
         protein_map[u_ac].sequence = gene_sequence_map[u_ac][0]
-        proteins.set_disorder_scores(u_ac,gene_sequence_map[u_ac][1])
-        proteins.set_disorder_regions(u_ac,gene_sequence_map[u_ac][2])
+        proteins.set_disorder_scores(u_ac, gene_sequence_map[u_ac][1])
+        proteins.set_disorder_regions(u_ac, gene_sequence_map[u_ac][2])
 
     info_map_path = '%s/human_info_map.tab' % config.human_id_mapping_path
 
-    f = open(info_map_path,'r')
+    f = open(info_map_path, 'r')
     lines = f.readlines()
     f.close()
 
@@ -694,45 +788,44 @@ def getSequences(proteins,config):
             if path_str != '':
                 path_doubles = path_str[:-1].split(';')
                 for path_double in path_doubles:
-                    [reac_id,pathway] = path_double.split(':',1)
+                    [reac_id, pathway] = path_double.split(':', 1)
                     pathways[reac_id] = pathway
             for iso in iso_map[u_ac]:
                 if iso == 'c':
                     iso_u_ac = u_ac
                 else:
-                    iso_u_ac = '%s-%s' % (u_ac,iso)
+                    iso_u_ac = '%s-%s' % (u_ac, iso)
                 protein_map[iso_u_ac].go_terms = go_terms
                 protein_map[iso_u_ac].pathways = pathways
 
-    return
 
-def getSequence(uniprot_ac,config,tries=0,return_id=False):
+def getSequence(uniprot_ac, config, tries=0, return_id=False):
     if config.verbosity >= 3:
-        print('uniprot.getSequence for ',uniprot_ac)
+        print('uniprot.getSequence for ', uniprot_ac)
 
     if sdsc.is_mutant_ac(uniprot_ac):
         config.errorlog.add_error('Cannot call getSequence with a mutant protein: %s' % uniprot_ac)
         return None
 
-    #new part just for the sequence
+    # new part just for the sequence
     if len(uniprot_ac) < 2:
         return None
 
     if not uniprot_ac[0:3] == 'UPI':
-        url = 'https://www.uniprot.org/uniprot/%s.fasta' %uniprot_ac
+        url = 'https://www.uniprot.org/uniprot/%s.fasta' % uniprot_ac
     else:
-        url = 'https://www.uniprot.org/uniparc/%s.fasta' %uniprot_ac
+        url = 'https://www.uniprot.org/uniparc/%s.fasta' % uniprot_ac
     connection_sleep_cycle(config.verbosity)
     try:
         request = urllib.request.Request(url)
-        response = urllib.request.urlopen(request,timeout=(tries+1)*10)
+        response = urllib.request.urlopen(request, timeout=(tries + 1) * 10)
         page = response.read(9000000).decode('utf-8')
     except:
         if tries < 3:
-            return getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
+            return getSequence(uniprot_ac, config, tries=tries + 1, return_id=return_id)
         else:
-            e,f,g = sys.exc_info()
-            config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url,str(e),str(f)))
+            e, f, g = sys.exc_info()
+            config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url, str(e), str(f)))
             return None
 
     lines = page.split("\n")
@@ -746,30 +839,33 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
             continue
         wildtype_sequences.append(line)
 
-    wildtype_sequence = ("".join(wildtype_sequences)).replace(" ","").replace("\n","")
+    wildtype_sequence = ("".join(wildtype_sequences)).replace(" ", "").replace("\n", "")
+
+    if wildtype_sequence == '':
+        return None
 
     if uniprot_ac[0:3] == 'UPI':
         if return_id:
-            return (wildtype_sequence,{},{},{},None)
-        return (wildtype_sequence,{},{},{})
+            return (wildtype_sequence, {}, {}, {}, None)
+        return (wildtype_sequence, {}, {}, {})
 
-    #old part, now just for refseqs,go and reactome
+    # old part, now just for refseqs,go and reactome
 
-    url = 'https://www.uniprot.org/uniprot/%s.txt' %uniprot_ac
+    url = 'https://www.uniprot.org/uniprot/%s.txt' % uniprot_ac
     try:
         request = urllib.request.Request(url)
-        response = urllib.request.urlopen(request,timeout=(tries+1)*10)
+        response = urllib.request.urlopen(request, timeout=(tries + 1) * 10)
         page = response.read(9000000).decode('utf-8')
     except:
         if tries < 3:
-            return getSequence(uniprot_ac,config,tries=tries+1,return_id=return_id)
+            return getSequence(uniprot_ac, config, tries=tries + 1, return_id=return_id)
 
         else:
-            #print uniprot_ac
+            # print uniprot_ac
             return None
 
     lines = page.split("\n")
-    #print(lines)
+    # print(lines)
     refseqs = {}
     go_terms = {}
     pathways = {}
@@ -780,7 +876,7 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
         words = line.split()
         if len(words) == 0:
             print(uniprot_ac)
-            return (1,"",{},{})
+            return None
         if words[0] == 'ID':
             u_id = words[1]
         if words[0] == "DR":
@@ -792,10 +888,10 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
                     go_terms[go_id] = go_name
                 if words[1] == "Reactome;":
                     split = line.split(";")
-                    reac_id = split[1].replace(" ","")
+                    reac_id = split[1].replace(" ", "")
                     pathway = split[2][1:-1]
                     pathways[reac_id] = pathway
-                #TODO filter out isoforms
+                # TODO filter out isoforms
                 if words[1] == "RefSeq;":
                     if words[-1].count('[') > 0:
                         u_ac_iso = words[-1][1:-1]
@@ -804,7 +900,7 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
                         u_ac_iso = uniprot_ac.split('-')[0]
                         refs = words[2:]
                     refs = [x[:-1] for x in refs]
-                    if not u_ac_iso in refseqs:
+                    if u_ac_iso not in refseqs:
                         refseqs[u_ac_iso] = []
                     refseqs[u_ac_iso] += refs
     if uniprot_ac in refseqs:
@@ -812,5 +908,5 @@ def getSequence(uniprot_ac,config,tries=0,return_id=False):
     else:
         refseqs = ''
     if return_id:
-        return (wildtype_sequence,refseqs,go_terms,pathways,u_id)
-    return (wildtype_sequence,refseqs,go_terms,pathways)
+        return (wildtype_sequence, refseqs, go_terms, pathways, u_id)
+    return (wildtype_sequence, refseqs, go_terms, pathways)

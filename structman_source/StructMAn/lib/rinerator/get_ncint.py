@@ -3,7 +3,7 @@
 # Copyright 2010 Max-Planck-Institut Informatik
 #
 #    This file is part of RINerator
-# 
+#
 #    RINerator is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -17,13 +17,9 @@
 #    You should have received a copy of the GNU General Public License
 #    along with RINerator.  If not, see <http://www.gnu.org/licenses/>.
 
-
 import sys
-import st_selection
-import nc_interactions
-import nci_residues
-import nci_graph
-import prt_set
+
+from . import nc_interactions, nci_graph, nci_residues, prt_set, st_selection
 
 if len(sys.argv) != 2:
     print("USAGE: get_ncint.py script")

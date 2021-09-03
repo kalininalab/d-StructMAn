@@ -1,14 +1,20 @@
-import multiprocessing
+import os
+import psutil
+import ray
+import time
 
-def separate_structure_annotations(wt_structure_annotations,mut_structure_annotations,config):
+from structman.lib import database, output, modelling, serializedPipeline
+
+
+def separate_structure_annotations(wt_structure_annotations, mut_structure_annotations, config):
     sep_wt = {}
     sep_mut = {}
     for struct_tuple in wt_structure_annotations:
         if struct_tuple in mut_structure_annotations:
-            if wt_structure_annotations[struct_tuple].sequence_identity == None:
+            if wt_structure_annotations[struct_tuple].sequence_identity is None:
                 config.errorlog.add_error('sequence identity was None for: %s' % str(struct_tuple))
                 continue
-            #This is especially important to seperate structures for substitution-type indels
+            # This is especially important to separate structures for substitution-type indels
             if wt_structure_annotations[struct_tuple].sequence_identity >= mut_structure_annotations[struct_tuple].sequence_identity:
                 sep_wt[struct_tuple] = wt_structure_annotations[struct_tuple]
             else:
@@ -20,47 +26,337 @@ def separate_structure_annotations(wt_structure_annotations,mut_structure_annota
     for struct_tuple in mut_structure_annotations:
         sep_mut[struct_tuple] = mut_structure_annotations[struct_tuple]
 
-    return sep_wt,sep_mut
+    return sep_wt, sep_mut
 
-def indel_analysis(config,input_queue,out_queue,lock):
-    with lock:
-        input_queue.put(None)
-    while True:
-        inp = input_queue.get()
-        if inp == None:
-            return
-        indel_obj,wt_structure_annotations,mut_structure_annotations = inp
 
-        #The structures has to be checked that they include the flanks
-        wt_structure_annotations,mut_structure_annotations = indel_obj.inclusion_check(wt_structure_annotations,mut_structure_annotations)
+def get_region_class(classification_results, l, r):
+    if l not in classification_results:
+        l = 1
+    if r not in classification_results:
+        r = len(classification_results) - 1
+    if r < l:
+        return None
+    if r == l:
+        return classification_results[l].rin_simple_class
+    class_counts = {}
+    for i in range(l, r + 1):
+        rcl = classification_results[i].rin_simple_class
+        if rcl is None:
+            continue
+        if rcl not in class_counts:
+            class_counts[rcl] = 1
+        else:
+            class_counts[rcl] += 1
 
-        wt_structure_annotations,mut_structure_annotations = separate_structure_annotations(wt_structure_annotations,mut_structure_annotations,config)
+    max_count = 0
+    max_rcl = None
+    for rcl in class_counts:
+        if class_counts[rcl] >= max_count:
+            max_count = class_counts[rcl]
+            max_rcl = rcl
+    return max_rcl
 
-        analysis_list = indel_obj.get_scenario(len(wt_structure_annotations),len(mut_structure_annotations))
 
-        print(indel_obj.wt_prot,indel_obj.get_notation(),analysis_list,len(wt_structure_annotations),len(mut_structure_annotations))
+neutral_classes = set(['Disorder', 'Surface'])
 
-def para_indel_analysis(proteins,config,manager,lock):
-    input_queue = manager.Queue()
-    out_queue = manager.Queue()
 
-    for indel_notation in proteins.indels:
-        indel_obj = proteins.indels[indel_notation]
-        wt_structure_annotations = proteins.get_protein_structure_annotations(indel_obj.wt_prot)
-        mut_structure_annotations = proteins.get_protein_structure_annotations(indel_obj.mut_prot)
-        input_queue.put((indel_obj,wt_structure_annotations,mut_structure_annotations))
+def flanking_region_analysis(classification_results, left_flank_pos, right_flank_pos, region_size=4):
+    left_flank_region_class = get_region_class(classification_results, (left_flank_pos - region_size) + 1, left_flank_pos)
+    right_flank_region_class = get_region_class(classification_results, right_flank_pos, (right_flank_pos + region_size) - 1)
 
-    indel_processes = config.annotation_processes
-    if indel_processes >= len(proteins.indels):
-        indel_processes = len(proteins.indels)
+    if left_flank_region_class is None:
+        return None
+    if right_flank_region_class is None:
+        return None
 
-    processes = {}
+    if left_flank_region_class == right_flank_region_class:
+        if left_flank_region_class in neutral_classes:
+            return 'Identical neutral'
+        else:
+            return 'Identical potent'
+    else:
+        if left_flank_region_class in neutral_classes:
+            if right_flank_region_class in neutral_classes:
+                return 'Transition neutral,neutral'
+            else:
+                return 'Transition neutral,potent'
+        else:
+            if right_flank_region_class in neutral_classes:
+                return 'Transition neutral,potent'
+            else:
+                return 'Transition potent,potent'
 
-    for i in range(1,indel_processes + 1):
-        p = multiprocessing.Process(target=indel_analysis, args=(config,input_queue,out_queue,lock))
-        processes[i] = p
-        p.start()
-    for i in processes:
-        processes[i].join()
 
-    return
+@ray.remote(num_cpus=1)
+def indel_analysis(config, indel_obj, wt_structure_annotations, mut_structure_annotations):
+    serializedPipeline.ray_hack()
+
+    # print('1:',indel_obj.wt_prot,indel_obj.get_notation(),len(wt_structure_annotations),len(mut_structure_annotations))
+
+    # The structures has to be checked that they include the flanks
+    wt_structure_annotations, mut_structure_annotations = indel_obj.inclusion_check(wt_structure_annotations, mut_structure_annotations)
+
+    # print('2:',indel_obj.wt_prot,indel_obj.get_notation(),len(wt_structure_annotations),len(mut_structure_annotations))
+
+    wt_structure_annotations, mut_structure_annotations = separate_structure_annotations(wt_structure_annotations, mut_structure_annotations, config)
+
+    # print('3:',indel_obj.wt_prot,indel_obj.get_notation(),len(wt_structure_annotations),len(mut_structure_annotations))
+
+    analysis_list = indel_obj.get_scenario(len(wt_structure_annotations), len(mut_structure_annotations))
+
+    # print('4:',indel_obj.wt_prot,indel_obj.get_notation(),analysis_list,len(wt_structure_annotations),len(mut_structure_annotations))
+
+    indel_type, terminal, terminal_end = indel_obj.get_type()
+
+    wt_seq_ids = []
+    mut_seq_ids = []
+    for struct_tuple in wt_structure_annotations:
+        wt_seq_ids.append(wt_structure_annotations[struct_tuple].get_sequence_id())
+    for struct_tuple in mut_structure_annotations:
+        mut_seq_ids.append(mut_structure_annotations[struct_tuple].get_sequence_id())
+
+    if len(wt_seq_ids) > 0:
+        avg_wt_seq_id = sum(wt_seq_ids) / len(wt_seq_ids)
+    else:
+        avg_wt_seq_id = None
+    if len(mut_seq_ids) > 0:
+        avg_mut_seq_id = sum(mut_seq_ids) / len(mut_seq_ids)
+    else:
+        avg_mut_seq_id = None
+
+    annotations = {indel_obj.wt_prot: list(wt_structure_annotations.keys()), indel_obj.mut_prot: list(mut_structure_annotations.keys())}
+
+    flanking_region_left_pos, flanking_region_right_pos = indel_obj.get_flanking_region_pos()
+
+    ret_tuple = (
+        indel_type, terminal, terminal_end, len(wt_structure_annotations), len(mut_structure_annotations),
+        avg_wt_seq_id, avg_mut_seq_id, annotations, analysis_list, indel_obj.tags, flanking_region_left_pos, flanking_region_right_pos,
+        indel_obj.wt_prot
+    )
+
+    return ret_tuple
+
+
+def compare_classifications(proteins, config, prot_id, models, sub_infos, write_output=None):
+    if write_output is not None:
+        dC_output = output.OutputGenerator()
+        headers = ['Position', 'Original classification', 'Recommended structure', 'Model ID', 'Model chain', 'Model residue', 'Model classification']
+        dC_output.add_headers(headers)
+        outfile = '%s/%s_dC_output_%s.tsv' % (config.outfolder, prot_id, write_output)
+        if os.path.exists(outfile):
+            os.remove(outfile)
+        f = open(outfile, 'a')
+        f.write(dC_output.get_header())
+
+    delta_classification = 0
+    rec_structs = proteins[prot_id].getRecommendedStructures()
+    for rec_struct in rec_structs:
+        pdb_id, tchain = rec_struct.split(':')
+
+        if not (pdb_id, tchain) in models:
+            continue
+        for pos in rec_structs[rec_struct]:
+            original_class = proteins.get_classification(prot_id, pos)
+            model = models[(pdb_id, tchain)]
+            model_chain = model.chain_id_map[tchain]
+            sub_info = sub_infos[model.model_id]
+            res_id = sub_info[pos][0]
+            if write_output is not None:
+                dC_output.add_value('Position', pos)
+                dC_output.add_value('Original classification', original_class)
+                dC_output.add_value('Recommended structure', rec_struct)
+                dC_output.add_value('Model ID', model.model_id)
+                dC_output.add_value('Model chain', model_chain)
+                dC_output.add_value('Model residue', res_id)
+            if res_id is None:
+                delta_classification += 1
+                if config.verbosity >= 2:
+                    print('Position not annotated in model:', prot_id, pos, pdb_id, tchain, model.model_id, original_class)
+                if write_output is not None:
+                    dC_output.add_value('Model classification', 'Unmapped')
+            else:
+                if model_chain not in model.structural_analysis_dict:
+                    config.errorlog.add_warning('Chain not in structural analysis of model: %s %s %s' % (model_chain, model.model_id, model.path))
+                    model_class = None
+                elif res_id not in model.structural_analysis_dict[model_chain]:
+                    config.errorlog.add_warning('Res_id not in structural analysis of model: %s %s %s %s' % (res_id, model_chain, model.model_id, model.path))
+                    model_class = None
+                else:
+                    model_class = model.structural_analysis_dict[model_chain][res_id].get_classification(config)[1]
+                if write_output is not None:
+                    dC_output.add_value('Model classification', model_class)
+                if original_class != model_class:
+                    delta_classification += 1
+            if write_output is not None:
+                f.write(dC_output.pop_line())
+
+    f.close()
+
+    return delta_classification
+
+
+def para_indel_analysis(proteins, config):
+    indel_result_ids = []
+    modelling_result_ids = []
+    conf_dump = ray.put(config)
+    prot_specific_mapping_dumps = {}
+
+    mut_backmap = {}
+
+    model_stack = set()
+
+    if config.verbosity >= 2:
+        print('Starting indel analysis with', len(proteins.indels), 'indels')
+        t0 = time.time()
+
+    for prot_id in proteins.indels:
+        seq = proteins.get_sequence(prot_id)
+        aaclist = proteins.getAACList(prot_id)
+        prot_specific_mapping_dumps[prot_id] = ray.put((prot_id, seq, aaclist))
+        wt_structure_annotations = proteins.get_protein_structure_annotations(prot_id)
+        if len(wt_structure_annotations) == 0:
+            if config.verbosity >= 3:
+                print('Indel analysis not possible, no structures annotated', prot_id)
+            continue
+
+        rec_structs = proteins[prot_id].getRecommendedStructures()
+
+        if len(rec_structs) == 0:
+            if config.verbosity >= 3:
+                print('Indel analysis not possible, no recommended structures for', prot_id)
+            continue
+
+        for indel_notation in proteins.indels[prot_id]:
+            indel_obj = proteins.indels[prot_id][indel_notation]
+
+            mut_structure_annotations = proteins.get_protein_structure_annotations(indel_obj.mut_prot)
+            #indel_result_ids.append(indel_analysis.remote(conf_dump, indel_obj, wt_structure_annotations, mut_structure_annotations))
+            mut_backmap[indel_obj.mut_prot] = indel_obj.wt_prot
+
+            for rec_struct in rec_structs:
+                pdb_id, tchain = rec_struct.split(':')
+                if not (pdb_id, tchain) in mut_structure_annotations:
+                    if config.verbosity >= 3:
+                        print('Indel analysis not possible, structure not annotated to mut protein', prot_id, indel_obj.wt_prot, pdb_id, tchain)
+                    continue
+                # modelling the WT for all recommended structures
+                compl_obj = ray.put(proteins.complexes[pdb_id])
+                structures = ray.put(proteins.get_complex_structures(pdb_id))
+
+                if not (pdb_id, tchain, indel_obj.wt_prot) in model_stack:
+                    alignment_tuple = proteins.get_alignment(indel_obj.wt_prot, pdb_id, tchain)
+                    seq_id = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
+                    cov = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].coverage
+                    modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.wt_prot))
+
+                    model_stack.add((pdb_id, tchain, indel_obj.wt_prot))
+
+                # modelling the MUT for all recommend structures
+                if not (pdb_id, tchain, indel_obj.mut_prot) in model_stack:
+                    alignment_tuple = proteins.get_alignment(indel_obj.mut_prot, pdb_id, tchain)
+                    seq_id = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
+                    cov = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].coverage
+                    modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.mut_prot))
+
+                    model_stack.add((pdb_id, tchain, indel_obj.mut_prot))
+
+    if config.verbosity >= 2:
+        t1 = time.time()
+        print('Indel analysis, part 1:', t1 - t0)
+
+    #indel_analysis_outs = ray.get(indel_result_ids)
+
+    models = ray.get(modelling_result_ids)
+
+    if config.verbosity >= 2:
+        t2 = time.time()
+        print('Indel analysis, part 2:', t2 - t1)
+
+    alignment_results = []
+    model_map = {}
+    for model in models:
+        if isinstance(model, str):
+            config.errorlog.add_warning(model)
+        else:
+            if model.target_protein not in model_map:
+                model_map[model.target_protein] = {}
+            model_map[model.target_protein][model.template_structure] = model
+            pdb_id, tchain = model.template_structure
+            if model.target_protein in mut_backmap:
+                align_prot = mut_backmap[model.target_protein]
+            else:
+                align_prot = model.target_protein
+
+            model_chain = model.chain_id_map[tchain]
+            alignment_results.append(serializedPipeline.align.remote(conf_dump, model.model_id, model_chain, prot_specific_mapping_dumps[align_prot], model_path=model.path))
+
+    if config.verbosity >= 2:
+        t3 = time.time()
+        print('Indel analysis, part 3:', t3 - t2)
+
+    align_outs = ray.get(alignment_results)
+
+    if config.verbosity >= 2:
+        t4 = time.time()
+        print('Indel analysis, part 4:', t4 - t3)
+
+    warn_map = set()
+    sub_info_map = {}
+    for out in align_outs:
+
+        if len(out) == 3:
+            config.errorlog.add_error('Illegal alignment output: %s' % (str(out)))
+            continue
+
+        if len(out) == 4:
+            (prot_id, pdb_id, chain, warn_text) = out
+            if prot_id not in warn_map:
+                config.errorlog.add_warning(warn_text)
+            warn_map.add(prot_id)
+            continue
+
+        if len(out) == 5:
+            (prot_id, pdb_id, chain, sub_infos, seq_id) = out
+            if config.verbosity >= 3:
+                print('Aligment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id)
+            continue
+
+        (prot_id, model_id, model_chain, alignment, seq_id, coverage, interaction_partners, chain_type_map,
+         oligo, sub_infos, atom_count, last_residue, first_residue, chainlist, rare_residues) = out
+
+        if prot_id not in sub_info_map:
+            sub_info_map[prot_id] = {}
+        sub_info_map[prot_id][model_id] = sub_infos
+
+    if config.verbosity >= 2:
+        t5 = time.time()
+        print('Indel analysis, part 5:', t5 - t4)
+
+    for prot_id in proteins.indels:
+        for indel_notation in proteins.indels[prot_id]:
+            indel_obj = proteins.indels[prot_id][indel_notation]
+
+            if len(proteins.get_protein_structure_annotations(indel_obj.wt_prot)) == 0:
+                continue
+            if indel_obj.wt_prot not in model_map:
+                config.errorlog.add_warning('Id not in model map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
+
+                continue
+            if indel_obj.wt_prot not in sub_info_map:
+                config.errorlog.add_warning('Id not in sub info map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
+                continue
+            wt_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.wt_prot], sub_info_map[indel_obj.wt_prot], write_output='WT')
+            mut_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.mut_prot], sub_info_map[indel_obj.wt_prot], write_output='MUT')
+
+            #print('ddC analysis:',prot_id,indel_notation,wt_model_delta_classification,mut_model_delta_classification)
+            indel_obj.delta_delta_classification = mut_model_delta_classification - wt_model_delta_classification
+
+    if config.verbosity >= 2:
+        t6 = time.time()
+        print('Indel analysis, part 6:', t6 - t5)
+
+    database.insert_indel_results(proteins, config)
+
+    if config.verbosity >= 2:
+        t7 = time.time()
+        print('Indel analysis, part 7:', t7 - t6)

@@ -1,7 +1,7 @@
 #!/bin/bash
 trap "exit" INT
 
-BASE_DIR="/wibicom/SHARED_DATA/pdb"
+BASE_DIR="/scratch/SCRATCH_NVME/pdb"
 SERVER=rsync.wwpdb.org::ftp
 PORT=33444
 

@@ -3,7 +3,7 @@
 # Copyright 2014 Max-Planck-Institut Informatik
 #
 #    This file is part of RINerator
-# 
+#
 #    RINerator is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -17,22 +17,22 @@
 #    You should have received a copy of the GNU General Public License
 #    along with RINerator.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys
 import os
-import st_selection
+import sys
+from urllib.request import Request, URLError, urlopen
 
-from urllib2 import Request, urlopen, URLError
+from . import st_selection
 
 
 def getAAIndices(url, indices, aaindices={}):
     for index in indices:
         index = index.strip()
         print("Retrieve data for index " + index + "..."),
-        req = Request(url+index)
+        req = Request(url + index)
         try:
             response = urlopen(req)
         except URLError as e:
-            print e
+            print(e)
             break
         else:
             html = response.read()
@@ -42,8 +42,8 @@ def getAAIndices(url, indices, aaindices={}):
                 if lines[i].startswith("I"):
                     line_num = i
             aas = lines[line_num].split()[1:]
-            indices1 = lines[line_num+1].split() 
-            indices2 = lines[line_num+2].split()
+            indices1 = lines[line_num + 1].split()
+            indices2 = lines[line_num + 2].split()
             aaindex_dict = {}
             for a in range(len(aas)):
                 (aa1, aa2) = aas[a].split('/')
@@ -53,33 +53,35 @@ def getAAIndices(url, indices, aaindices={}):
         print("done.")
     return aaindices
 
+
 def getResidueAAIndices(nodes, aaindices, aaindices_res={}):
     for aaindex in aaindices:
         aaindex_dict = {}
         for node in nodes:
             node_name = node.split(":")
             if len(node_name) != 4:
-                print "format wrong for residue " + node
+                print("format wrong for residue " + node)
                 continue
             if node_name[3] not in st_selection.aa_trans_dic:
-                print "missing aa mapping for " + node_name[3]
+                print("missing aa mapping for " + node_name[3])
                 continue
             aa = st_selection.aa_trans_dic[node_name[3]]
             if aa not in aaindices[aaindex]:
-                print "aa " + aa + " not found."
+                print("aa " + aa + " not found.")
                 continue
             aaindex_dict[node] = aaindices[aaindex][aa]
         aaindices_res[aaindex] = aaindex_dict
     return aaindices_res
+
 
 def getConservation(url, chains, params={}):
     print("Retrieve data from ConSurfDB..."),
     conserv = {}
     check_file = False
     for chain in chains:
-        req = Request(url+chain+"/consurf.grades")
+        req = Request(url + chain + "/consurf.grades")
         try:
-            response = urlopen(req)            
+            response = urlopen(req)
             html = response.read()
             lines = html.split("\n")
         except URLError as e:
@@ -112,8 +114,8 @@ def getConservation(url, chains, params={}):
                     res_type = res[0:3]
                     res_number = res[3:]
                     if res_number.isdigit() != True and len(res_number) > 0:
-                            res_number = res[3:-1]
-                            res_icode = res[-1:]
+                        res_number = res[3:-1]
+                        res_icode = res[-1:]
                 resid = res_chain + ":" + res_number + ":" + res_icode + ":" + res_type
             if len(resid) == 0:
                 continue
@@ -173,13 +175,13 @@ def getInteractionProperties(filename, edge_weight, chains, int_params={}):
             if node not in int_params[param]:
                 int_params[param][node] = 0
     print("done.")
-    return int_params   
+    return int_params
 
 
-### save a dictionary of residue properties, indexed by the property name and
-### containing dictionaries of residues and their respective values
+# save a dictionary of residue properties, indexed by the property name and
+# containing dictionaries of residues and their respective values
 def saveData(filename, nodes, all_params, param_names):
-    print("Save all parameters... "), 
+    print("Save all parameters... "),
     results = []
     results.append("Node\t")
     append_nodes = True
@@ -191,13 +193,12 @@ def saveData(filename, nodes, all_params, param_names):
                 results.append(node)
             for param in param_names:
                 if node in params[param]:
-                    results[i+1] += "\t" + str(params[param][node])
+                    results[i + 1] += "\t" + str(params[param][node])
                 else:
-                    results[i+1] += "\t" + "null"
+                    results[i + 1] += "\t" + "null"
         append_nodes = False
     results_file = open(filename, "w")
     for line in results:
         results_file.write(line + "\n")
     results_file.close()
     print("done.")
-

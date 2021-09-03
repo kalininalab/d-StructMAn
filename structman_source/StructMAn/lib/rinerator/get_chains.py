@@ -3,7 +3,7 @@
 # Copyright 2014 Max-Planck-Institut Informatik
 #
 #    This file is part of RINerator
-# 
+#
 #    RINerator is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -17,25 +17,23 @@
 #    You should have received a copy of the GNU General Public License
 #    along with RINerator.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys
-import os
-import st_selection
-import nc_interactions
-import nci_residues
-import nci_graph
-import sel_utils
 import argparse
+import os
+import sys
 
-def main(input_path,output_path,chains_file,ligand_file,directed,reduce_cmd,probe_cmd):
+from . import nc_interactions, nci_graph, nci_residues, sel_utils, st_selection
 
-    ### check if single or multiple files are given as input
+
+def main(input_path, output_path, chains_file, ligand_file, directed, reduce_cmd, probe_cmd):
+
+    # check if single or multiple files are given as input
     single_use = None
     if input_path.endswith("/") and os.access(input_path, os.R_OK):
         single_use = False
     elif os.path.exists(input_path):
         single_use = True
 
-    if single_use == None:
+    if single_use is None:
         print("Cannot read input file or directory. Exiting...")
         sys.exit()
 
@@ -56,54 +54,55 @@ def main(input_path,output_path,chains_file,ligand_file,directed,reduce_cmd,prob
         for line in file_content:
             ligands.append([l.strip() for l in line.split(",")])
 
-    ### create RINs
+    # create RINs
     if single_use:
-        ### set file names
+        # set file names
         input_pdb_parts = input_path.split("/")
         input_path = "/".join(input_pdb_parts[:len(input_pdb_parts) - 1])
         pdb_filename = input_pdb_parts[len(input_pdb_parts) - 1]
         print("Processing single pdb file " + pdb_filename + "...")
 
-        ### create slection list
+        # create slection list
         sel_id = pdb_filename[:-4]
-        selection_lst = sel_utils.chains_to_sel_list(sel_id,chains)
+        selection_lst = sel_utils.chains_to_sel_list(sel_id, chains)
         ligand_lst = sel_utils.ligands_to_sel_list(ligands)
         if len(ligand_lst) > 0:
             selection_lst += ligand_lst
-        
-        ### run reduce and probe
-        (pdb_h_filename, probe_filename)=nc_interactions.get_reduce_probe_rsl(pdb_filename,input_path,output_path,output_path,reduce_cmd,probe_cmd)
+
+        # run reduce and probe
+        (pdb_h_filename, probe_filename) = nc_interactions.get_reduce_probe_rsl(pdb_filename, input_path, output_path, output_path, reduce_cmd, probe_cmd)
         sif_file = pdb_h_filename[:-4] + ".sif"
-        
-        ### get network sif file
-        (stsel_obj,nci_obj,nci_res,nci_graph_)=nci_graph.pdb_to_sif(sel_id,pdb_h_filename,output_path,selection_lst,probe_filename,output_path,sif_file,directed=directed)
+
+        # get network sif file
+        (stsel_obj, nci_obj, nci_res, nci_graph_) = nci_graph.pdb_to_sif(sel_id, pdb_h_filename, output_path, selection_lst, probe_filename, output_path, sif_file, directed=directed)
     else:
         print("Processing multiple pdb files in directory " + input_path)
         for pdb_filename in os.listdir(input_path):
             if pdb_filename.endswith(".pdb") or pdb_filename.endswith(".ent"):
-                ### create selection list
+                # create selection list
                 sel_id = pdb_filename[:-4]
-                selection_lst = sel_utils.chains_to_sel_list(sel_id,chains)
+                selection_lst = sel_utils.chains_to_sel_list(sel_id, chains)
                 ligand_lst = sel_utils.ligands_to_sel_list(ligands)
                 if len(ligand_lst) > 0:
                     selection_lst += ligand_lst
 
-                ### check if probe and reduce were already run on this file
-                pdb_h_filename = pdb_filename[:-4]+"_h.ent"
-                probe_filename = pdb_filename[:-4]+"_h.probe"
-                if not os.path.exists(output_path+pdb_h_filename) or not os.path.exists(output_path+probe_filename):
-                    ### run reduce and probe
-                    nc_interactions.get_reduce_probe_rsl(pdb_filename,input_path,output_path,output_path,reduce_cmd,probe_cmd)
+                # check if probe and reduce were already run on this file
+                pdb_h_filename = pdb_filename[:-4] + "_h.ent"
+                probe_filename = pdb_filename[:-4] + "_h.probe"
+                if not os.path.exists(output_path + pdb_h_filename) or not os.path.exists(output_path + probe_filename):
+                    # run reduce and probe
+                    nc_interactions.get_reduce_probe_rsl(pdb_filename, input_path, output_path, output_path, reduce_cmd, probe_cmd)
 
-                ### get network sif file
+                # get network sif file
                 sif_file = pdb_h_filename[:-4] + ".sif"
                 if not os.path.exists(sif_file):
-                    nci_graph.pdb_to_sif(sel_id,pdb_h_filename,output_path,selection_lst,probe_filename,output_path,sif_file,directed=directed)
+                    nci_graph.pdb_to_sif(sel_id, pdb_h_filename, output_path, selection_lst, probe_filename, output_path, sif_file, directed=directed)
+
 
 if __name__ == "__main__":
-    ### set program paths
-    reduce_cmd = os.path.dirname(sys.argv[0]) + '/reduce'    # reduce command
-    probe_cmd = os.path.dirname(sys.argv[0]) + '/probe'      # probe command
+    # set program paths
+    reduce_cmd = os.path.dirname(sys.argv[0]) + '/reduce'  # reduce command
+    probe_cmd = os.path.dirname(sys.argv[0]) + '/probe'  # probe command
 
     parser = argparse.ArgumentParser(description='Create residue interaction network for chains', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('input_path', metavar='path_pdb', help='PDB file or directory containing PDB files of the same protein structure')
@@ -119,7 +118,7 @@ if __name__ == "__main__":
 
     print("Processing input...")
 
-    ### set paths for files to read/write
+    # set paths for files to read/write
     input_path = args.input_path
     output_path = args.output_path
 
@@ -127,4 +126,4 @@ if __name__ == "__main__":
     chains_file = args.chains_file
     ligand_file = args.ligand_file
 
-    main(input_path,output_path,chains_file,ligand_file,directed,reduce_cmd,probe_cmd)
+    main(input_path, output_path, chains_file, ligand_file, directed, reduce_cmd, probe_cmd)

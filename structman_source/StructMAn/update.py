@@ -1,26 +1,32 @@
 #!/usr/bin/python3
-import subprocess
 import os
+import subprocess
 import sys
+
+# if running as script, add local structman package to path
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__))))))
 import structman
 
-def main(config,skipUpdatePDB = False,skip_rindb = False):
-    main_file_path = (os.path.abspath(sys.argv[0])).rsplit('/',1)[0]
-    rin_fromScratch = False
+from structman.scripts import createPdbBaDb
+
+
+def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False):
     forceCentrality = False
     mmseqs_fromScratch = False
     skipStructureDBs = False
-    
+
     verbose = True
 
     pdb_path = config.pdb_path
     pdb_update_script = config.pdb_sync_script
+    print(pdb_update_script)
 
     rinerator_base_path = config.rinerator_base_path
     rin_db_path = config.rin_db_path
 
     mmseqs2_db_path = config.mmseqs2_db_path
-    search_db_base_path = mmseqs2_db_path.rsplit('/',1)[0]
+    search_db_base_path = mmseqs2_db_path.rsplit('/', 1)[0]
     mmseqs2_tmp = config.mmseqs_tmp_folder
     recently_modified_structures = set()
     if not skipStructureDBs:
@@ -28,8 +34,8 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
             if not os.path.exists(pdb_path):
                 print('ERROR: Did not found local pdb')
                 return
-            #Set the BASE_DIR variable in the sync script
-            f = open(pdb_update_script,'r')
+            # Set the BASE_DIR variable in the sync script
+            f = open(pdb_update_script, 'r')
             lines = f.readlines()
             f.close()
             newlines = []
@@ -37,34 +43,30 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
                 if line.count('BASE_DIR=') == 1:
                     line = 'BASE_DIR="%s"\n' % pdb_path
                 newlines.append(line)
-            f = open(pdb_update_script,'w')
+            f = open(pdb_update_script, 'w')
             f.write(''.join(newlines))
             f.close()
 
-            #update local pdb
+            # update local pdb
             if verbose:
                 p = subprocess.Popen([pdb_update_script])
             else:
                 FNULL = open(os.devnull, 'w')
-                p = subprocess.Popen([pdb_update_script],stderr=FNULL,stdout=FNULL)
+                p = subprocess.Popen([pdb_update_script], stderr=FNULL, stdout=FNULL)
             p.wait()
             print('Update PDB done')
         if not skip_rindb:
-            #update rin db
-            sys.path.append(rinerator_base_path)
-            import createRINdb
-            recently_modified_structures = createRINdb.main(fromScratch=rin_fromScratch,forceCentrality=forceCentrality,update_days=30.,pdb_p=pdb_path,rin_db_path=rin_db_path,n_proc=config.proc_n
-,rinerator_base_path = rinerator_base_path)
+            # update rin db
+            recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, forceCentrality=forceCentrality, update_days=30., pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path)
 
         print('Update RIN db done')
 
-    print('Recently modified structures: ',len(recently_modified_structures),recently_modified_structures)
+    print('Recently modified structures: ', len(recently_modified_structures), recently_modified_structures)
 
     pdb_fasta_name = 'pdbba_mmseqs2'
-    config.pdb_fasta_path = '%s/%s' % (search_db_base_path,pdb_fasta_name)
+    config.pdb_fasta_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
 
-    #update pdbba for mmseqs2
-    import createPdbBaDb
+    # update pdbba for mmseqs2
     createPdbBaDb.main(config)
 
     print("Update search database fasta for MMseqs2 done")
@@ -77,35 +79,35 @@ def main(config,skipUpdatePDB = False,skip_rindb = False):
     print("Search database for blast created!")
     '''
 
-    #rerun mmseqs2 createdb
-    p = subprocess.Popen(['mmseqs','createdb',pdb_fasta_name,'pdbba_search_db_mmseqs2'],cwd=search_db_base_path)
+    # rerun mmseqs2 createdb
+    p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=search_db_base_path)
     p.wait()
 
-    p = subprocess.Popen(['rm','-R',mmseqs2_tmp],cwd=search_db_base_path)
+    p = subprocess.Popen(['rm', '-R', mmseqs2_tmp], cwd=search_db_base_path)
     p.wait()
 
     if not os.path.isdir(mmseqs2_tmp):
         os.mkdir(mmseqs2_tmp)
 
-    p = subprocess.Popen(['chmod','777','-R',mmseqs2_tmp],cwd=search_db_base_path)
+    p = subprocess.Popen(['chmod', '777', '-R', mmseqs2_tmp], cwd=search_db_base_path)
     p.wait()
 
-    p = subprocess.Popen(['mmseqs','createindex','pdbba_search_db_mmseqs2',mmseqs2_tmp,'-s','7.5'],cwd=search_db_base_path)
+    p = subprocess.Popen(['mmseqs', 'createindex', 'pdbba_search_db_mmseqs2', mmseqs2_tmp, '-s', '7.5'], cwd=search_db_base_path)
     p.wait()
 
     print("Search database for MMseqs2 created!")
 
-    #update the mapping database, TODO
+    # update the mapping database, TODO
 
-    #update the human proteome mmseqs db, TODO if we want a simple mutation-calling for fasta inputs.
+    # update the human proteome mmseqs db, TODO if we want a simple mutation-calling for fasta inputs.
 
     print('Hurray!')
+
 
 if __name__ == "__main__":
     config_path = sys.argv[1]
     if not os.path.isfile(config_path):
         print('ERROR: Need path to config file as second argument.')
         sys.exit(1)
-    config = structman.Config(config_path,external_call = True)
+    config = structman.Config(config_path, external_call=True)
     main(config)
-

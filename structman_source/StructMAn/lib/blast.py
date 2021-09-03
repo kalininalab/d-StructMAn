@@ -1,16 +1,16 @@
 import os
 import subprocess
-import gzip
 import xml.etree.ElementTree as ET
 
-#called by serializedPipeline
-def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,cwd = None):
+
+# called by serializedPipeline
+def blast(seq, name, blast_path, blast_db_path, nr=0, seq_thresh=0.35, cov_thresh=0.5, cwd=None):
     FNULL = open(os.devnull, 'w')
-    if cwd == None:
+    if cwd is None:
         cwd = os.getcwd()
-    seq = seq.replace(" ","")
+    seq = seq.replace(" ", "")
     target_length = len(seq)
-    
+
     blast_in = "%s/blast_in.tmp.fasta" % cwd
     blast_out = "%s/blast_out.tmp" % cwd
 
@@ -32,26 +32,26 @@ def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,
     arg11 = "-num_alignments"
     arg12 = str(nr)
     if nr == 0:
-        p = subprocess.Popen([path,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8,arg9,arg10])#,stdout=FNULL)
-    else:        
-        p = subprocess.Popen([path,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8,arg9,arg10,arg11,arg12],stdout=FNULL)
+        p = subprocess.Popen([path, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10])  # ,stdout=FNULL)
+    else:
+        p = subprocess.Popen([path, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12], stdout=FNULL)
     p.wait()
     f = open(blast_out, "r")
     lines = f.read()
     f.close()
-    #print name,lines
-    
+    # print name,lines
+
     os.remove(blast_in)
     os.remove(blast_out)
 
     entries = {}
 
     if len(lines) == 0:
-        return(entries)
+        return (entries)
 
     root = ET.fromstring(lines)
-    blast_iter_hits = root[8][0][4]    
- 
+    blast_iter_hits = root[8][0][4]
+
     for child in blast_iter_hits:
         hit_defs = child[2].text.split("|")
         new_hit = False
@@ -66,11 +66,11 @@ def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,
             elif new_pdb != '':
                 chain = de[0]
                 if chain != ' ':
-                    #In the blast-xml-output, if the number of chains exceeds the alphabet,
-                    #the gi-identifier fails to support the correct chain id
+                    # In the blast-xml-output, if the number of chains exceeds the alphabet,
+                    # the gi-identifier fails to support the correct chain id
                     if de[1] != " ":
                         words = de.split(" ")
-                        found_true_chain_id = False 
+                        found_true_chain_id = False
                         for w in words:
                             if w == 'Chain':
                                 found_true_chain_id = True
@@ -78,38 +78,37 @@ def blast(seq,name,blast_path,blast_db_path,nr=0,seq_thresh=0.35,cov_thresh=0.5,
                                 chain = w[0]
                                 break
                     if new_pdb not in hits:
-                        hits[new_pdb] = [chain,set([chain])]
+                        hits[new_pdb] = [chain, set([chain])]
                     else:
                         hits[new_pdb][1].add(chain)
                 new_pdb = ''
                 chain = ''
-                
+
         hit_hsp = child[5][0]
 
         aln_length = hit_hsp[13].text
-        seq_id = 100*float(hit_hsp[10].text)/float(aln_length)
-        coverage = float(aln_length)/float(target_length)
+        seq_id = 100 * float(hit_hsp[10].text) / float(aln_length)
+        coverage = float(aln_length) / float(target_length)
         for hit in hits:
             pdb_id = hit
             chain = hits[hit][0]
-            oligos = hits[hit][1]      
+            oligos = hits[hit][1]
             if not len(chain) > 1:
-                if not (pdb_id,chain) in entries:
-                    entries[(pdb_id,chain)] = {"Seq_Id":seq_id,"Coverage":coverage,"Oligo":oligos,"Length":aln_length}
+                if not (pdb_id, chain) in entries:
+                    entries[(pdb_id, chain)] = {"Seq_Id": seq_id, "Coverage": coverage, "Oligo": oligos, "Length": aln_length}
                 else:
-                    if coverage > entries[(pdb_id,chain)]["Coverage"]:
-                        entries[pdb_id] = {"Seq_Id":seq_id,"Coverage":coverage,"Oligo":oligos,"Length":aln_length}
-                    entries[(pdb_id,chain)]["Oligo"].update(oligos)
-    #print entries
+                    if coverage > entries[(pdb_id, chain)]["Coverage"]:
+                        entries[pdb_id] = {"Seq_Id": seq_id, "Coverage": coverage, "Oligo": oligos, "Length": aln_length}
+                    entries[(pdb_id, chain)]["Oligo"].update(oligos)
+    # print entries
     structures = {}
-    
-    for (pdb_id,chain) in entries:
-        #if pdb_id.count('_AU') == 1:
-        #    print pdb_id
-        if not (float(entries[(pdb_id,chain)]["Seq_Id"]) < seq_thresh):
-            if not ((entries[(pdb_id,chain)]["Length"] < 50) and (entries[(pdb_id,chain)]["Coverage"] < cov_thresh)):
-                structures[(pdb_id,chain)] = entries[(pdb_id,chain)]
-    #print structures
-    #print "Reduction: ",len(entries),len(entry_list)
-    return structures
 
+    for (pdb_id, chain) in entries:
+        # if pdb_id.count('_AU') == 1:
+        #    print pdb_id
+        if not (float(entries[(pdb_id, chain)]["Seq_Id"]) < seq_thresh):
+            if not ((entries[(pdb_id, chain)]["Length"] < 50) and (entries[(pdb_id, chain)]["Coverage"] < cov_thresh)):
+                structures[(pdb_id, chain)] = entries[(pdb_id, chain)]
+    # print structures
+    # print "Reduction: ",len(entries),len(entry_list)
+    return structures
