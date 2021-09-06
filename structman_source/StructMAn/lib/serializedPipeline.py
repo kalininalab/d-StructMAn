@@ -10,6 +10,7 @@ import traceback
 import psutil
 
 import ray
+from ray.util.queue import Queue
 
 from structman.lib import (
     annovar,
@@ -32,6 +33,8 @@ try:
     from memory_profiler import profile
 except:
     pass
+
+#from multiprocessing import Pipe
 
 # Taken from https://stackoverflow.com/questions/2023608/check-what-files-are-open-in-python
 
@@ -1586,9 +1589,9 @@ def get_res_info_from_store(structure, res_nr):
     return res_info
 
 
-def get_res_info(proteins, pdb_id, chain, res_nr):
+def get_res_info(structures, pdb_id, chain, res_nr):
 
-    residue_obj = proteins.structures[(pdb_id, chain)].residues[res_nr]
+    residue_obj = structures[(pdb_id, chain)].residues[res_nr]
 
     centralities_or_str = residue_obj.get_centrality_str()
 
@@ -1628,179 +1631,234 @@ def add_structure_to_store(structure_store, proteins, pdb_id, chain):
         return
     res_map = {}
     for res_nr in proteins.structures[(pdb_id, chain)].residues:
-        res_map[res_nr] = get_res_info(proteins, pdb_id, chain, res_nr)
+        res_map[res_nr] = get_res_info(proteins.structures, pdb_id, chain, res_nr)
 
     structure_store[(pdb_id, chain)] = ray.put((chains, resolution, res_map))
 
 
-def classification(proteins, config, indel_analysis_follow_up=False, custom_structure_annotations=None):
+def pack_packages(package_size, package, send_packages, classification_results, protein_map, structures, config, size_sorted, processed_positions, para, classification_dump, max_package_size, proteins = None):
+    if config.verbosity >= 3:
+        print('Call of pack_packages with:', package_size, len(package), send_packages)
+        print('Current CPU load:', psutil.cpu_percent())
 
-    def pack_packages(package_size, package, send_packages, total_pending_package_size, classification_results, proteins, config, size_sorted, processed_positions):
-        if config.verbosity >= 3:
-            print('Call of pack_packages with:', package_size, len(package), send_packages)
-            print('Current CPU load:', psutil.cpu_percent())
-        t_pack_0 = 0
-        t_pack_01 = 0
-        t_pack_02 = 0
-        t_pack_03 = 0
-        t_pack_1 = 0
-        t_pack_11 = 0
-        t_pack_12 = 0
-        t_pack_13 = 0
-        t_pack_14 = 0
-        t_pack_15 = 0
-        t_pack_16 = 0
-        t_pack_21 = 0
-        t_pack_22 = 0
+        if len(size_sorted) == 0:
+            print('##############\n#############\ncalled pack packages with empty task\n##############\n#############')
 
-        snap_size_sorted = [x for x in size_sorted]
-        for u_ac, size in snap_size_sorted:
-            classification_inp = []
-            positions = proteins.get_position_ids(u_ac)
-            annotation_list = proteins.get_protein_annotation_list(u_ac)
+    t_pack_0 = 0
+    t_pack_01 = 0
+    t_pack_02 = 0
+    t_pack_03 = 0
+    t_pack_1 = 0
+    t_pack_11 = 0
+    t_pack_12 = 0
+    t_pack_13 = 0
+    t_pack_14 = 0
+    t_pack_15 = 0
+    t_pack_16 = 0
+    t_pack_21 = 0
+    t_pack_22 = 0
 
-            if not u_ac in processed_positions:
-                processed_positions[u_ac] = set()
+    snap_size_sorted = [x for x in size_sorted]
+    for u_ac, size in snap_size_sorted:
+        classification_inp = []
+        protein_obj = protein_map[u_ac]
 
-            protein_obj = proteins.protein_map[u_ac]
+        positions = protein_obj.get_position_ids()
+        annotation_list = protein_obj.get_annotation_list()
 
-            for pos in positions:
-                if pos in processed_positions[u_ac]:
-                    continue
-                if protein_obj.is_position_stored(pos):
-                    continue
-                t_pack_0 += time.time()
+        if not u_ac in processed_positions:
+            processed_positions[u_ac] = set()
 
-                mappings = []
-                aacbase = protein_obj.get_aac_base(pos)
-                disorder_score = protein_obj.get_disorder_score(pos)
-                disorder_region = protein_obj.get_disorder_region(pos)
+        for pos in positions:
+            if pos in processed_positions[u_ac]:
+                continue
+            if protein_obj.is_position_stored(pos):
+                continue
+            t_pack_0 += time.time()
 
-                t_pack_01 += time.time()
+            mappings = []
+            aacbase = protein_obj.get_aac_base(pos)
+            disorder_score = protein_obj.get_disorder_score(pos)
+            disorder_region = protein_obj.get_disorder_region(pos)
 
-                for (pdb_id, chain) in annotation_list:
+            t_pack_01 += time.time()
 
-                    t_pack_11 += time.time()
+            for (pdb_id, chain) in annotation_list:
 
-                    try:
-                        sub_info = protein_obj.structure_annotations[(pdb_id, chain)].get_sub_info(pos)
+                t_pack_11 += time.time()
 
-                        t_pack_12 += time.time()
-                    except:
-                        if config.verbosity >= 3:
-                            print('Skipped classification of', u_ac, 'due to pos', pos, 'was not in sub_infos (len:', len(sub_infos), ')')
+                try:
+                    sub_info = protein_obj.structure_annotations[(pdb_id, chain)].get_sub_info(pos)
 
-                        t_pack_12 += time.time()
-                        continue
-
-
-                    res_nr = sub_info[0]
-
-                    if res_nr is None:
-                        if config.verbosity >= 4:
-                            print('Skipped classification of', u_ac, pos, 'due to res_nr is None in ', pdb_id, chain)
-                        continue
-
-                    t_pack_13 += time.time()
-
-                    seq_id = protein_obj.structure_annotations[(pdb_id, chain)].get_sequence_id()
-
-                    t_pack_14 += time.time()
-
-                    if seq_id is None:
-                        if config.verbosity >= 3:
-                            print('Skipped classification of', u_ac, 'due to', pdb_id, 'got no sequence identity')
-                        continue
-
-                    t_pack_15 += time.time()
-
-                    cov = protein_obj.structure_annotations[(pdb_id, chain)].get_coverage()
-
-                    t_pack_16 += time.time()
-
-                    try:
-                        res_aa = proteins.get_residue_aa(pdb_id, chain, res_nr)
-                    except:
-                        if config.verbosity >= 3:
-                            print('Skipped classification of', u_ac, pos, 'due to res_nr', res_nr, 'was not contained in ', pdb_id, chain)
-                        continue
-                    identical_aa = res_aa == aacbase[0]
-
-                    t_pack_21 += time.time()
-
-                    if not para:
-                        resolution = proteins.get_resolution(pdb_id)
-                        if resolution is None:
-                            if config.verbosity >= 3:
-                                print('Skipped classification of', u_ac, 'due to', pdb_id, 'got no resolution')
-                            continue
-                        package_size += 1
-                        chains = proteins.get_complex_chains(pdb_id)
-                        mappings.append(((pdb_id, chain, res_nr), (seq_id, cov, identical_aa), ((chains, resolution), get_res_info(proteins, pdb_id, chain, res_nr))))
-                    else:
-                        package_size += 1
-                        mappings.append(((pdb_id, chain, res_nr), (seq_id, cov, identical_aa), get_res_info(proteins, pdb_id, chain, res_nr)))
-
-                    t_pack_22 += time.time()
-
-                t_pack_02 += time.time()
-
-                classification_inp.append((pos, mappings, disorder_score, disorder_region))
-
-                t_pack_03 += time.time()
-
-                processed_positions[u_ac].add(pos)
-
-                t_pack_1 += time.time()
-
-                if package_size >= max_package_size and para:
-
-                    package.append((u_ac, classification_inp))
-
-                    t_send_0 = time.time()
-                    classification_results.append(para_classify_remote_wrapper.remote(classification_dump, pack(package), package_size))
-                    t_send_1 = time.time()
-
-                    total_pending_package_size += package_size
-
-                    send_packages += 1
+                    t_pack_12 += time.time()
+                except:
                     if config.verbosity >= 3:
-                        print('Start remote classifcation', u_ac, 'Package size:', package_size,'Amount of different proteins in the package:', len(package))
-                        print('Amount of positions in last protein:', len(classification_inp))
-                        print('Pending processes:', send_packages, 'Size of all packages in all pending processes combined:', total_pending_package_size)
-                        print('RAM memory % used:', psutil.virtual_memory()[2])
-                        print('Time for sending the process:', (t_send_1 - t_send_0), 'Time for packaging:', (t_pack_1 - t_pack_0), (t_pack_01 - t_pack_0), (t_pack_02 - t_pack_01), (t_pack_03 - t_pack_02), (t_pack_1 - t_pack_03), (t_pack_22 - t_pack_21))
-                        print('More times:', (t_pack_12 - t_pack_11), (t_pack_14 - t_pack_13), (t_pack_16 - t_pack_15), (t_pack_21 - t_pack_16))
-                        t_pack_0 = 0
-                        t_pack_01 = 0
-                        t_pack_02 = 0
-                        t_pack_03 = 0
-                        t_pack_1 = 0
-                        t_pack_11 = 0
-                        t_pack_12 = 0
-                        t_pack_13 = 0
-                        t_pack_14 = 0
-                        t_pack_15 = 0
-                        t_pack_16 = 0
-                        t_pack_21 = 0
-                        t_pack_22 = 0
-                    package_size = 0
-                    package = []
-                    classification_inp = []
+                        print('Skipped classification of', u_ac, 'due to pos', pos, 'was not in sub_infos (len:', len(sub_infos), ')')
 
-                    if send_packages >= config.proc_n:
-                        return package_size, package, send_packages, total_pending_package_size, classification_results, size_sorted, processed_positions
-            package.append((u_ac, classification_inp))
-            del size_sorted[0]
-            del processed_positions[u_ac]
-        if len(package) > 0 and para:
-            classification_results.append(para_classify_remote_wrapper.remote(classification_dump, pack(package), package_size))
-            send_packages += 1
-            package = []
-            total_pending_package_size += package_size
-            package_size = 0
+                    t_pack_12 += time.time()
+                    continue
 
-        return package_size, package, send_packages, total_pending_package_size, classification_results, size_sorted, processed_positions
+
+                res_nr = sub_info[0]
+
+                if res_nr is None:
+                    if config.verbosity >= 4:
+                        print('Skipped classification of', u_ac, pos, 'due to res_nr is None in ', pdb_id, chain)
+                    continue
+
+                t_pack_13 += time.time()
+
+                seq_id = protein_obj.structure_annotations[(pdb_id, chain)].get_sequence_id()
+
+                t_pack_14 += time.time()
+
+                if seq_id is None:
+                    if config.verbosity >= 3:
+                        print('Skipped classification of', u_ac, 'due to', pdb_id, 'got no sequence identity')
+                    continue
+
+                t_pack_15 += time.time()
+
+                cov = protein_obj.structure_annotations[(pdb_id, chain)].get_coverage()
+
+                t_pack_16 += time.time()
+
+                try:
+                    res_aa = structures[(pdb_id, chain)].get_residue_aa(res_nr)
+                except:
+                    if config.verbosity >= 3:
+                        print('Skipped classification of', u_ac, pos, 'due to res_nr', res_nr, 'was not contained in ', pdb_id, chain)
+                    continue
+                identical_aa = res_aa == aacbase[0]
+
+                t_pack_21 += time.time()
+
+                if not para:
+                    resolution = proteins.get_resolution(pdb_id)
+                    if resolution is None:
+                        if config.verbosity >= 3:
+                            print('Skipped classification of', u_ac, 'due to', pdb_id, 'got no resolution')
+                        continue
+                    package_size += 1
+                    chains = proteins.get_complex_chains(pdb_id)
+                    mappings.append(((pdb_id, chain, res_nr), (seq_id, cov, identical_aa), ((chains, resolution), get_res_info(proteins.structures, pdb_id, chain, res_nr))))
+                else:
+                    package_size += 1
+                    mappings.append(((pdb_id, chain, res_nr), (seq_id, cov, identical_aa), get_res_info(structures, pdb_id, chain, res_nr)))
+
+                t_pack_22 += time.time()
+
+            t_pack_02 += time.time()
+
+            classification_inp.append((pos, mappings, disorder_score, disorder_region))
+
+            t_pack_03 += time.time()
+
+            processed_positions[u_ac].add(pos)
+
+            t_pack_1 += time.time()
+
+            if package_size >= max_package_size and para:
+
+                package.append((u_ac, classification_inp))
+
+                t_send_0 = time.time()
+                classification_results.append(para_classify_remote_wrapper.remote(classification_dump, pack(package), package_size))
+                t_send_1 = time.time()
+
+                send_packages += 1
+                if config.verbosity >= 3:
+                    print('Start remote classifcation', u_ac, 'Package size:', package_size,'Amount of different proteins in the package:', len(package))
+                    print('Amount of positions in last protein:', len(classification_inp))
+                    print('Pending processes:', send_packages)
+                    print('RAM memory % used:', psutil.virtual_memory()[2])
+                    print('Time for sending the process:', (t_send_1 - t_send_0), 'Time for packaging:', (t_pack_1 - t_pack_0), (t_pack_01 - t_pack_0), (t_pack_02 - t_pack_01), (t_pack_03 - t_pack_02), (t_pack_1 - t_pack_03), (t_pack_22 - t_pack_21))
+                    print('More times:', (t_pack_12 - t_pack_11), (t_pack_14 - t_pack_13), (t_pack_16 - t_pack_15), (t_pack_21 - t_pack_16))
+                    t_pack_0 = 0
+                    t_pack_01 = 0
+                    t_pack_02 = 0
+                    t_pack_03 = 0
+                    t_pack_1 = 0
+                    t_pack_11 = 0
+                    t_pack_12 = 0
+                    t_pack_13 = 0
+                    t_pack_14 = 0
+                    t_pack_15 = 0
+                    t_pack_16 = 0
+                    t_pack_21 = 0
+                    t_pack_22 = 0
+                package_size = 0
+                package = []
+                classification_inp = []
+
+                if send_packages >= config.proc_n:
+                    return package_size, package, send_packages, classification_results, size_sorted, processed_positions
+        package.append((u_ac, classification_inp))
+        del size_sorted[0]
+        del processed_positions[u_ac]
+    if len(package) > 0 and para:
+        classification_results.append(para_classify_remote_wrapper.remote(classification_dump, pack(package), package_size))
+        send_packages += 1
+        package = []
+        package_size = 0
+
+    return package_size, package, send_packages, classification_results, size_sorted, processed_positions
+
+
+@ray.remote(max_calls = 1)
+def nested_classification_main_process(queue, config, size_sorted, max_package_size, n_procs, data_package):
+
+    protein_map, structures, complexes = unpack(data_package)
+
+    if config.verbosity >= 3:
+        print('Call of nested classification main process:', len(size_sorted), max_package_size, n_procs)
+
+    config.proc_n = n_procs
+
+    complex_store = {}
+
+    for u_ac, size in size_sorted:
+        annotation_list = protein_map[u_ac].get_annotation_list()
+
+        for (pdb_id, chain) in annotation_list:
+            if not pdb_id in complex_store:
+                complex_store[pdb_id] = (complexes[pdb_id].chains, complexes[pdb_id].resolution)
+
+    classification_dump = ray.put((config, complex_store))
+
+    package_size = 0
+    package = []
+    send_packages = 0
+    processed_positions = {}
+    classification_results = []
+
+    package_size, package, send_packages, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, classification_results, protein_map, structures, config, size_sorted, processed_positions, True, classification_dump, max_package_size)
+
+    while True:
+        ready, not_ready = ray.wait(classification_results)
+
+        if len(ready) > 0:
+
+            send_packages -= len(ready)
+
+            queue.put(ready)
+
+            classification_results = not_ready
+
+            t_pack_0 = time.time()
+            package_size, package, send_packages, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, classification_results, protein_map, structures, config, size_sorted, processed_positions, True, classification_dump, max_package_size)
+            t_pack_1 = time.time()
+
+            if config.verbosity >= 3:
+                print('Time for packaging new processes:', (t_pack_1 - t_pack_0))
+        else:
+            classification_results = not_ready
+
+        if len(classification_results) == 0 and len(package) == 0:
+            queue.put('End')
+            return
+
+def classification(proteins, config, indel_analysis_follow_up=False, custom_structure_annotations=None):
 
     if config.verbosity >= 2:
         t0 = time.time()
@@ -1835,127 +1893,244 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
     packages = []
     package_counter = 0
 
+    para_mappings_threshold = 20000
     para = (total_mappings > 20000)
+    nested_procs = 14
+    n_main_procs = config.proc_n // nested_procs
+    if (config.proc_n % nested_procs) != 0:
+        n_main_procs += 1
+    nested_para = (total_mappings > para_mappings_threshold * nested_procs) and (config.proc_n >= (nested_procs * 1.5)) and (len(size_sorted) >= n_main_procs)
 
     max_package_size = min([50000, total_mappings // (config.proc_n * 4)])
     package_size = 0
     package = []
 
     send_packages = 0
-    total_pending_package_size = 0
 
     if para:
-        complex_store = {}
+        if not nested_para:
+            complex_store = {}
 
-        t_init_0 = time.time()
+            t_init_0 = time.time()
 
-        for u_ac, size in size_sorted:
-            annotation_list = proteins.get_protein_annotation_list(u_ac)
+            for u_ac, size in size_sorted:
+                annotation_list = proteins.get_protein_annotation_list(u_ac)
 
-            for (pdb_id, chain) in annotation_list:
-                if not pdb_id in complex_store:
-                    complex_store[pdb_id] = (proteins.complexes[pdb_id].chains, proteins.complexes[pdb_id].resolution)
+                for (pdb_id, chain) in annotation_list:
+                    if not pdb_id in complex_store:
+                        complex_store[pdb_id] = (proteins.complexes[pdb_id].chains, proteins.complexes[pdb_id].resolution)
 
-        t_init_1 = time.time()
-        if config.verbosity >= 2:
-            print('Time for para classification preprocessing 1:', (t_init_1 - t_init_0))
+            t_init_1 = time.time()
+            if config.verbosity >= 2:
+                print('Time for para classification preprocessing 1:', (t_init_1 - t_init_0))
 
-        classification_dump = ray.put((config, complex_store))
+            classification_dump = ray.put((config, complex_store))
 
-        t_init_2 = time.time()
-        if config.verbosity >= 2:
-            print('Time for para classification preprocessing 2:', (t_init_2 - t_init_1))
+            t_init_2 = time.time()
+            if config.verbosity >= 2:
+                print('Time for para classification preprocessing 2:', (t_init_2 - t_init_1))
 
-    processed_positions = {}
-    package_size, package, send_packages, total_pending_package_size, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, total_pending_package_size, classification_results, proteins, config, size_sorted, processed_positions)
+        else:
+            t_big_put_0 = time.time()
 
-    # para = send_packages > 0  # only use ray, when we have more than one package
+            #proteins_in_store = ray.put((proteins, config))
+            config_store = ray.put(config)
 
-    if not para and len(package) > 0:
-        classification_results.append(para_classify(config, package))
-    elif not para and len(package) == 0:
-        return
+            t_big_put_1 = time.time()
 
-    if config.verbosity >= 2:
-        t11 = time.time()
-        print('Time for classification part 1.1:', t11 - t0)
+            if config.verbosity >= 3:
+                print('Time for putting proteins into store:', (t_big_put_1 - t_big_put_0))
 
-    if config.verbosity >= 2:
-        t1 = time.time()
-        print('Time for classification part 1:', t1 - t0, para, max_package_size)
+            n_procs_small, n_procs_big, n_of_small_nested_procs, n_of_big_nested_procs = calculate_chunksizes(n_main_procs, (config.proc_n - n_main_procs))
 
-    if para:
-        max_comp_time = 0
-        total_comp_time = 0.
-        max_comp_time_pos = None
-        amount_of_positions = 0
+            n_nested_proc_mappings = total_mappings // n_main_procs
 
-        total_processed_mappings = 0
+            nested_proc_size_sorted = []
+            nested_proc_size_sorted_size = 0
 
-        while True:
-            #if config.low_mem_system:
-            #t_gc_0 = time.time()
-            #gc.collect()
-            #t_gc_1 = time.time()
+            nested_protein_map = {}
+            nested_structures = {}
+            nested_complexes = {}
 
-            #if config.verbosity >= 3:
-            #    print('Time for garbage collection:', (t_gc_1 - t_gc_0))
+            started_big_procs = 0
+            queue = Queue(maxsize = (config.proc_n * 4))
 
-            ready, not_ready = ray.wait(classification_results)
+            truly_started = 0
 
-            if len(ready) > 0:
+            t_nest_0 = 0
+            t_nest_1 = 0
 
-                t_integrate_0 = 0.
-                t_integrate_1 = 0.
-                t_integrate_2 = 0.
-                send_packages -= len(ready)
+            for u_ac, size in size_sorted:
+                t_nest_0 += time.time()
 
-                t_get_0 = time.time()
+                nested_proc_size_sorted.append((u_ac, size))
+                nested_proc_size_sorted_size += size
 
-                remote_returns = ray.get(ready)
+                nested_protein_map[u_ac] = proteins.protein_map[u_ac]
+                for (pdb, chain) in nested_protein_map[u_ac].get_annotation_list():
+                    if (pdb, chain) in nested_structures:
+                        continue
+                    nested_structures[(pdb, chain)] = proteins.structures[(pdb, chain)]
+                    if pdb in nested_complexes:
+                        continue
+                    nested_complexes[pdb] = proteins.complexes[pdb]
 
-                t_get_1 = time.time()
+                t_nest_1 += time.time()
 
-                for returned_package, size_of_returned_package in remote_returns:
-                    (outs, comp_time) = returned_package
-                    total_pending_package_size -= size_of_returned_package
-                    total_processed_mappings += size_of_returned_package
-                    t_integrate_0 += time.time()
-                    outs = unpack(outs)
-                    t_integrate_1 += time.time()
-                    for u_ac, pos, mapping_results in outs:
-                        proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+                if nested_proc_size_sorted_size >= n_nested_proc_mappings:
+                    #start nested main process
 
-                    total_comp_time += comp_time
-                    amount_of_positions += 1
+                    if started_big_procs < n_of_big_nested_procs:
+                        started_big_procs += 1
+                        n_procs = n_procs_big
+                    else:
+                        n_procs = n_procs_small
 
-                    if comp_time > max_comp_time:
-                        max_comp_time = comp_time
-                        max_comp_time_pos = u_ac
-                    t_integrate_2 += time.time()
+                    t_nest_2 = time.time()
 
-                classification_results = not_ready
+                    nested_classification_main_process.remote(queue, config_store, nested_proc_size_sorted, max_package_size, n_procs, pack([nested_protein_map, nested_structures, nested_complexes]))
 
-                t_pack_0 = time.time()
-                package_size, package, send_packages, total_pending_package_size, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, total_pending_package_size, classification_results, proteins, config, size_sorted, processed_positions)
-                t_pack_1 = time.time()
+                    t_nest_3 = time.time()
 
-                if config.verbosity >= 3:
-                    print('Time for getting:', (t_get_1 - t_get_0))
-                    print('Time for unpacking:', (t_integrate_1 - t_integrate_0))
-                    print('Time for result integration:', (t_integrate_2 - t_integrate_1))
-                    print('Time for packaging new processes:', (t_pack_1 - t_pack_0))
-                    print('Progress:', total_processed_mappings, 'of', total_mappings)
-            else:
-                classification_results = not_ready
+                    if config.verbosity >= 3:
+                        print('Time for preparing nested main process:', (t_nest_1 - t_nest_0), 'Time for starting the nested main process:', (t_nest_3 - t_nest_2))
 
-            if len(classification_results) == 0:
-                break
+                    t_nest_0 = 0
+                    t_nest_1 = 0
+
+                    truly_started += 1
+                    nested_proc_size_sorted_size = 0
+                    nested_proc_size_sorted = []
+                    nested_protein_map = {}
+                    nested_structures = {}
+                    nested_complexes = {}
+
+            if len(nested_proc_size_sorted) > 0:
+
+                if started_big_procs < n_of_big_nested_procs:
+                    started_big_procs += 1
+                    n_procs = n_procs_big
+                else:
+                    n_procs = n_procs_small
+
+                max_package_size = min([50000, n_nested_proc_mappings // (n_procs * 4)])
+
+                nested_classification_main_process.remote(queue, config_store, nested_proc_size_sorted, max_package_size, n_procs, pack([nested_protein_map, nested_structures, nested_complexes]))
+                truly_started += 1
+
     else:
-        gc.collect()
-        for outs, comp_time in classification_results:
-            for u_ac, pos, mapping_results in outs:
-                proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+        classification_dump = None
+
+    if not nested_para:
+        processed_positions = {}
+        package_size, package, send_packages, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, classification_results, proteins.protein_map, proteins.structures, config, size_sorted, processed_positions, para, classification_dump, max_package_size, proteins = proteins)
+
+        if not para and len(package) > 0:
+            classification_results.append(para_classify(config, package))
+        elif not para and len(package) == 0:
+            return
+
+        if config.verbosity >= 2:
+            t11 = time.time()
+            print('Time for classification part 1.1:', t11 - t0)
+
+        if config.verbosity >= 2:
+            t1 = time.time()
+            print('Time for classification part 1:', t1 - t0, para, max_package_size)
+
+        if para:
+            max_comp_time = 0
+            total_comp_time = 0.
+            max_comp_time_pos = None
+            amount_of_positions = 0
+
+            total_processed_mappings = 0
+
+            while True:
+                ready, not_ready = ray.wait(classification_results)
+
+                if len(ready) > 0:
+
+                    t_integrate_0 = 0.
+                    t_integrate_1 = 0.
+                    t_integrate_2 = 0.
+                    send_packages -= len(ready)
+
+                    t_get_0 = time.time()
+
+                    remote_returns = ray.get(ready)
+
+                    t_get_1 = time.time()
+
+                    for returned_package, size_of_returned_package in remote_returns:
+                        (outs, comp_time) = returned_package
+                        total_processed_mappings += size_of_returned_package
+                        t_integrate_0 += time.time()
+                        outs = unpack(outs)
+                        t_integrate_1 += time.time()
+                        for u_ac, pos, mapping_results in outs:
+                            proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+
+                        total_comp_time += comp_time
+                        amount_of_positions += 1
+
+                        if comp_time > max_comp_time:
+                            max_comp_time = comp_time
+                            max_comp_time_pos = u_ac
+                        t_integrate_2 += time.time()
+
+                    classification_results = not_ready
+
+                    t_pack_0 = time.time()
+                    package_size, package, send_packages, classification_results, size_sorted, processed_positions = pack_packages(package_size, package, send_packages, classification_results, proteins.protein_map, proteins.structures, config, size_sorted, processed_positions, para, classification_dump, max_package_size, proteins = proteins)
+                    t_pack_1 = time.time()
+
+                    if config.verbosity >= 3:
+                        print('Time for getting:', (t_get_1 - t_get_0))
+                        print('Time for unpacking:', (t_integrate_1 - t_integrate_0))
+                        print('Time for result integration:', (t_integrate_2 - t_integrate_1))
+                        print('Time for packaging new processes:', (t_pack_1 - t_pack_0))
+                        print('Progress:', total_processed_mappings, 'of', total_mappings)
+                else:
+                    classification_results = not_ready
+
+                if len(classification_results) == 0:
+                    break
+        else:
+            gc.collect()
+            for outs, comp_time in classification_results:
+                for u_ac, pos, mapping_results in outs:
+                    proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+
+    else:
+        if config.verbosity >= 2:
+            t1 = time.time()
+
+        if config.verbosity >= 3:
+            print('Start collecting results from nested classification main processes:', truly_started)
+
+        finished = 0
+        while finished < truly_started:
+
+            try:
+                ready = queue.get()
+            except Empty:
+                continue
+            if ready == 'End':
+                finished += 1
+                if config.verbosity >= 3:
+                    print('Nested main process finished,', truly_started - finished, 'are left')
+                continue
+
+            remote_returns = ray.get(ready)
+
+            for returned_package, size_of_returned_package in remote_returns:
+                (outs, comp_time) = returned_package
+
+                outs = unpack(outs)
+                for u_ac, pos, mapping_results in outs:
+                    proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+
 
     if not indel_analysis_follow_up:
         for u_ac in u_acs:
@@ -1966,7 +2141,7 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
     if config.verbosity >= 2:
         t2 = time.time()
         print('Time for classification part 2:', t2 - t1)
-        if para:
+        if para and not nested_para:
             print('Longest computation for:', max_comp_time_pos, 'with:', max_comp_time, 'In total', amount_of_positions, 'proteins', 'Accumulated time:', total_comp_time)
 
 

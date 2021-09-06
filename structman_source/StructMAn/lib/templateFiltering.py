@@ -1517,8 +1517,8 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                 if (t_pickle_2 - t_pickle_1) > 60:
                     print('Long depickling:', returned_pdbs)
 
-        if config.verbosity >= 3:
-            print('Time for loop part 2:', (t_2-t_1))
+            if config.verbosity >= 3:
+                print('Time for loop part 2:', (t_2-t_1))
 
         new_anno_result_ids = []
         if len(size_map) > 0:

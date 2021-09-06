@@ -21,9 +21,9 @@ vim \
 less \
 gcc \
 gzip \
-python3.7 \
-python3.7-dev \
-python3.7-distutils \
+python3.8 \
+python3.8-dev \
+python3.8-distutils \
 libboost-all-dev \
 libzeep-dev \
 libbz2-dev \
@@ -39,11 +39,11 @@ mysql-client && \
 rm -rf /var/lib/apt/lists/* && \
 rm -rf /var/lib/mysql
 
-# Register the python version 3.7 in alternatives
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
+# Register the python version 3.8 in alternatives
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
 
-# Set python 3.7 as the default python3
-RUN update-alternatives --set python3 /usr/bin/python3.7
+# Set python 3.8 as the default python3
+RUN update-alternatives --set python3 /usr/bin/python3.8
 
 # Upgrade pip to the latest version
 RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
@@ -51,14 +51,13 @@ python3 get-pip.py --force-reinstall && \
 rm get-pip.py
 
 # Install StructMAn Python dependencies
-RUN pip3 install numpy biopython matplotlib multiprocess pymysql python-igraph "pickle5>=0.0.10" psutil
-RUN pip3 install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp37-cp37m-manylinux1_x86_64.whl
+RUN pip3 install biopython==1.78 matplotlib==3.3.2 mysql==5.7.24 numpy==1.19.2 pandas==1.2.4 pymysql==1.0.2 psutil==5.8.0 python-igraph==0.8.3 msgpack==1.0.2 ray==1.6.0 zstd==1.5.0.2
 
 # Clear pip cache
 RUN rm -rf /root/.cache/pip
 
 # Increase TCP backlog connection
-sysctl -w net.core.somaxconn=1024
+RUN sysctl -w net.core.somaxconn=1024
 
 # Install and setup MMseqs2
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/ && rm /opt/mmseqs-linux-sse41.tar.gz
