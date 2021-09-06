@@ -10,7 +10,7 @@ STRUCTMAN_DB='struct_man_db.sql.gz'
 STRUCTMAN_DB_FOLDER_NAME='struct_man_db_1'
 
 # Concatenate the database
-cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB
+# cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB
 
 # Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
 configure_structman() {
