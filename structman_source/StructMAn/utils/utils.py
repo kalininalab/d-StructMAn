@@ -24,7 +24,12 @@ def ray_init(config):
     os.environ["PYTHONPATH"] = f'{settings.ROOT_DIR}:{os.environ.get("PYTHONPATH", "")}'
     os.environ["PYTHONPATH"] = f'{settings.LIB_DIR}:{os.environ.get("PYTHONPATH", "")}'
     os.environ["PYTHONPATH"] = f'{settings.RINERATOR_DIR}:{os.environ.get("PYTHONPATH", "")}'
-    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True)
+    if config.iupred_path != '':
+        os.environ["PYTHONPATH"] = f'{os.path.abspath(os.path.realpath(config.iupred_path))}:{os.environ.get("PYTHONPATH", "")}'
+    logging_level = 20
+    if config.verbosity <= 1:
+        logging_level = 0
+    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level)
 
 def ray_hack():
     # hack proposed by the devs of ray to prevent too many processes being spawned

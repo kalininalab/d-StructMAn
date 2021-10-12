@@ -43,9 +43,11 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
     last_residue = None
     first_residue = None
     res_atom_count = 0
+    dotted_res_name = None
     for line in lines:
         record_name = line[0:6].replace(" ", "")
-        atom_nr = line[6:11].replace(" ", "")
+        if record_name.count('ATOM') > 0 and record_name != 'ATOM':  # 100k atom bug fix
+            record_name = 'ATOM'
         atom_name = line[12:16].replace(" ", "")
         # ignore water
         if len(atom_name) > 0:
@@ -89,6 +91,7 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
                             aa = toOne(res_name, only_natural=True)
                         else:
                             aa = '.'
+                            dotted_res_name = res_name
 
                         res_atom_count += 1
                         # if consecutive(last_residue,res_nr):
@@ -123,6 +126,9 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
                     seq += '-'
                 elif sdsc.CORRECT_COUNT[last_res] < res_atom_count:
                     seq = '%s.' % seq[:-1]
+            elif last_res == '.' and dotted_res_name in sdsc.AA_TO_ONE:
+                if sdsc.CORRECT_COUNT[toOne(dotted_res_name, only_natural=True)] == res_atom_count: #this happens, when the last residue is declared as HETATM, but fulfills all criteria for a natural residue
+                    seq = '%s?' % seq[:-1]
 
     if seq_res_map == [] and not could_be_empty:
         config.errorlog.add_warning('Warning: seq_res_map empty: %s:%s' % (template_name, chain))
@@ -212,6 +218,8 @@ def getCovSI(full_length, target_seq, template_seq):
 
     return (aln_length, seq_id)
 
+def call_biopython_alignment(target_seq, template_seq):
+    return pairwise2.align.globalds(target_seq, template_seq, sdsc.BLOSUM62, -10.0, -0.5, one_alignment_only=True, penalize_end_gaps=False)
 
 def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore_gaps=False, lock=None):
     target_seq = target_seq.replace('U', 'C').replace('O', 'K').replace('J', 'I')
@@ -219,9 +227,13 @@ def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore
         print('Aligning:')
         print(target_seq)
         print(template_seq)
-    align_out = pairwise2.align.globalds(target_seq, template_seq, sdsc.BLOSUM62, -10.0, -0.5, one_alignment_only=True, penalize_end_gaps=False)
+    align_out = call_biopython_alignment(target_seq, template_seq)
     if len(align_out) > 0:
         (target_aligned_sequence, template_aligned_sequence, a, b, c) = align_out[0]
+
+    elif template_seq.count('XXX') > 0:
+        return split_alignment(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
+
     else:
         if config.verbosity >= 4:
             print('Alignment failed')
@@ -231,6 +243,123 @@ def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore
 
     return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist)
 
+def find_unknown_portions(sequence):
+
+    found_unknown_portion = False
+    unknown_portions = []
+
+    for pos, char in enumerate(sequence):
+        if char == 'X':
+            if not found_unknown_portion:
+                found_unknown_portion = True
+                portion_start = pos
+        else:
+            if found_unknown_portion:
+                found_unknown_portion = False
+                portion_end = pos
+                unknown_portions.append([portion_start,portion_end])
+
+    if found_unknown_portion:
+        unknown_portions.append([portion_start, pos + 1])
+    return unknown_portions
+
+def split_sequence(unknown_portions, seq):
+    min_length = 10
+    sub_sequences = []
+    for portion_number, (left, right) in enumerate(unknown_portions):
+        if left == 0: #look at the left side of the unknown_portion
+            continue
+        r = left # the right side of the subsequence ends on the left side of the unknown_portion 
+        if portion_number == 0: #the left side of the subsequence is the right side of the last portion or the beginning of the raw sequence
+            l = 0
+        else:
+            l = unknown_portions[portion_number -1][1]
+
+        if (r - l) >= 10: #if the subsequence is long enough, add it to list
+            sub_sequences.append(seq[l:r])
+        else: # if not, add to unknown_portion
+            unknown_portions[portion_number][0] -= (r - l)
+
+            if portion_number > 0:
+                if unknown_portions[portion_number - 1][1] == unknown_portions[portion_number][0]:
+                    unknown_portions[portion_number][0] = unknown_portions[portion_number - 1][0]
+                    unknown_portions[portion_number - 1][1] = None
+                    unknown_portions[portion_number - 1][0] = None
+
+    if unknown_portions[-1][1] != len(seq):
+        if (len(seq) - unknown_portions[-1][1]) >= 10:
+            sub_sequences.append(seq[unknown_portions[-1][1]:])
+        else:
+            unknown_portions[-1][1] = len(seq)
+
+
+    new_unknown_portions = []
+    for portion in unknown_portions:
+        if portion[0] is not None:
+            new_unknown_portions.append(portion)
+
+    return new_unknown_portions, sub_sequences
+
+def fuse_sequences(seq_a, seq_b):
+    if seq_a is None:
+        return seq_b
+    fused_seq = ''
+
+    for pos, char_a in enumerate(seq_a):
+        if char_a == '-':
+            fused_seq += seq_b[pos]
+        else:
+            fused_seq += seq_a
+
+    return fused_seq
+
+
+def split_alignment(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore_gaps=False, lock=None):
+    unknown_portions = find_unknown_portions(template_seq)
+
+    unknown_portions, sub_sequences = split_sequence(unknown_portions, template_seq)
+
+    fused_template_sequence = None
+
+    for pos, sub_seq in enumerate(sub_sequences):
+        align_out = call_biopython_alignment(target_seq, sub_seq)
+
+        if len(align_out) > 0:
+            (target_aligned_sequence, template_aligned_sequence, a, b, c) = align_out[0]
+
+        else:
+            if config.verbosity >= 4:
+                print('Alignment failed')
+            return 'Alignment produced no Output (after splitting), %s:\n%s\n%s\n' % (u_ac, target_seq, template_seq)
+
+        if (pos == 0) and (unknown_portions[0][0] == 0): #for the first partial alignment, if we have a left terminal unknown portion: reinsert the portion into the partial alignment
+            portion = template_seq[unknown_portions[0][1]:unknown_portions[0][0]]
+            if template_aligned_sequence[:len(portion)].count('-') != len(portion): #we need a gap at least as large as the unknown portion
+                return 'Split alignment error %s: cannot reinsert, %s into \n %s' % (u_ac, portion, template_aligned_sequence)
+            for c_pos, char in enumerate(template_aligned_sequence):
+                if char != '-':
+                    first_non_gap = c_pos
+                    break
+            template_aligned_sequence = '%s%s%s' % (template_aligned_sequence[:(first_non_gap - len(portion))], portion, template_aligned_sequence[first_non_gap:])
+            del unknown_portions[0]
+        elif pos > 0: 
+            portion = template_seq[unknown_portions[pos - 1][1]:unknown_portions[pos - 1][0]]
+            for c_pos, char in enumerate(template_aligned_sequence):
+                if char != '-':
+                    first_non_gap = c_pos
+                    break
+            minimal_gap_size = (len(template_aligned_sequence) - first_non_gap) + len(portion)
+            if fused_template_sequence[-minimal_gap_size:].count('-') != minimal_gap_size: #we need a gap at least as large as the unknown portion + the rest of the sub alignment
+                return 'Split alignment error %s: cannot reinsert, %s and %s into \n %s' % (u_ac, portion, template_aligned_sequence, fused_template_sequence)
+            template_aligned_sequence = '%s%s%s' % (template_aligned_sequence[:(first_non_gap - len(portion))], portion, template_aligned_sequence[first_non_gap:])
+
+        fused_template_sequence = fuse_sequences(fused_template_sequence, template_aligned_sequence)
+
+    template_aligned_sequence = fused_template_sequence
+
+    sub_infos, aaclist = getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
+
+    return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist)
 
 # truncates aseq by looking at terminal gaps of bseq
 # called by modelling

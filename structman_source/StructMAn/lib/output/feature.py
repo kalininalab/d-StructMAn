@@ -1,7 +1,7 @@
 from structman.lib.output.output import OutputGenerator
 
 
-def init_feature_table(feature_file):
+def init_feature_table(feature_file, obj_only = False):
     feature_output = OutputGenerator()
     headers = [
         'Input Protein ID', 'Primary Protein ID', 'Uniprot-Ac', 'WT Amino Acid', 'Position', 'Mut Amino Acid', 'AA change', 'Tags',
@@ -37,6 +37,8 @@ def init_feature_table(feature_file):
             headers.append(feature_name)
 
     feature_output.add_headers(headers)
+    if obj_only:
+        return feature_output
 
     feat_f = open(feature_file, 'a')
     feat_f.write(feature_output.get_header())

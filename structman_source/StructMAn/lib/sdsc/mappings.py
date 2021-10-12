@@ -215,6 +215,61 @@ class Mappings:
         self.res_aas[mapping_id] = res_aa
         self.resolutions[mapping_id[0]] = resolution
 
+    def add_result(self, mapping_id, raw_results, quality, seq_id, cov):
+
+        (rsa, mc_rsa, sc_rsa, profile, centralities, b_factor, modres, ssa, phi,
+             psi, intra_ssbond, ssbond_length, intra_link,
+             link_length, cis_conformation, cis_follower,
+             inter_chain_median_kd, inter_chain_dist_weighted_kd, inter_chain_median_rsa,
+             inter_chain_dist_weighted_rsa, intra_chain_median_kd, intra_chain_dist_weighted_kd,
+             intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
+             inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
+             intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
+             lig_dist, metal_dist, ion_dist, chain_dist, rna_dist, dna_dist,
+             homo_dist, res_class, res_simple_class) = raw_results
+
+        self.qualities[mapping_id] = quality
+        self.seq_ids[mapping_id] = seq_id
+        self.covs[mapping_id] = cov
+        self.rsas[mapping_id] = rsa
+        self.mc_rsas[mapping_id] = mc_rsa
+        self.sc_rsas[mapping_id] = sc_rsa
+        self.ssas[mapping_id] = ssa
+        self.lig_dists[mapping_id] = lig_dist
+        self.metal_dists[mapping_id] = metal_dist
+        self.ion_dists[mapping_id] = ion_dist
+        self.chain_dists[mapping_id] = chain_dist
+        self.rna_dists[mapping_id] = rna_dist
+        self.dna_dists[mapping_id] = dna_dist
+        self.homo_dists[mapping_id] = homo_dist
+        self.profiles[mapping_id] = profile
+        self.centralities[mapping_id] = centralities
+        self.phis[mapping_id] = phi
+        self.psis[mapping_id] = psi
+        self.intra_ssbonds[mapping_id] = intra_ssbond
+        self.ssbond_lengths[mapping_id] = ssbond_length
+        self.intra_links[mapping_id] = intra_link
+        self.link_lengths[mapping_id] = link_length
+        self.cis_conformations[mapping_id] = cis_conformation
+        self.cis_followers[mapping_id] = cis_follower
+        self.inter_chain_median_kds[mapping_id] = inter_chain_median_kd
+        self.inter_chain_dist_weighted_kds[mapping_id] = inter_chain_dist_weighted_kd
+        self.inter_chain_median_rsas[mapping_id] = inter_chain_median_rsa
+        self.inter_chain_dist_weighted_rsas[mapping_id] = inter_chain_dist_weighted_rsa
+        self.intra_chain_median_kds[mapping_id] = intra_chain_median_kd
+        self.intra_chain_dist_weighted_kds[mapping_id] = intra_chain_dist_weighted_kd
+        self.intra_chain_median_rsas[mapping_id] = intra_chain_median_rsa
+        self.intra_chain_dist_weighted_rsas[mapping_id] = intra_chain_dist_weighted_rsa
+        self.inter_chain_interactions_medians[mapping_id] = inter_chain_interactions_median
+        self.inter_chain_interactions_dist_weighteds[mapping_id] = inter_chain_interactions_dist_weighted
+        self.intra_chain_interactions_medians[mapping_id] = intra_chain_interactions_median
+        self.intra_chain_interactions_dist_weighteds[mapping_id] = intra_chain_interactions_dist_weighted
+        self.b_factors[mapping_id] = b_factor
+        self.modres[mapping_id] = modres
+        self.res_classes[mapping_id] = res_class, res_simple_class
+        self.aa_ids[mapping_id] = True
+        self.res_aas[mapping_id] = None
+
     def set_weighted_lig_dist(self, wd, conf):
         self.weighted_lig_dist = wd
         self.lig_dist_conf = conf
@@ -333,6 +388,33 @@ class Mappings:
                 self.lig_dist_conf, self.metal_dist_conf, self.ion_dist_conf, self.chain_dist_conf, self.rna_dist_conf, self.dna_dist_conf,
                 self.homo_dist_conf, self.location_conf, self.classification_conf)
 
+    def get_result_for_indel_aggregation(self):
+        
+        return (self.weighted_surface_value, self.weighted_mainchain_surface_value, self.weighted_sidechain_surface_value,
+             self.get_weighted_profile(), self.get_weighted_centralities(), self.weighted_b_factor, self.weighted_modres, self.weighted_ssa, self.weighted_phi,
+             self.weighted_psi, self.weighted_intra_ssbond, self.weighted_ssbond_length, self.weighted_intra_link,
+             self.weighted_link_length, self.weighted_cis_conformation, self.weighted_cis_follower,
+             self.weighted_inter_chain_median_kd, self.weighted_inter_chain_dist_weighted_kd, self.weighted_inter_chain_median_rsa,
+             self.weighted_inter_chain_dist_weighted_rsa, self.weighted_intra_chain_median_kd, self.weighted_intra_chain_dist_weighted_kd,
+             self.weighted_intra_chain_median_rsa, self.weighted_intra_chain_dist_weighted_rsa,
+             self.weighted_inter_chain_interactions_median, self.weighted_inter_chain_interactions_dist_weighted,
+             self.weighted_intra_chain_interactions_median, self.weighted_intra_chain_interactions_dist_weighted,
+             self.weighted_lig_dist, self.weighted_metal_dist, self.weighted_ion_dist, self.weighted_chain_dist, self.weighted_rna_dist, self.weighted_dna_dist,
+             self.weighted_homo_dist, self.rin_class, self.rin_simple_class)
+
+    def get_database_result_for_indel_aggregation(self):
+        return (self.weighted_surface_value, self.weighted_mainchain_surface_value, self.weighted_sidechain_surface_value,
+             self.get_weighted_profile_str(), self.get_weighted_centralities_str(), self.weighted_b_factor, self.weighted_modres, self.weighted_ssa, self.weighted_phi,
+             self.weighted_psi, self.weighted_intra_ssbond, self.weighted_ssbond_length, self.weighted_intra_link,
+             self.weighted_link_length, self.weighted_cis_conformation, self.weighted_cis_follower,
+             self.weighted_inter_chain_median_kd, self.weighted_inter_chain_dist_weighted_kd, self.weighted_inter_chain_median_rsa,
+             self.weighted_inter_chain_dist_weighted_rsa, self.weighted_intra_chain_median_kd, self.weighted_intra_chain_dist_weighted_kd,
+             self.weighted_intra_chain_median_rsa, self.weighted_intra_chain_dist_weighted_rsa,
+             self.weighted_inter_chain_interactions_median, self.weighted_inter_chain_interactions_dist_weighted,
+             self.weighted_intra_chain_interactions_median, self.weighted_intra_chain_interactions_dist_weighted,
+             self.rin_class, self.rin_simple_class)
+
+
     def get_result_copy(self):
         result_obj = Mappings()
         result_obj.recommended_res = self.recommended_res
@@ -393,7 +475,7 @@ class Mappings:
         result_obj.classification_conf = self.classification_conf
         return result_obj
 
-    def weight_all(self, config, disorder_score, disorder_region):
+    def weight_all(self, config, disorder_score, disorder_region, for_indel_aggregation = False):
         dist_maps = [(self.lig_dists, self.set_weighted_lig_dist), (self.metal_dists, self.set_weighted_metal_dist),
                      (self.ion_dists, self.set_weighted_ion_dist), (self.chain_dists, self.set_weighted_chain_dist),
                      (self.rna_dists, self.set_weighted_rna_dist), (self.dna_dists, self.set_weighted_dna_dist),
@@ -441,7 +523,8 @@ class Mappings:
         self.weight_profiles()
         self.rin_based_classify()
         self.distance_classify(config, disorder_score, disorder_region)
-        self.set_recommended_residues()
+        if not for_indel_aggregation:
+            self.set_recommended_residues()
 
     def weight(self, value_map, config, distance_weighting=False, calc_conf=True, coverage_extra_weight=0):
         nom = 0.0

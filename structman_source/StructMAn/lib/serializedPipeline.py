@@ -8,6 +8,8 @@ import sys
 import time
 import traceback
 import psutil
+import statistics
+
 
 import ray
 from ray.util.queue import Queue
@@ -748,20 +750,30 @@ def getSequences(proteins, config, skip_db=False):
 
         if not mobi_lite:
             iupred_results = []
-            iupred_dump = ray.put(config.iupred_path)
+            sys.path.append(os.path.abspath(os.path.realpath(config.iupred_path)))
+            store = ray.put(config)
         else:
             mobi_list = []
 
         n_disorder = 0
         stored_disorder_ids = []
+
+        if config.verbosity >= 3:
+            print('Start disordered region calculations')
+
         for u_ac in u_acs:
             seq = proteins.get_sequence(u_ac)
-            if seq == 0 or seq == 1 or seq is None:
+            if seq == 0 or seq == 1 or seq is None or len(seq) <= 20:
+                if config.verbosity >= 3:
+                    print('Disordered regions calculations skipped for:', u_ac, 'since sequence is:', seq)
                 continue
             disorder_scores = proteins.get_disorder_scores(u_ac)
             if disorder_scores is None:
                 if not mobi_lite:
-                    iupred_results.append(para_iupred.remote(u_ac, seq, iupred_dump))
+                    if config.verbosity >= 3:
+                        print('Start disordered region calculation for:', u_ac)
+
+                    iupred_results.append(para_iupred.remote(u_ac, seq, store))
                     n_disorder += 1
                 else:
                     mobi_list.append('>%s\n%s\n' % (u_ac, seq))
@@ -828,34 +840,32 @@ def getSequences(proteins, config, skip_db=False):
 
 
 @ray.remote(max_calls=1)
-def para_iupred(u_ac, seq, iupred_dump):
+def para_iupred(u_ac, seq, store):
     ray_hack()
+    import iupred3_lib
+    config = store
+    try:
+        iupred2_result = iupred3_lib.iupred(seq, 'glob', 'medium')
+    except:
+        [e, f, g] = sys.exc_info()
+        g = traceback.format_exc()
+        config.errorlog.add_error("IUPred3 Error: %s\n%s\n%s\n%s\n%s" % (u_ac, seq, str(e), str(f), str(g)))
+        return [u_ac, [], []]
+    #anchor2_res = iupred3_lib.anchor2(seq)
 
-    iupred_path = iupred_dump
-
-    p = subprocess.Popen(['python3', '%s/iupred2a.py' % iupred_path, seq, 'glob'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    out, err = p.communicate()
-
-    after_glob = False
     iupred_parts = [u_ac, [], {}]
-    for line in out.split('\n'):
-        if len(line) < 3:
-            continue
-        if line[0] == '#':
-            continue
-        if line[0] == '1':
-            after_glob = True
+
+    lines = iupred2_result[1].split('\n')
+    for line in lines:
         words = line.split()
-        if not after_glob:
-            if len(words) < 4:
-                continue
-            if words[0] == 'globular' and words[1] == 'domain':
-                lower_bound, upper_bound = words[3].split('-')
-                iupred_parts[1].append((int(lower_bound), int(upper_bound), 'globular'))
-        if after_glob:
-            if len(words) < 3:
-                continue
-            iupred_parts[2][int(words[0])] = words[2]
+        if len(words) < 4:
+            continue
+        if words[0] == 'globular' and words[1] == 'domain':
+            lower_bound, upper_bound = words[3].split('-')
+            iupred_parts[1].append((int(lower_bound), int(upper_bound), 'globular'))
+
+    for pos, residue in enumerate(seq):
+        iupred_parts[2][pos+1] = iupred2_result[0][pos]
 
     return iupred_parts
 
@@ -959,12 +969,12 @@ def autoTemplateSelection(config, proteins):
                     continue
                 if resolution > option_res_thresh:
                     continue
-                oligo = raw_structure_map[u_ac][(pdb_id, chain)]['Oligo']
+                oligo = raw_structure_map[u_ac][(pdb_id, chain)][2]
                 struct_anno = sdsc.StructureAnnotation(u_ac, pdb_id, chain)
                 proteins.add_annotation(u_ac, pdb_id, chain, struct_anno)
 
                 if not (pdb_id, chain) in structure_list:
-                    struct = sdsc.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac])
+                    struct = sdsc.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac], seq_len = raw_structure_map[u_ac][(pdb_id, chain)][4])
                     proteins.add_structure(pdb_id, chain, struct)
                 else:
                     proteins.add_mapping_to_structure(pdb_id, chain, u_ac)
@@ -992,8 +1002,80 @@ def filter_structures(chunk, filtering_dump):
 
     return outs
 
-# @profile
+def package_alignment_processes(prots_todo, cost_map, optimal_chunk_cost, proteins, protein_packages, alignment_results, started_processes, chunk, chunk_cost, config, mapping_dump):
+    done = []
+    package_cost = None
+    for prot_id in prots_todo:
+        package_cost = cost_map[prot_id]
+        if package_cost > optimal_chunk_cost:  #packages that are greater than the optimal_chunk_cost get split
+            structure_infos_split_a = []
+            structure_infos_split_b = []
+            seq = proteins.get_sequence(prot_id)
+            (prot_specific_mapping_dump, structure_infos) = protein_packages[prot_id]
+            split_cost = 0
+            for structure_info in structure_infos:
+                pdb_id, chain, oligo = structure_info
+                str_len = proteins.structures[(pdb_id, chain)].get_seq_len()
+                if str_len is not None:
+                    cost = len(seq)*str_len
+                else:
+                    cost = (len(seq))**2
+                if split_cost < optimal_chunk_cost:
+                    structure_infos_split_a.append(structure_info)
+                    split_cost += cost
+                else:
+                    structure_infos_split_b.append(structure_info)
 
+            if config.verbosity >= 3:
+                print('Splitting protein alignment:', prot_id, 'split_cost:', split_cost)
+
+            alignment_results.append(align.remote(mapping_dump, [(prot_specific_mapping_dump, structure_infos_split_a)]))
+
+            if config.verbosity >= 3:
+                print('A, Start alignment package with cost:', split_cost)
+
+            started_processes += 1
+            if len(structure_infos_split_b) > 0:
+                protein_packages[prot_id] = (prot_specific_mapping_dump, structure_infos_split_b)
+                cost_map[prot_id] = package_cost - split_cost
+            else:
+                done.append(prot_id)
+        elif chunk_cost + package_cost <= optimal_chunk_cost:
+            chunk.append(protein_packages[prot_id])
+            done.append(prot_id)
+            chunk_cost += package_cost
+            if chunk_cost >= optimal_chunk_cost:
+                alignment_results.append(align.remote(mapping_dump, chunk))
+                if config.verbosity >= 3:
+                    print('B, Start alignment package with cost:', chunk_cost)
+                chunk = []
+                chunk_cost = 0
+                started_processes += 1
+        
+        if started_processes >= config.proc_n:
+            break
+
+    if (len(chunk) > 0) and len(prots_todo) == 0:
+        alignment_results.append(align.remote(mapping_dump, chunk))
+        if config.verbosity >= 3:
+            print('C, Start alignment package with cost:', chunk_cost)
+        chunk = []
+        chunk_cost = 0
+        started_processes += 1
+
+    if (len(chunk) > 0) and package_cost is not None:
+        if (chunk_cost + package_cost > optimal_chunk_cost)  and (started_processes < config.proc_n): 
+            alignment_results.append(align.remote(mapping_dump, chunk))
+            if config.verbosity >= 3:
+                print('D, Start alignment package with cost:', chunk_cost)
+            chunk = []
+            chunk_cost = 0
+            started_processes += 1
+        
+    for prot_id in done:
+        prots_todo.remove(prot_id)
+
+    return alignment_results, started_processes, protein_packages, cost_map, chunk, chunk_cost, prots_todo
 
 def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_analysis_follow_up=False, get_all_alignments=False):
     indel_analysis_follow_up = indel_analysis_follow_up or get_all_alignments
@@ -1027,9 +1109,9 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
         annotation_list = proteins.get_protein_annotation_list(prot_id)
 
         for (pdb_id, chain) in annotation_list:
-            if prot_id not in proteins.indels:
-                if not proteins.is_annotation_stored(pdb_id, chain, prot_id) and not get_all_alignments:
-                    continue
+            if not proteins.is_annotation_stored(pdb_id, chain, prot_id):
+                continue
+
             structure_id = proteins.get_structure_db_id(pdb_id, chain)
             if indel_analysis_follow_up:
                 get_alignment_out = proteins.get_alignment(prot_id, pdb_id, chain)
@@ -1067,23 +1149,28 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     protein_packages = {}
 
     for prot_id in prot_ids:
-        cost_map[prot_id] = 0
+        
         annotation_list = proteins.get_protein_annotation_list(prot_id)
         seq = proteins.get_sequence(prot_id)
         aaclist = proteins.getAACList(prot_id)
-        prot_specific_mapping_dump = ray.put((prot_id, seq, aaclist))
         structure_infos = []
         for (pdb_id, chain) in annotation_list:
             if proteins.is_annotation_stored(pdb_id, chain, prot_id):
                 continue
-            cost_map[prot_id] += (len(seq))**2
+            if prot_id not in cost_map:
+                cost_map[prot_id] = 0
+            str_len = proteins.structures[(pdb_id, chain)].get_seq_len()
+            if str_len is not None:
+                cost_map[prot_id] += len(seq)*str_len
+            else:
+                cost_map[prot_id] += (len(seq))**2
             oligo = proteins.get_oligo(pdb_id, chain)
             structure_infos.append((pdb_id, chain, oligo))
 
-        if cost_map[prot_id] == 0:
-            print('Warning: alignment cost zero for', prot_id)
+        if prot_id not in cost_map:
             continue
 
+        prot_specific_mapping_dump = ray.put((prot_id, seq, aaclist))
         protein_packages[prot_id] = (prot_specific_mapping_dump, structure_infos)
 
         total_cost += cost_map[prot_id]
@@ -1102,46 +1189,7 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     started_processes = 0
 
     while started_processes < config.proc_n and len(prots_todo) > 0:
-        done = []
-        for prot_id in prots_todo:
-            package_cost = cost_map[prot_id]
-            if package_cost >= optimal_chunk_cost:  #packages that are greater than the optimal_chunk_cost get split
-                structure_infos_split_a = []
-                structure_infos_split_b = []
-                cost_unit = (len(proteins.get_sequence(prot_id)))**2
-                (prot_specific_mapping_dump, structure_infos) = protein_packages[prot_id]
-                split_cost = 0
-                for structure_info in structure_infos:
-                    if split_cost < optimal_chunk_cost:
-                        structure_infos_split_a.append(structure_info)
-                        split_cost += cost_unit
-                    else:
-                        structure_infos_split_b.append(structure_info)
-
-                if config.verbosity >= 3:
-                    print('Splitting protein alignment:', prot_id, 'split_cost:', split_cost)
-
-                alignment_results.append(align.remote(mapping_dump, [(prot_specific_mapping_dump, structure_infos_split_a)]))
-                started_processes += 1
-                if len(structure_infos_split_b) > 0:
-                    protein_packages[prot_id] = (prot_specific_mapping_dump, structure_infos_split_b)
-                    cost_map[prot_id] = package_cost - split_cost
-                else:
-                    done.append(prot_id)
-            elif chunk_cost + package_cost <= optimal_chunk_cost:
-                chunk.append(protein_packages[prot_id])
-                done.append(prot_id)
-                chunk_cost += package_cost
-                if chunk_cost >= optimal_chunk_cost:
-                    alignment_results.append(align.remote(mapping_dump, chunk))
-                    chunk = []
-                    chunk_cost = 0
-                    started_processes += 1
-            if started_processes >= config.proc_n:
-                break
-
-        for prot_id in done:
-            prots_todo.remove(prot_id)
+        alignment_results, started_processes, protein_packages, cost_map, chunk, chunk_cost, prots_todo = package_alignment_processes(prots_todo, cost_map, optimal_chunk_cost, proteins, protein_packages, alignment_results, started_processes, chunk, chunk_cost, config, mapping_dump)
 
     if config.verbosity >= 2:
         t4 = time.time()
@@ -1155,6 +1203,16 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     safe_complexes = set()
     safe_structures = set()
     database_structure_list = None
+
+    package_runtimes = []
+    max_runtime = 0
+    min_runtime = sys.maxsize
+    max_runtime_package = None
+    min_runtime_package = []
+    record_package = False
+    record_min_package = False
+    if config.verbosity >= 3:
+        record_min_package = True
 
     while True:
 
@@ -1186,6 +1244,15 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
                 print('Times for get:', (t_get_1 - t_get_0))
 
             for out_chunks in align_outs:
+
+                out_chunks, package_runtime = out_chunks
+                if config.verbosity >= 3:
+                    package_runtimes.append(package_runtime)
+                    if package_runtime > max_runtime:
+                        max_runtime = package_runtime
+                        record_package = True
+                        max_runtime_package = []
+
                 for out in out_chunks:
                     t_i_0 += time.time()
                     if len(out) == 3:
@@ -1222,6 +1289,12 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
 
                     (prot_id, pdb_id, chain, alignment, seq_id, coverage, interaction_partners, chain_type_map,
                      oligo, sub_infos, atom_count, last_residue, first_residue, chainlist, rare_residues) = out
+
+                    if record_package:
+                        max_runtime_package.append((prot_id, pdb_id, chain, seq_id, coverage, len(alignment)))
+
+                    if record_min_package:
+                        min_runtime_package.append((prot_id, pdb_id, chain, seq_id, coverage, len(alignment)))
 
                     proteins.set_coverage(prot_id, pdb_id, chain, coverage)
                     proteins.set_sequence_id(prot_id, pdb_id, chain, seq_id)
@@ -1264,70 +1337,17 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
 
                 started_processes -= 1
 
+                record_package = False
+
             if config.verbosity >= 3:
                 print('Times for data integration:', (t_i_1 - t_i_0), (t_i_3 - t_i_2), (t_i_4 - t_i_3), (t_i_5 - t_i_4), (t_i_6 - t_i_5), (t_i_7 - t_i_6), (t_i_8 - t_i_7), (t_i_9 - t_i_8))
 
         t_new_0 = time.time()
 
         new_alignment_results = []
-        if len(prots_todo) > 0:
-            done = []
-            new_alignment_results = []
-            for prot_id in prots_todo:
-                package_cost = cost_map[prot_id]
-
-                if package_cost >= optimal_chunk_cost:  #packages that are greater than the optimal_chunk_cost get split
-                    structure_infos_split_a = []
-                    structure_infos_split_b = []
-                    cost_unit = (len(proteins.get_sequence(prot_id)))**2
-                    (prot_specific_mapping_dump, structure_infos) = protein_packages[prot_id]
-                    split_cost = 0
-                    for structure_info in structure_infos:
-                        if split_cost < optimal_chunk_cost:
-                            structure_infos_split_a.append(structure_info)
-                            split_cost += cost_unit
-                        else:
-                            structure_infos_split_b.append(structure_info)
-
-                    if config.verbosity >= 3:
-                        print('Splitting protein alignment:', prot_id, 'split_cost:', split_cost)
-
-
-                    new_alignment_results.append(align.remote(mapping_dump, [(prot_specific_mapping_dump, structure_infos_split_a)]))
-                    started_processes += 1
-                    if len(structure_infos_split_b) > 0:
-                        protein_packages[prot_id] = (prot_specific_mapping_dump, structure_infos_split_b)
-                        cost_map[prot_id] = package_cost - split_cost
-                    else:
-                        done.append(prot_id)
-
-                else:
-                    overload = min([optimal_chunk_cost - chunk_cost, optimal_chunk_cost//2])
-                    if chunk_cost + package_cost <= optimal_chunk_cost + overload: #chunks may have greater costs than optimal_chunk_cost
-                        chunk.append(protein_packages[prot_id])
-                        done.append(prot_id)
-                        chunk_cost += package_cost
-                        if chunk_cost >= optimal_chunk_cost:
-                            new_alignment_results.append(align.remote(mapping_dump, chunk))
-                            chunk = []
-                            chunk_cost = 0
-                            started_processes += 1
-                        
-                if started_processes >= config.proc_n:
-                    break
-
-            for prot_id in done:
-                prots_todo.remove(prot_id)
-
-            if len(chunk) > 0 and started_processes < config.proc_n:
-                new_alignment_results.append(align.remote(mapping_dump, chunk))
-                chunk = []
-                chunk_cost = 0
-                started_processes += 1
-            if len(prots_todo) > 0 and started_processes < config.proc_n:
-                prot_id = prots_todo.pop()
-                new_alignment_results.append(align.remote(mapping_dump, [protein_packages[prot_id]]))
-                started_processes += 1
+        if len(prots_todo) > 0 or len(chunk) > 0:
+            new_alignment_results, started_processes, protein_packages, cost_map, chunk, chunk_cost, prots_todo = package_alignment_processes(prots_todo, cost_map, optimal_chunk_cost, proteins, protein_packages, new_alignment_results, started_processes, chunk, chunk_cost, config, mapping_dump)
+            
 
         alignment_results = new_alignment_results + not_ready
 
@@ -1341,6 +1361,23 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
                 print('\nWarning: left alignment loop while stuff was still to do', started_processes, prots_todo,'\n')
             break
 
+
+    if config.verbosity >= 3:
+        print('Maximal package runtime:', max(package_runtimes))
+        print('Minimal package runtime:', min(package_runtimes))
+        if len(package_runtimes) > 0:
+            print('Packages mean runtime:',  statistics.mean(package_runtimes))
+            print('Packages runtime deviation:', statistics.stdev(package_runtimes))
+        print('Max runtime package length:', len(max_runtime_package))
+        if len(max_runtime_package) > 0:
+            print('Max runtime package avg seq_id:', statistics.mean([x[3] for x in max_runtime_package]))
+            print('Max runtime package avg coverage:', statistics.mean([x[4] for x in max_runtime_package]))
+            print('Max runtime package total alignment length:', sum([x[5] for x in max_runtime_package]))
+        print('All packages length:', len(min_runtime_package))
+        if len(min_runtime_package) > 0:
+            print('All packages avg seq_id:', statistics.mean([x[3] for x in min_runtime_package]))
+            print('All packages avg coverage:', statistics.mean([x[4] for x in min_runtime_package]))
+            print('All packages total alignment length:', sum([x[5] for x in min_runtime_package]))
 
     if config.verbosity >= 2:
         t5 = time.time()
@@ -1408,6 +1445,8 @@ def paraMap(mapping_dump, u_ac, pdb_id, chain, structure_id, target_seq, templat
 def align(align_dump, package, model_path=None):
     ray_hack()
 
+    t0 = time.time()
+
     config = align_dump
 
     results = []
@@ -1452,7 +1491,11 @@ def align(align_dump, package, model_path=None):
                 g = traceback.format_exc()
                 results.append((u_ac, pdb_id, chain, '%s,%s\n%s\n%s\n%s' % (pdb_id, chain, e, str(f), g)))
 
-    return results
+    t1 = time.time()
+
+    runtime = t1-t0
+
+    return (results, runtime)
 
 
 @ray.remote(max_calls = 1)
@@ -1640,7 +1683,7 @@ def pack_packages(package_size, package, send_packages, classification_results, 
     if config.verbosity >= 3:
         print('Call of pack_packages with:', package_size, len(package), send_packages)
         print('Current CPU load:', psutil.cpu_percent())
-
+    if config.verbosity >= 4:
         if len(size_sorted) == 0:
             print('##############\n#############\ncalled pack packages with empty task\n##############\n#############')
 
@@ -2133,6 +2176,8 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
 
 
     if not indel_analysis_follow_up:
+        if config.verbosity >= 2:
+            print('Proteins object semi deconstruction')
         for u_ac in u_acs:
             proteins.remove_protein_annotations(u_ac)
         proteins.semi_deconstruct()

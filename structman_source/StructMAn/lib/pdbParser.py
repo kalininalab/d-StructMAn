@@ -529,6 +529,7 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
     #    return standardParseMMCIF(pdb_id,pdb_path,obsolete_check=False)
 
     chain_ids = set()
+    rare_residues = set()
     newlines = []
 
     fixed_10k_bug = False
@@ -545,6 +546,13 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
         if record_name == b'ENDMDL':
             newlines.append(line)
             break
+        elif record_name == b'SEQRES':
+            for tlc in line[19:].split():
+                tlc = tlc.strip().decode('ascii')
+                if len(tlc) != 3:
+                    continue
+                if tlc not in sdsc.THREE_TO_ONE:
+                    rare_residues.add(tlc)
         elif record_name == b'SSBOND':
             newlines.append(line)
             continue
@@ -575,7 +583,7 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
             res_nr = line[22:27].strip().decode('ascii')
 
             if record_name == b'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name) and (len(res_name) == 3):
+                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name) and (len(res_name) == 3) and (res_name not in rare_residues):
                     continue
 
             if chain_id not in chain_ids:
@@ -615,6 +623,7 @@ def relocate_hetatm(page, filter_chains=None, filter_het=None):
     chain_order = []
     removed_ligands = {}
     no_double_remove = {}
+    rare_residues = set()
     for line in page.split('\n'):
         if len(line) >= 27:
             record_name = line[0:6].strip()
@@ -623,6 +632,13 @@ def relocate_hetatm(page, filter_chains=None, filter_het=None):
 
         if record_name == 'ENDMDL':
             break
+        elif record_name == 'SEQRES':
+            for tlc in line[19:].split():
+                tlc = tlc.strip()
+                if len(tlc) != 3:
+                    continue
+                if tlc not in sdsc.THREE_TO_ONE:
+                    rare_residues.add(tlc)
 
         elif record_name == 'ATOM' or record_name == 'HETATM':
             chain_id = line[21:22]
@@ -646,6 +662,11 @@ def relocate_hetatm(page, filter_chains=None, filter_het=None):
             #atom = line[77]
             # if atom == 'H':
             #    continue
+            res_name = line[17:20].strip()
+
+            if record_name == 'HETATM':
+                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name) and (res_name not in rare_residues):
+                    continue
 
             if chain_id not in chain_lines:
                 chain_lines[chain_id] = []

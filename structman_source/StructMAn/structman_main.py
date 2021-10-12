@@ -73,9 +73,10 @@ class Config:
         self.error_annotations_into_db = cfg.getboolean('error_annotations_into_db', fallback=True)
         self.anno_session_mapping = cfg.getboolean('anno_session_mapping', fallback=True)
         self.calculate_interaction_profiles = cfg.getboolean('calculate_interaction_profiles', fallback=True)
+        self.model_indel_structures = cfg.getboolean('model_indel_structures', fallback=False)
 
         self.verbose = cfg.getboolean('verbose', fallback=False)
-        self.verbosity = cfg.getint('verbosity', fallback=0)
+        self.verbosity = cfg.getint('verbosity', fallback=1)
 
         self.profiling = profiling
         self.skipref = cfg.getboolean('skipref', fallback=False)
@@ -129,6 +130,7 @@ class Config:
         self.dssp_path = cfg.get('dssp_path', fallback='')
         self.rin_db_path = cfg.get('rin_db_path', fallback='')
         self.iupred_path = cfg.get('iupred_path', fallback='')
+
         self.errorlog_path = cfg.get('errorlog_path', fallback=None)
 
         self.go = cfg.getboolean('do_goterm', fallback=False)
@@ -154,6 +156,7 @@ class Config:
         self.pdb_sync_script = cfg.get('pdb_sync_script', fallback=structman.settings.PDB_SYNC_SCRIPT)
 
         self.database_source_path = cfg.get('database_source_path', fallback=structman.settings.STRUCTMAN_DB_SQL)
+        self.mapping_db_source_path = cfg.get('mapping_db_source_path', fallback=structman.settings.UNIPROT_DB_SQL)
 
         self.base_path = cfg.get('base_path', fallback='')
 
@@ -310,8 +313,18 @@ class Config:
             cursor.execute("SHOW VARIABLES WHERE variable_name = 'max_allowed_packet'")
             self.max_package_size = int(cursor.fetchone()[1]) * 100 // 99
             db.close()
+            self.main_db_is_set = True
         else:
             self.max_package_size = None
+            self.main_db_is_set = False
+
+        # Check for mapping DB instance
+        try:
+            db, cursor = self.getDB(mapping_db = True)
+            db.close()
+            self.mapping_db_is_set = True
+        except:
+            self.mapping_db_is_set = False
 
     def getDB(self, server_connection=False, mapping_db=False):
         if server_connection:
@@ -449,17 +462,41 @@ def structman_cli():
         'structman.py database    gives you more info about the database utility functions\n',
         'structman.py config      gives you more info about the config utility functions\n',
         'structman.py update      gives you more info about the different update options\n\n\n',
-        '##### Optional parameter: #####\n\n',
-        '<-n threads> :           Number of cores to be used\n\n',
-        '<-o output_folder> :     Path to the output folder\n\n',
-        '<-c config_file> :       Path to the configuration file\n\n',
-        '<-d> :                   database mode\n\n',
-        '<-l> :                   lite-mode\n\n',
-        '<--verbosity> [1-4]:     verbose output\n\n',
-        '<--printerrors> :        prints error messages in the console instead of logging them. Warning messages still go into the log.\n\n',
-        '<--printwarnings> :      prints error and warning messages in the console instead of logging them.\n\n',
-        '<--restartlog> :         wipes the log before starting the session.\n\n',
-        '<--norin>                disable all RIN-based calculation'])
+        '| Optional parameter  | Default value           | Description                               |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <-n threads>        | All available -1        | Number of cores to be used                |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <-o output_folder>  | standard installation:  | Path to the output folder                 |\n',
+        '|                     | Output/infilename/      |                                           |\n',
+        '|                     | container installation: |                                           |\n',
+        '|                     | structman/results/      |                                           |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <-c config_file>    | standard installation:  | Path to the configuration file            |\n',
+        '|                     | config.txt              |                                           |\n',
+        '|                     | container installation: | create custom config.txt inside mounted   |\n',
+        '|                     | not mounted             | folder, or use <structman config>         |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <-l>                | False                   | lite mode (deactivates the database)      |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <--verbosity> [0-5] | 1                       | verbosity of command line messages        |\n',
+        '|                     |                         | 0: silence; 1: minimal progress reports   |\n',
+        '|                     |                         | 2: more detailed progress reports         |\n',
+        '|                     |                         | 3: details for debugging, 4: more details |\n',
+        '|                     |                         | 5: too much details                       |\n',
+        '|                     |                         | pipe output to a file for verbosity >= 3  |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <--printerrors>     | False                   | prints error messages in the console      |\n',
+        '|                     |                         | instead of logging them. Warning messages |\n',
+        '|                     |                         | still go into the log                     |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <--printwarnings>   | False                   | prints error and warning messages in      |\n',
+        '|                     |                         | the console instead of logging them       |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <--restartlog>      | False                   | wipes the log before starting the session |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n',
+        '| <--norin>           | False                   | disable all RIN-based calculation         |\n',
+        '|---------------------|-------------------------|-------------------------------------------|\n'
+    ])
 
     argv = sys.argv[1:]
 
@@ -473,8 +510,8 @@ def structman_cli():
         'reset :\n  deletes all content of the database\n\n',
         'clear :\n  deletes all content of the database, but keeps the results of all stored structures\n\n',
         'export <-p path_to_a_folder> :\n  exports the database to a .sql.gz format file\n\n',
-        'destroy :\n  completely removes the database\n\n',
-        'create <-i sql_file> <--dbname name_of_database> :\n  creates an instance of the database'
+        'destroy :\n  completely removes the database (database name is taken from config file)\n\n',
+        'create  :\n  creates an instance of the database (database name is taken from config file)'
     ])
 
     database_util = False
@@ -501,17 +538,31 @@ def structman_cli():
         'Only needs the path to the local instance of the PDB (-p), if it is not already specified in the config file.\n\n'
         '#### Commands: ####\n\n',
 
-        'pdb :       uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n'
-        '            If the given path to the local PDB is empty, a large portion of the PDB will be downloaded, be sure that there is enought disk space available.\n\n',
+        'pdb                       uses rsync to update all files of the local PDB that could potentially used by StructMAn.\n',
+        '                          If the given path to the local PDB is empty, a large portion of the PDB will be downloaded,\n',
+        '                          be sure that there is enought disk space available.\n\n',
 
-        'rindb :     calculates and stores the RIN for each PDB structure in the local PDB.\n',
-        '            When called for the first time, this can take multiple hours to complete. Also requires a large amount of disk space.'
+        'rindb                     calculates and stores the RIN for each PDB structure in the local PDB.\n',
+        '                          When called for the first time, this can take multiple hours to complete.\n',
+        '                          Also requires a large amount of disk space.\n\n',
+
+        'rindb_from_scratch        same as rindb, but overwrites all RINs currently in the RINdb.\n\n',
+
+        'mapping_db                downloads protein identifier mapping information and sequences from UNIPROT.\n',
+        '                          Builds a SQL database and removes the downloaded files again.\n',
+        '                          Requires a configured SQL database server connection.\n',
+        '                          Requires around 100Gb of temporal disk space and 20Gb of space on the SQL server.\n\n',
+
+        'mapping_db_from_scratch   same as mapping_db but removes an existing instance of the mapping DB.\n'
     ])
 
     update_util = False
     update_pdb = False
     update_rindb = False
     update_rindb_from_scratch = False
+    update_mapping_db = False
+    update_mapping_db_from_scratch = False
+
     if len(argv) > 0:
         if argv[0] == 'update':
             update_util = True
@@ -527,7 +578,12 @@ def structman_cli():
             if 'rindb_from_scratch' in argv:
                 update_rindb = True
                 update_rindb_from_scratch = True
-            if not (update_pdb or update_rindb):
+            if 'mapping_db' in argv:
+                update_mapping_db = True
+            if 'mapping_db_from_scratch' in argv:
+                update_mapping_db = True
+                update_mapping_db_from_scratch = True
+            if not (update_pdb or update_rindb or update_mapping_db):
                 print(update_util_disclaimer)
                 sys.exit(1)
 
@@ -536,7 +592,7 @@ def structman_cli():
         'The config commands enable the expansion of StructMAn by giving it access to additional functionalities, which are too large to be included by default or require an external license.\n\n',
         '#### Commands: ####\n\n',
         'set_local_pdb_path <path_to_local_pdb> :               enables the usage of a local instance of the PDB. If this is not available, StructMAn has to download all structural information from the web.\n\n',
-        'set_local_iupred_path <path_to_iupred_executable> :    enables StructMAn to use the predicted disordered regions performed by iupred2a.\n\n',
+        'set_local_iupred_path <path_to_iupred_executable> :    enables StructMAn to use the predicted disordered regions performed by iupred3.\n\n',
         '<any config variable name> <any value> :               modifies any variable in the config file. Warning: does not check if given input makes sense.',
     ])
 
@@ -640,7 +696,8 @@ def structman_cli():
         long_paras = [
             'help', 'profile', 'skipref', 'rlimit=', 'verbosity=',
             'printerrors', 'printwarnings', 'chunksize=', 'norin',
-            'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit='
+            'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit=',
+            'model_indel_structures'
         ]
         opts, args = getopt.getopt(argv, "c:i:n:o:h:lvdp:", long_paras)
 
@@ -665,6 +722,7 @@ def structman_cli():
     only_snvs = False
     skip_indel_analysis = False
     only_wt = False
+    model_indel_structures = None
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -706,7 +764,6 @@ def structman_cli():
             rlimit = arg
         if opt == '--verbosity':
             verbosity = int(arg)
-            vebose_flag = True
 
         if opt == '--skipref':
             skipref = True
@@ -741,6 +798,9 @@ def structman_cli():
         
         if opt == '--mem_limit':
             mem_limit = float(arg)
+
+        if opt == '--model_indel_structures':
+            model_indel_structures = True
 
     if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
@@ -808,6 +868,8 @@ def structman_cli():
     config.only_snvs = only_snvs
     config.skip_indel_analysis = skip_indel_analysis
     config.only_wt = only_wt
+    if model_indel_structures is not None:
+        config.model_indel_structures = model_indel_structures
 
     if mem_limit is not None:
         mem = virtual_memory()
@@ -925,7 +987,7 @@ def structman_cli():
             f = open(config_path, 'w')
             config.config_parser_obj.write(f)
             f.close()
-        update.main(config, skipUpdatePDB=not update_pdb, skip_rindb=not update_rindb, rin_fromScratch=update_rindb_from_scratch)
+        update.main(config, skipUpdatePDB=not update_pdb, skip_rindb=not update_rindb, rin_fromScratch=update_rindb_from_scratch, update_mapping_db = update_mapping_db, mapping_db_from_scratch = update_mapping_db_from_scratch)
 
     elif configure_mode:
         if conf_update_pdb_path is not None:

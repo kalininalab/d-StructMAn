@@ -13,7 +13,7 @@ SCRIPTS_DIR = Path(scripts.__file__).parent.absolute()
 
 RINERATOR_PATH = f'{RINERATOR_DIR}/get_chains.py'
 
-UNIPROT_DB_SQL = f'{SCRIPTS_DIR}/struct_man_db_uniprot.sql.gz'
+UNIPROT_DB_SQL = f'{SCRIPTS_DIR}/struct_man_db_uniprot.sql'
 STRUCTMAN_DB_SQL = f'{SCRIPTS_DIR}/database_structure.sql'
 REDUCE_HET_DICT = f'{RINERATOR_DIR}/reduce_wwPDB_het_dict.txt'
 PDB_SYNC_SCRIPT = f'{SCRIPTS_DIR}/pdb-rsync.sh'

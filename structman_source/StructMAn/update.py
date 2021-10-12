@@ -8,11 +8,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__))))))
 import structman
 
-from structman.scripts import createPdbBaDb
+from structman.scripts import createPdbBaDb, updateMappingDB
 
 
-def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False):
-    forceCentrality = False
+def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, update_mapping_db = False, mapping_db_from_scratch = False):
     mmseqs_fromScratch = False
     skipStructureDBs = False
 
@@ -57,47 +56,51 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False):
             print('Update PDB done')
         if not skip_rindb:
             # update rin db
-            recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, forceCentrality=forceCentrality, update_days=30., pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path)
+            recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path)
 
-        print('Update RIN db done')
+            print('Update RIN db done')
 
-    print('Recently modified structures: ', len(recently_modified_structures), recently_modified_structures)
+            if recently_modified_structures is not None:
+                print('Recently modified structures: ', len(recently_modified_structures), recently_modified_structures)
 
-    pdb_fasta_name = 'pdbba_mmseqs2'
-    config.pdb_fasta_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
+    if not skipUpdatePDB:
+        pdb_fasta_name = 'pdbba_mmseqs2'
+        config.pdb_fasta_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
 
-    # update pdbba for mmseqs2
-    createPdbBaDb.main(config)
+        # update pdbba for mmseqs2
+        createPdbBaDb.main(config)
 
-    print("Update search database fasta for MMseqs2 done")
+        print("Update search database fasta for MMseqs2 done")
 
-    '''
-    #rerun makeblastdb
-    p = subprocess.Popen(['makeblastdb','-in','pdbba','-dbtype','prot'],cwd=search_db_base_path)
-    p.wait()
+        '''
+        #rerun makeblastdb
+        p = subprocess.Popen(['makeblastdb','-in','pdbba','-dbtype','prot'],cwd=search_db_base_path)
+        p.wait()
 
-    print("Search database for blast created!")
-    '''
+        print("Search database for blast created!")
+        '''
 
-    # rerun mmseqs2 createdb
-    p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=search_db_base_path)
-    p.wait()
+        # rerun mmseqs2 createdb
+        p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=search_db_base_path)
+        p.wait()
 
-    p = subprocess.Popen(['rm', '-R', mmseqs2_tmp], cwd=search_db_base_path)
-    p.wait()
+        p = subprocess.Popen(['rm', '-R', mmseqs2_tmp], cwd=search_db_base_path)
+        p.wait()
 
-    if not os.path.isdir(mmseqs2_tmp):
-        os.mkdir(mmseqs2_tmp)
+        if not os.path.isdir(mmseqs2_tmp):
+            os.mkdir(mmseqs2_tmp)
 
-    p = subprocess.Popen(['chmod', '777', '-R', mmseqs2_tmp], cwd=search_db_base_path)
-    p.wait()
+        p = subprocess.Popen(['chmod', '777', '-R', mmseqs2_tmp], cwd=search_db_base_path)
+        p.wait()
 
-    p = subprocess.Popen(['mmseqs', 'createindex', 'pdbba_search_db_mmseqs2', mmseqs2_tmp, '-s', '7.5'], cwd=search_db_base_path)
-    p.wait()
+        p = subprocess.Popen(['mmseqs', 'createindex', 'pdbba_search_db_mmseqs2', mmseqs2_tmp, '-s', '7.5'], cwd=search_db_base_path)
+        p.wait()
 
-    print("Search database for MMseqs2 created!")
+        print("Search database for MMseqs2 created!")
 
-    # update the mapping database, TODO
+    # update the mapping database
+    if update_mapping_db:
+        updateMappingDB.main(config, fromScratch = mapping_db_from_scratch)
 
     # update the human proteome mmseqs db, TODO if we want a simple mutation-calling for fasta inputs.
 

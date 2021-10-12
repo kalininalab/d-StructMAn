@@ -34,7 +34,7 @@ CREATE TABLE `Alignment` (
   `Structure` int(11) UNSIGNED NOT NULL,
   `Sequence_Identity` float DEFAULT NULL,
   `Coverage` float DEFAULT NULL,
-  `Alignment` mediumtext
+  `Alignment` varbinary(4096) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -97,7 +97,7 @@ CREATE TABLE `Indel` (
   `Wildtype_Protein` int(10) UNSIGNED NOT NULL,
   `Mutant_Protein` int(10) UNSIGNED NOT NULL,
   `Indel_Notation` text COLLATE utf8_unicode_ci NOT NULL,
-  `Delta_Delta_Classification` int(6) DEFAULT NULL
+  `Analysis_Results` varbinary(8000) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 -- --------------------------------------------------------
@@ -121,52 +121,14 @@ CREATE TABLE `Ligand` (
 
 CREATE TABLE `Position` (
   `Position_Id` int(11) NOT NULL,
-  `Amino_Acid_Change` varchar(60) DEFAULT NULL,
+  `Position_Number` int(7) DEFAULT NULL,
   `Residue_Id` varchar(8) DEFAULT NULL,
+  `Wildtype_Residue` char(1) DEFAULT NULL,
   `Protein` int(10) UNSIGNED DEFAULT NULL,
   `IUPRED` float DEFAULT NULL,
   `IUPRED_Glob` varchar(16) DEFAULT NULL,
-  `Location` varchar(8) DEFAULT NULL,
-  `Mainchain_Location` varchar(8) DEFAULT NULL,
-  `Sidechain_Location` varchar(8) DEFAULT NULL,
-  `Weighted_Surface_Access` float DEFAULT NULL,
-  `Weighted_Surface_Access_Main_Chain` float DEFAULT NULL,
-  `Weighted_Surface_Access_Side_Chain` float DEFAULT NULL,
-  `Class` varchar(128) DEFAULT NULL,
-  `RIN_Class` varchar(1024) DEFAULT NULL,
-  `Simple_Class` varchar(64) DEFAULT NULL,
-  `RIN_Simple_Class` varchar(64) DEFAULT NULL,
-  `Interactions` text,
-  `Confidence` float DEFAULT NULL,
-  `Secondary_Structure` varchar(8) DEFAULT NULL,
-  `Recommended_Structure` varchar(64) DEFAULT NULL,
-  `Max_Seq_Structure` varchar(64) DEFAULT NULL,
-  `Mapped_Structures` int(11) DEFAULT NULL,
-  `RIN_Profile` text,
-  `Modres_Score` float DEFAULT NULL,
-  `Modres_Propensity` float DEFAULT NULL,
-  `B_Factor` float DEFAULT NULL,
-  `Weighted_Centrality_Scores` tinytext,
-  `Weighted_Phi` float DEFAULT NULL,
-  `Weighted_Psi` float DEFAULT NULL,
-  `Intra_SSBOND_Propensity` float DEFAULT NULL,
-  `Inter_SSBOND_Propensity` float DEFAULT NULL,
-  `Intra_Link_Propensity` float DEFAULT NULL,
-  `Inter_Link_Propensity` float DEFAULT NULL,
-  `CIS_Conformation_Propensity` float DEFAULT NULL,
-  `CIS_Follower_Propensity` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Median_KD` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Dist_Weighted_KD` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Median_RSA` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Dist_Weighted_RSA` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Median_KD` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Dist_Weighted_KD` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Median_RSA` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Dist_Weighted_RSA` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Interactions_Median` float DEFAULT NULL,
-  `Weighted_Inter_Chain_Interactions_Dist_Weighted` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Interactions_Median` float DEFAULT NULL,
-  `Weighted_Intra_Chain_Interactions_Dist_Weighted` float DEFAULT NULL
+  `Recommended_Structure_Data` varbinary(512) DEFAULT NULL,
+  `Position_Data` varbinary(2048) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -216,41 +178,7 @@ CREATE TABLE `Pathway` (
 CREATE TABLE `Residue` (
   `Residue_Id` int(11) UNSIGNED NOT NULL,
   `Structure` int(11) UNSIGNED NOT NULL,
-  `Number` varchar(32) DEFAULT NULL,
-  `Amino_Acid` char(1) DEFAULT NULL,
-  `Sub_Lig_Dist` text,
-  `Sub_Chain_Distances` text,
-  `Relative_Surface_Access` float DEFAULT NULL,
-  `Relative_Surface_Access_Main_Chain` float DEFAULT NULL,
-  `Relative_Surface_Access_Side_Chain` float DEFAULT NULL,
-  `Homomer_Distances` text,
-  `Secondary_Structure_Assignment` char(1) DEFAULT NULL,
-  `Interaction_Profile` varchar(1024) DEFAULT NULL,
-  `Interacting_Chains` varchar(16) DEFAULT NULL,
-  `Interacting_Ligands` varchar(128) DEFAULT NULL,
-  `Centralities` varchar(256) DEFAULT NULL,
-  `B_Factor` float DEFAULT NULL,
-  `Modres` tinyint(1) DEFAULT NULL,
-  `PHI` float DEFAULT NULL,
-  `PSI` float DEFAULT NULL,
-  `Intra_SSBOND` tinyint(1) DEFAULT NULL,
-  `SSBOND_Length` float DEFAULT NULL,
-  `Intra_Link` tinyint(1) DEFAULT NULL,
-  `Link_Length` float DEFAULT NULL,
-  `CIS_Conformation` float DEFAULT NULL,
-  `CIS_Follower` float DEFAULT NULL,
-  `Inter_Chain_Median_KD` float DEFAULT NULL,
-  `Inter_Chain_Dist_Weighted_KD` float DEFAULT NULL,
-  `Inter_Chain_Median_RSA` float DEFAULT NULL,
-  `Inter_Chain_Dist_Weighted_RSA` float DEFAULT NULL,
-  `Intra_Chain_Median_KD` float DEFAULT NULL,
-  `Intra_Chain_Dist_Weighted_KD` float DEFAULT NULL,
-  `Intra_Chain_Median_RSA` float DEFAULT NULL,
-  `Intra_Chain_Dist_Weighted_RSA` float DEFAULT NULL,
-  `Inter_Chain_Interactions_Median` float DEFAULT NULL,
-  `Inter_Chain_Interactions_Dist_Weighted` float DEFAULT NULL,
-  `Intra_Chain_Interactions_Median` float DEFAULT NULL,
-  `Intra_Chain_Interactions_Dist_Weighted` float DEFAULT NULL
+  `Residue_Data` varbinary(1024) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------

@@ -3,9 +3,9 @@ from structman.lib.sdsc.utils import process_alignment_data
 
 
 class Structure:
-    __slots__ = ['pdb_id', 'chain', 'oligo', 'database_id', 'stored', 'mapped_proteins', 'residues', 'last_residue', 'first_residue', 'sequence']
+    __slots__ = ['pdb_id', 'chain', 'oligo', 'database_id', 'stored', 'mapped_proteins', 'residues', 'last_residue', 'first_residue', 'sequence', 'seq_len']
 
-    def __init__(self, pdb_id, chain, oligo=set(), mapped_proteins=[], database_id=None, last_residue=None, first_residue=None, sequence=None):
+    def __init__(self, pdb_id, chain, oligo=set(), mapped_proteins=[], database_id=None, last_residue=None, first_residue=None, sequence=None, seq_len = None):
         self.pdb_id = pdb_id
         self.chain = chain
         self.database_id = database_id
@@ -19,6 +19,7 @@ class Structure:
         self.last_residue = last_residue
         self.first_residue = first_residue
         self.sequence = sequence
+        self.seq_len = seq_len
 
     def parse_page(self, page, config):
         seq_res_map, seq, last_residue, first_residue = globalAlignment.createTemplateFasta(page, self.pdb_id, self.chain, config, seqAndMap=True, could_be_empty=True)
@@ -143,6 +144,15 @@ class Structure:
             seq_res_map, seq, last_residue, first_residue = globalAlignment.createTemplateFasta(template_page, self.pdb_id, self.chain, config, seqAndMap=True, for_modeller=for_modeller, could_be_empty=True, rare_residues=config.rare_residues)
             self.sequence = seq
         return self.sequence
+
+    def get_seq_len(self):
+        if self.seq_len is not None:
+            return self.seq_len
+        elif self.sequence is not None:
+            self.seq_len = len(self.sequence)
+            return self.seq_len
+        else:
+            return None
 
 
 class StructureAnnotation:

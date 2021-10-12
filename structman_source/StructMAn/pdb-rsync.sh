@@ -47,4 +47,4 @@ then
     chmod 2775 "${BASE_DIR}/data"
     chmod 2775 "${BASE_DIR}/data/status"
 fi
-rsync --info=progress2 --no-inc-recursive -rt -v -z --perms --no-g --chmod=D2775,F664 --delete --port=${PORT} ${SERVER}/data/status/obsolete.dat "${BASE_DIR}/data/status/obsolete.dat"
+rsync --info=progress2 --no-inc-recursive -rt -v -z --perms --no-g --chmod=D2775,F664 --delete --port=${PORT} ${SERVER}/data/status/ "${BASE_DIR}/data/status/"

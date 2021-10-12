@@ -7,16 +7,17 @@ from structman.lib.sdsc.position import Position
 
 
 class Protein:
-    __slots__ = ['primary_protein_id', 'u_ac', 'u_id', 'ref_ids', 'other_ids', 'pdb_id', 'positions', 'res_id_map',
+    __slots__ = ['primary_protein_id', 'u_ac', 'u_id', 'ref_id', 'ref_nt_id', 'other_ids', 'pdb_id', 'positions', 'res_id_map',
                  'sequence', 'nucleotide_sequence', 'stored', 'completely_stored', 'wildtype_protein',
                  'go_terms', 'pathways', 'disorder_regions', 'disorder_tool', 'database_id', 'structure_annotations', 'input_id', 'multi_mutations']
 
-    def __init__(self, errorlog, primary_protein_id=None, u_ac=None, u_id=None, ref_ids=set([]), wildtype_protein=None,
+    def __init__(self, errorlog, primary_protein_id=None, u_ac=None, u_id=None, ref_id=None, ref_nt_id = None, wildtype_protein=None,
                  pdb_id=None, positions={}, database_id=None, other_ids=[], input_id=None, sequence=None):
         self.primary_protein_id = primary_protein_id
         self.u_ac = u_ac  # UNIPROT accession number
         self.u_id = u_id  # UNIPROT ID
-        self.ref_ids = ref_ids.copy()  # RefSeq IDs
+        self.ref_id = ref_id  # RefSeq ID
+        self.ref_nt_id = ref_nt_id
         self.pdb_id = pdb_id
         self.input_id = input_id
         self.positions = {}
@@ -49,7 +50,6 @@ class Protein:
     def print_state(self):
         print('----State of %s----' % self.u_ac)
         print('Uniprot Id:', self.u_id)
-        print('RefSeq Ids:', self.ref_ids)
         for pos in self.positions:
             self.positions[pos].print_state()
 
@@ -217,17 +217,14 @@ class Protein:
     def is_stored(self):
         return self.stored
 
-    def add_ref_id(self, ref):
-        self.ref_ids.add(ref)
-
     def add_other_ids(self, id_id, other_id):
         self.other_ids[id_id] = other_id
 
     def get_u_ac(self):
         return self.u_ac
 
-    def get_ref_ids(self):
-        return self.ref_ids
+    def get_ref_id(self):
+        return self.ref_id
 
     def get_u_id(self):
         return self.u_id
@@ -249,7 +246,10 @@ class Protein:
     def get_disorder_scores(self):
         disorder_scores = {}
         for pos in self.positions:
-            disorder_scores[pos] = self.positions[pos].get_disorder_score()
+            pos_dis = self.positions[pos].get_disorder_score()
+            if pos_dis is None: #If the disordered regions annotation did not happen yet, then all scores of the positions are None, then return the whole dict as None 
+                return None
+            disorder_scores[pos] = pos_dis
         return disorder_scores
 
     def get_disorder_score(self, pos):
@@ -856,14 +856,11 @@ class Proteins:
     def pop_sequence(self, u_ac):
         return self.protein_map[u_ac].pop_sequence()
 
-    def add_ref_id(self, u_ac, ref):
-        self.protein_map[u_ac].add_ref_id(ref)
-
     def get_u_ac(self, prot_id):
         return self.protein_map[prot_id].get_u_ac()
 
-    def get_ref_ids(self, prot_id):
-        return self.protein_map[prot_id].get_ref_ids()
+    def get_ref_id(self, prot_id):
+        return self.protein_map[prot_id].get_ref_id()
 
     def get_u_id(self, prot_id):
         return self.protein_map[prot_id].get_u_id()

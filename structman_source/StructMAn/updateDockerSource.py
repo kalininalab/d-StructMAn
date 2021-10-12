@@ -49,10 +49,15 @@ if __name__ == "__main__":
     #    os.remove(database_target_file)
 
     shutil.copy(f'{settings.ROOT_DIR}/structman_main.py', structman_target_folder)
+    shutil.copy(f'{settings.ROOT_DIR}/settings.py', structman_target_folder)
+    shutil.copy(f'{settings.ROOT_DIR}/_version.py', structman_target_folder)
+    shutil.copy(f'{settings.ROOT_DIR}/__init__.py', structman_target_folder)
     shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
 
-    utils_lib_path = f'{settings.ROOT_DIR}/structman/utils'
+    utils_lib_path = f'{settings.ROOT_DIR}/utils'
     utils_target_path = f'{target_folder}/StructMAn/utils'
+    if not os.path.exists(utils_target_path):
+        os.mkdir(utils_target_path)
     for utils_file in os.listdir(utils_lib_path):
         source_path = f'{utils_lib_path}/{utils_file}'
         target_path = f'{utils_target_path}/{utils_file}'
@@ -75,6 +80,8 @@ if __name__ == "__main__":
     for lib_subfolder in lib_subfolders:
         subfolder_path = f'{settings.LIB_DIR}/{lib_subfolder}'
         target_subfolder_path = f'{lib_target_folder}/{lib_subfolder}'
+        if not os.path.exists(target_subfolder_path):
+            os.mkdir(target_subfolder_path)
         for sub_file in os.listdir(subfolder_path):
             source_path = f'{subfolder_path}/{sub_file}'
             target_path = f'{target_subfolder_path}/{sub_file}'
@@ -83,6 +90,8 @@ if __name__ == "__main__":
 
     consts_path = f'{settings.LIB_DIR}/sdsc/consts'
     target_consts_path = f'{lib_target_folder}/sdsc/consts'
+    if not os.path.exists(target_consts_path):
+        os.mkdir(target_consts_path)
     for const_file in os.listdir(consts_path):
         source_path = f'{consts_path}/{const_file}'
         target_path = f'{target_consts_path}/{const_file}'

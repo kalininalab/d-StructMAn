@@ -10,7 +10,7 @@ from Bio import Entrez
 import pymysql as MySQLdb
 
 from structman.lib import database, sdsc
-
+from structman.utils import unpack
 
 def is_connected():
     try:
@@ -85,7 +85,7 @@ def tag_update(tag_map, u_ac, new_entry):
             tag_map[u_ac][aac] = ','.join(tags)
     return tag_map
 
-
+# deactive, needs update
 def updateMappingDatabase(u_acs, db, config):
     cursor = db.cursor()
     ac_id_values = []
@@ -166,12 +166,9 @@ def u_ac_isoform_search(gene_sequence_map, stems, ref_stem_map, config):
 
 
 def integrate_protein(config, proteins, indels, primary_protein_id, input_id, prot_map, u_ac=None, u_id=None, ref=None, pdb_id = None, other_ids={}, is_pdb_input = False):
-    if ref is not None:
-        ref_ids = set([ref])
-    else:
-        ref_ids = set()
+
     if primary_protein_id not in proteins:
-        protein = sdsc.Protein(config.errorlog, primary_protein_id=primary_protein_id, u_ac=u_ac, u_id=u_id, ref_ids=ref_ids, positions=prot_map[input_id][0], input_id=input_id, pdb_id = pdb_id)
+        protein = sdsc.Protein(config.errorlog, primary_protein_id=primary_protein_id, u_ac=u_ac, u_id=u_id, ref_id=ref, positions=prot_map[input_id][0], input_id=input_id, pdb_id = pdb_id)
         proteins[primary_protein_id] = protein
     else:
         proteins[primary_protein_id].u_id = u_id
@@ -217,11 +214,6 @@ def indel_insert(config, proteins, indel_map, indels, ac):
 
 
 def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
-    if config.mapping_db is not None:
-        db, cursor = config.getDB(mapping_db=True)
-    else:
-        db = None
-        cursor = None
 
     proteins = {}
     indel_map = {}
@@ -231,14 +223,10 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
 
     # Step one: map everything to uniprot-ac
     if len(id_map) > 0:
-        if db is not None:
-            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Id IN ('%s')" % "','".join(list(id_map.keys()))
-            try:
-                cursor.execute(sql)
-                results = cursor.fetchall()
-                db.commit()
-            except:
-                config.errorlog.add_error("Database error in IdMapping")
+        if config.mapping_db_is_set:
+
+            results = database.select(config, ['Uniprot_Ac', 'Uniprot_Id'], 'UNIPROT', in_rows={'Uniprot_Id':id_map.keys()}, from_mapping_db = True)
+
             stored_ids = set()
             for row in results:
                 u_ac = row[0]
@@ -271,8 +259,8 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                 integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
     if len(np_map) > 0:
-        if db is not None:
-            results = database.select(config, ['Uniprot_Ac', 'Refseq'], 'AC_Refseq', in_rows={'Refseq': np_map.keys()}, from_mapping_db=True)
+        if config.mapping_db_is_set:
+            results = database.select(config, ['Uniprot_Ac', 'Refseq'], 'UNIPROT', in_rows={'Refseq': np_map.keys()}, from_mapping_db=True)
 
             ref_u_ac_map = {}  # different u_acs may have the same refseq, try to choose the right one, prefering u_acs containing '-'
             gene_id_snap = set(proteins.keys())  # snapshot of u_acs not originating from refseq-mapping
@@ -360,15 +348,10 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
             id_search.append(primary_protein_id)
 
     if len(id_search) > 0:
-        if db is not None:
+        if config.mapping_db_is_set:
             stored_u_acs = set()
-            sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(id_search)
-            try:
-                cursor.execute(sql)
-                results = cursor.fetchall()
-                db.commit()
-            except:
-                config.errorlog.add_error("Database error in IdMapping")
+
+            results = database.select(config, ['Uniprot_Ac', 'Uniprot_Id'], 'UNIPROT', in_rows={'Uniprot_Ac': id_search}, from_mapping_db=True)
 
             for row in results:
                 u_ac = row[0]
@@ -390,15 +373,9 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                         unstored_u_acs.append(u_ac)
 
             if len(unstored_u_acs) > 0:
-                updateMappingDatabase(unstored_u_acs, db, config)
+                # updateMappingDatabase(unstored_u_acs, db, config)
 
-                sql = "SELECT Uniprot_Ac,Uniprot_Id FROM AC_ID WHERE Uniprot_Ac IN ('%s')" % "','".join(unstored_u_acs)
-                try:
-                    cursor.execute(sql)
-                    results = cursor.fetchall()
-                    db.commit()
-                except:
-                    config.errorlog.add_error("Database error in IdMapping")
+                results = database.select(config, ['Uniprot_Ac', 'Uniprot_Id'], 'UNIPROT', in_rows={'Uniprot_Ac': unstored_u_acs}, from_mapping_db=True)
 
                 for row in results:
                     u_ac = row[0]
@@ -421,30 +398,22 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                         for iso in ac_iso_map[u_ac]:
                             proteins['%s-%s' % (u_ac, iso)].u_id = u_id
 
-    if db is not None:
-        sql = "SELECT Uniprot_Ac,Refseq FROM AC_Refseq WHERE Uniprot_Ac IN ('%s')" % "','".join(list(proteins.keys()))
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            config.errorlog.add_error("Database error in IdMapping")
+    if config.mapping_db_is_set:
+
+        results = database.select(config, ['Uniprot_Ac', 'Refseq'], 'UNIPROT', in_rows={'Uniprot_Ac': proteins.keys()}, from_mapping_db=True)
 
         for row in results:
             u_ac = row[0]
             ref = row[1]
-            proteins[u_ac].add_ref_id(ref)
+            proteins[u_ac].ref_id = ref
     else:
         ac_np_map = getUniprotIds(config, list(proteins.keys()), 'ACC', target_type="P_REFSEQ_AC")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
-            proteins[u_ac].add_ref_id(ref)
+            proteins[u_ac].ref_id = ref
 
     for pdb_tuple in pdb_map:
         integrate_protein(config, proteins, indel_map, pdb_tuple, pdb_tuple, pdb_map, is_pdb_input = True, pdb_id = pdb_tuple)
-
-    if db is not None:
-        db.close()
 
     return proteins, indel_map
 
@@ -465,7 +434,7 @@ def getUniprotIds(config, query_ids, querytype, target_type="ID"):
     # print params
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
-    contact = "agress@mpi-inf.mpg.de"  # Please set your email address here to help us debug in case of problems.
+    contact = config.user_mail  # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
         response = urllib.request.urlopen(request, timeout=60)
@@ -605,35 +574,16 @@ def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_e
 
     missing_set = set()
 
-    try:
-        if config.mapping_db is not None:
-            db = MySQLdb.connect(host=config.db_address, user=config.db_user_name, password=config.db_password, database=config.mapping_db)
-            cursor = db.cursor()
-        else:
-            db = None
-    except:
-        db = None
-        [e, f, g] = sys.exc_info()
-        config.errorlog.add_warning('Connection to mapping DB failed\n%s' % f)
-
     if filtering_db is not None:
         filtering_db_path, dbs = filtering_db
 
-    if db is not None:
+    if config.mapping_db_is_set:
         if len(u_acs) == 0:
             return {}
         if config.verbosity >= 2:
             t0 = time.time()
-        sql = "SELECT Uniprot_Ac,Sequence,Disorder_Scores,Disorder_Regions FROM Sequences WHERE Uniprot_Ac IN ('%s')" % "','".join(u_acs)
-        try:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-            db.commit()
-        except:
-            [e, f, g] = sys.exc_info()
-            config.errorlog.add_warning("Error selecting in getSequencesPlain: %s,%s" % (sql, f))
 
-        db.close()
+        results = database.select(config, ['Uniprot_Ac', 'Sequence'], 'UNIPROT', in_rows={'Uniprot_Ac': u_acs}, from_mapping_db = True)
 
         if config.verbosity >= 2:
             t1 = time.time()
@@ -644,32 +594,16 @@ def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_e
             u_ac = row[0]
             if u_ac not in u_acs:
                 continue
-            seq = row[1]
-            disorder_scores = row[2]
-            disorder_regions = row[3]
+            seq = unpack(row[1])
+
             if max_seq_len is not None:
                 if len(seq) > max_seq_len:
                     filtered_set.add(u_ac)
                     n += 1
                     continue
-            if disorder_scores is not None:
-                disorder_score_list = [float(x) for x in disorder_scores[1:-1].split(',')]
-                disorder_scores = {}
-                for pos, score in enumerate(disorder_score_list):
-                    disorder_scores[pos + 1] = score
-                if len(disorder_regions) == 2:  # this happens for completely globular proteins
-                    disorder_regions_datastruct = []
-                else:
-                    disorder_regions = disorder_regions[:-2].replace('[', '').replace(' ', '')
-                    disorder_regions_datastruct = []
-                    for region in disorder_regions.split('],'):
-                        lower_bound, upper_bound, region_type = region.split(',')
-                        lower_bound = int(lower_bound)
-                        upper_bound = int(upper_bound)
-                        disorder_regions_datastruct.append((lower_bound, upper_bound, region_type))
-            else:
-                disorder_scores = None
-                disorder_regions_datastruct = None
+            
+            disorder_scores = None
+            disorder_regions_datastruct = None
 
             gene_sequence_map[u_ac] = seq, disorder_scores, disorder_regions_datastruct
 

@@ -11,6 +11,7 @@ import pickle
 
 from structman.lib import database, pdbParser, rin, sdsc, spherecon, serializedPipeline
 from structman.utils import median, distance, pack, unpack, decompress
+from structman.lib.sdsc.consts.residues import CORRECT_COUNT, THREE_TO_ONE
 try:
     from memory_profiler import profile
 except:
@@ -196,6 +197,7 @@ def parsePDB(input_page):
     ligands = set()
     metals = set()
     ions = set()
+    rare_residues = set()
     b_factors = {}
 
     firstAltLoc = None
@@ -206,6 +208,13 @@ def parsePDB(input_page):
             if record_name == "ENDMDL":
                 # print len(coordinate_map)
                 break
+            elif record_name == 'SEQRES':
+                for tlc in line[19:].split():
+                    tlc = tlc.strip()
+                    if len(tlc) != 3:
+                        continue
+                    if tlc not in sdsc.THREE_TO_ONE:
+                        rare_residues.add(tlc)
         # ignore short lines
         if len(line) > 20:
             atom_nr = line[6:11].replace(" ", "")
@@ -298,7 +307,7 @@ def parsePDB(input_page):
                         chain_type_map[chain_id] = chain_type
                         peptide_count[chain_id] = [0, 0]
                     elif record_name == 'HETATM':
-                        if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name):
+                        if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name) or (res_name in rare_residues):
                             chain_type_map[chain_id] = "Protein"
                             peptide_count[chain_id] = [0, 0]
                         elif len(res_name) == 1:
@@ -308,8 +317,9 @@ def parsePDB(input_page):
                             chain_type_map[chain_id] = "DNA"
                             peptide_count[chain_id] = [0, 0]
 
+
                 if record_name == 'HETATM':
-                    if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name):  # For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in THREE_TO_ONE, which are hopefully some kind of anormal amino acids
+                    if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name) or (res_name in rare_residues):  # For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in THREE_TO_ONE, which are hopefully some kind of anormal amino acids
                         peptide_count[chain_id][1] += 1
                     elif len(res_name) < 3:
                         peptide_count[chain_id][0] += 1
@@ -374,7 +384,7 @@ def parsePDB(input_page):
                         coordinate_map[chain_id] = [{}, {}]
                         box_map[chain_id] = [x, x, y, y, z, z]
 
-                    if (chain_id, res_nr) in modres_map or res_name in sdsc.THREE_TO_ONE:  # If it is a modified residue, than add it to the normal residues...
+                    if ((chain_id, res_nr) in modres_map) or (res_name in sdsc.THREE_TO_ONE) or (res_name in rare_residues):  # If it is a modified residue, than add it to the normal residues...
                         if atom_name[0] in ('H', 'D'):
                             continue
                         if not (chain_id, res_nr) in modres_map:
@@ -402,7 +412,6 @@ def parsePDB(input_page):
                         if z > box_map[chain_id][1]:
                             box_map[chain_id][4] = z
 
-                            # LOOK HERE
                         if not res_name in sdsc.THREE_TO_ONE:
                             siss_het_res_name = 'UNK'
                         elif sdsc.THREE_TO_ONE[res_name][0] in sdsc.ONE_TO_THREE:
@@ -444,6 +453,23 @@ def parsePDB(input_page):
     return (coordinate_map, siss_map, res_contig_map, ligands, metals, ions, box_map,
             chain_type_map, chainlist, b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map)
 
+def get_atomic_coverage(coordinate_map, chain):
+    expected_number_of_atoms = 0
+    resolved_number_of_atoms = 0
+    for res_nr in coordinate_map[chain][0]:
+        res_name, atoms = coordinate_map[chain][0][res_nr]
+        one_letter = THREE_TO_ONE[res_name]
+        if one_letter == 'X':
+            expected_number_of_atoms += 1
+            continue
+        if one_letter not in CORRECT_COUNT:
+            expected_number_of_atoms += 1
+            continue
+        expected_number_of_atoms += CORRECT_COUNT[one_letter]
+        resolved_number_of_atoms += len(atoms)
+    if expected_number_of_atoms == 0:
+        return 0
+    return (resolved_number_of_atoms / expected_number_of_atoms)
 
 def getMinSubDist(c_map, fuzzy_dist_matrix, target_res_id, res_chain, chain, config, distance_threshold=10.0):
     top20 = []
@@ -827,7 +853,9 @@ def analysis_chain(target_chain, analysis_dump):
                     phi = None
                     psi = None
             else:
-                errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id, target_chain)))
+                atomic_coverage = get_atomic_coverage(coordinate_map, chain)
+                if atomic_coverage > 0.5: #DSSP does not work for chains with missing atomic coordinates, no need for a warning here
+                    errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id, target_chain)))
                 dssp = False
                 if target_res_id in siss_map:
                     siss_value = siss_map[target_chain][target_res_id]

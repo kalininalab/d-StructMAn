@@ -246,29 +246,6 @@ def load(config):
 
     os.remove(db_file)
 
-    # Old version, remove if new version is working
-    '''
-    if config.database_source_path[-3:] == '.gz':
-        f = gzip.open(config.database_source_path,'r')
-        text = f.read().decode('ascii')
-    else:
-        f = open(config.database_source_path,'r')
-        text = f.read()
-    f.close()
-
-    db,cursor = config.getDB()
-
-    for cmd in text.split(';'):
-        if cmd == '':
-            continue
-        try:
-            cursor.execute('%s;' % cmd)
-        except:
-            pass
-
-    db.close()
-    '''
-
 
 # destroys and reinitializes the database
 def reinit(config):

@@ -8,7 +8,7 @@ import traceback
 
 import ray
 
-from structman.utils import ray_init, calc_checksum
+from structman.utils import ray_init, calc_checksum, pack, unpack
 from structman.lib import pdbParser, rin, sdsc, serializedPipeline, templateFiltering
 
 
@@ -26,7 +26,7 @@ def binningSelect(keys, rows, table, config, binning_function='median_focus', de
         config.errorlog.add_error('Unknown binning function:', binning_function)
         return []
 
-    if config.verbosity >= 4:
+    if config.verbosity >= 6:
         print('\nbinningSelect keys:\n', keys, 'and binning results:\n', singletons, '\n', bins)
 
     t1 = time.time()
@@ -103,6 +103,9 @@ def select(config, rows, table, between_rows={}, in_rows={}, equals_rows={}, nul
 
         where_str = ' WHERE %s' % ' AND '.join(where_parts)
 
+        if len(params) == 0:
+            return []
+
     statement = 'SELECT %s FROM %s%s' % (row_str, table, where_str)
 
     n = 0
@@ -120,7 +123,7 @@ def select(config, rows, table, between_rows={}, in_rows={}, equals_rows={}, nul
             n += 1
         db.close()
     if n == n_trials:
-        raise NameError('Invalid Select: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500], str(len(params)), str(params[:50]), e, str(f), g))
+        raise NameError('Invalid Select: %s\nParam size:%s\n%s\n%s, %s\n%s\n%s\n%s' % (statement[:500], str(len(params)), str(params[:50]), from_mapping_db, config.mapping_db, e, str(f), g))
     return results
 
 
@@ -139,7 +142,7 @@ def size_estimation(config, values):
     return size_of_values
 
 
-def insert(table, columns, values, config, n_trials=3):
+def insert(table, columns, values, config, n_trials=3, mapping_db = False):
     params = []
 
     columns_str = ','.join(columns)
@@ -196,7 +199,7 @@ def insert(table, columns, values, config, n_trials=3):
 
         n = 0
         while n < n_trials:  # Repeat the querry if fails for n_trials times
-            db, cursor = config.getDB()
+            db, cursor = config.getDB(mapping_db = mapping_db)
             try:
                 cursor.execute(statement, params)
                 db.commit()
@@ -211,7 +214,7 @@ def insert(table, columns, values, config, n_trials=3):
             raise NameError('Invalid Insert: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500], str(len(params)), str(params[:500]), e, str(f), g))
 
 
-def update(config, table, columns, values):
+def update(config, table, columns, values, mapping_db = False):
     # Updating with an insert statement (see: https://stackoverflow.com/questions/20255138/sql-update-multiple-records-in-one-query)
     params = []
 
@@ -262,7 +265,7 @@ def update(config, table, columns, values):
         if len(params) == 0:
             continue
         statement = 'INSERT IGNORE INTO %s (%s) VALUES %s ON DUPLICATE KEY UPDATE %s' % (table, column_str, value_str, update_str)
-        db, cursor = config.getDB()
+        db, cursor = config.getDB(mapping_db = mapping_db)
         try:
             cursor.execute(statement, params)
             db.commit()
@@ -273,7 +276,7 @@ def update(config, table, columns, values):
         db.close()
 
 
-# called by Output
+# called by output.classification
 def getProteinDict(prot_id_list, session_id, config, includeSequence=False):
     if len(prot_id_list) == 0:
         return {}
@@ -357,9 +360,9 @@ def protCheck(proteins, session_id, config):
         values = []
         for prot_id in new_prots:
             u_ac = proteins.get_u_ac(prot_id)
-            ref_ids = proteins.get_ref_ids(prot_id)
+            ref_id = proteins.get_ref_id(prot_id)
             u_id = proteins.get_u_id(prot_id)
-            values.append((prot_id, u_ac, ','.join(ref_ids), u_id, session_id))
+            values.append((prot_id, u_ac, ref_id, u_id, session_id))
 
         insert('Protein', ['Primary_Protein_Id', 'Uniprot_Ac', 'RefSeq_Ids', 'Uniprot_Id', 'Original_Session'], values, config)
 
@@ -599,26 +602,27 @@ def positionCheck(proteins, database_session, config):
     stored_positions = []
     pos_map = {}
     if len(proteins.get_stored_ids()) > 0:
-        columns = ['Protein', 'Amino_Acid_Change', 'Position_Id', 'Recommended_Structure']
+        columns = ['Protein', 'Position_Number', 'Position_Id', 'Recommended_Structure_Data']
         table = 'Position'
 
         results = binningSelect(proteins.get_stored_ids(), columns, table, config)
 
         for row in results:
             prot_id = row[0]
-            aacs = row[1].split(",")
-            aacbase = aacs[0]
-            pos = int(aacbase[1:])
+
+            pos = row[1]
             position_database_id = row[2]
             if not proteins.position_in_protein_by_db_id(prot_id, pos):
                 continue
-            recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(row[3])
+
             proteins.set_position_stored(prot_id, pos, True)
             proteins.set_position_database_id(prot_id, pos, position_database_id)
             stored_positions.append(position_database_id)
             pos_map[position_database_id] = (prot_id, pos)
-
-            proteins.getByDbId(prot_id).positions[pos].recommended_structure = recommended_structure
+            if row[3] is not None:
+                recommended_structure_tuple = unpack(row[3])
+                recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_tuple[0])
+                proteins.getByDbId(prot_id).positions[pos].recommended_structure = recommended_structure
 
     # search for stored SNVs
     if len(stored_positions) > 0:
@@ -649,17 +653,17 @@ def positionCheck(proteins, database_session, config):
 
             res_id = proteins.get_res_id(prot_id, pos)
 
-            values.append((prot_database_id, aac_base, res_id))
+            values.append((prot_database_id, int(aac_base[1:]), res_id, aac_base[0]))
 
         if all_stored:
             proteins.set_completely_stored(prot_id)
 
     if len(values) > 0:
-        columns = ['Protein', 'Amino_Acid_Change', 'Residue_Id']
+        columns = ['Protein', 'Position_Number', 'Residue_Id', 'Wildtype_Residue']
         insert('Position', columns, values, config)
 
     # retrieve the database ids of the new positions
-    columns = ['Protein', 'Amino_Acid_Change', 'Position_Id']
+    columns = ['Protein', 'Position_Number', 'Position_Id']
     table = 'Position'
 
     fused_prot_ids = proteins.get_not_stored_ids() | proteins.get_stored_ids()
@@ -671,8 +675,7 @@ def positionCheck(proteins, database_session, config):
     for row in results:
         prot_database_id = row[0]
 
-        aacbase = row[1]
-        pos = int(aacbase[1:])
+        pos = row[1]
 
         position_database_id = row[2]
         if not proteins.position_in_protein_by_db_id(prot_database_id, pos):
@@ -775,6 +778,10 @@ def addIupred(proteins, config):
                 if int(pos) > int(a) and int(pos) < int(b):
                     pos_region_type = region_type
 
+            if scores is None:
+                config.errorlog.add_error('IUpred scores are None for: %s' % u_ac)
+                break
+
             if pos not in scores:
                 continue
             iupred_score = scores[pos]
@@ -822,12 +829,12 @@ def checkMutationSession(mutation_id, session_id, db, cursor):
         return True
 
 
-# called by output
+# called by output.classification
 def getMutationDict(mutation_id_list, config):
     if len(mutation_id_list) == 0:
         return {}
 
-    rows = ['Position_Id', 'Amino_Acid_Change', 'Protein', 'IUPRED', 'IUPRED_Glob', 'Residue_Id']
+    rows = ['Position_Id', 'Position_Number', 'Protein', 'IUPRED', 'IUPRED_Glob', 'Residue_Id', 'Wildtype_Residue']
     table = 'Position'
     results = binningSelect(mutation_id_list, rows, table, config)
 
@@ -836,7 +843,7 @@ def getMutationDict(mutation_id_list, config):
     for row in results:
         mut_id = row[0]
         if mut_id in mutation_id_list:
-            mutation_dict[mut_id] = (row[1], row[2], row[3], row[4], row[5])
+            mutation_dict[mut_id] = (row[1], row[2], row[3], row[4], row[5], row[6])
     return mutation_dict
 
 
@@ -1350,7 +1357,7 @@ def insertAlignments(alignment_list, proteins, config):
         s_id = proteins.get_structure_db_id(pdb_id, chain)
         seq_id = proteins.get_sequence_id(u_ac, pdb_id, chain)
         coverage = proteins.get_coverage(u_ac, pdb_id, chain)
-        values.append((prot_id, s_id, seq_id, coverage, alignment_pir))
+        values.append((prot_id, s_id, seq_id, coverage, pack(alignment_pir)))
     if config.verbosity >= 2:
         t1 = time.time()
         print('Time for insertAlignments, part 1: ', t1 - t0)
@@ -1362,6 +1369,7 @@ def insertAlignments(alignment_list, proteins, config):
 
 
 def background_insert_residues(values, config):
+    """
     columns = ['Structure', 'Number', 'Amino_Acid', 'Sub_Lig_Dist', 'Sub_Chain_Distances', 'Relative_Surface_Access',
                'Relative_Surface_Access_Main_Chain', 'Relative_Surface_Access_Side_Chain', 'Secondary_Structure_Assignment',
                'Homomer_Distances', 'Interaction_Profile', 'Centralities', 'B_Factor', 'Modres', 'PHI', 'PSI', 'Intra_SSBOND', 'SSBOND_Length',
@@ -1371,7 +1379,8 @@ def background_insert_residues(values, config):
                'Intra_Chain_Interactions_Median', 'Intra_Chain_Interactions_Dist_Weighted',
                'Interacting_Chains', 'Interacting_Ligands'
                ]
-
+    """
+    columns = ['Structure', 'Residue_Data']
     insert('Residue', columns, values, config)
 
 
@@ -1481,7 +1490,7 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
 
             t_11 += time.time()
 
-            values.append([s_id, res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+            values.append([s_id, pack((res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
                            ssa, homo_str, profile_str,
                            centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
                            cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
@@ -1489,7 +1498,7 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
                            intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
                            inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
                            intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
-                           interacting_chains_str, interacting_ligands_str
+                           interacting_chains_str, interacting_ligands_str))
                            ])
 
             t_12 += time.time()
@@ -1509,31 +1518,6 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
     process.start()
 
     return process
-
-    # Theory: database ids of residues are not needed, try running the pipeline without this part:
-    '''
-    if len(structure_ids) > 0:
-        rows = ['Structure','Residue_Id','Number']
-        table = 'Residue'
-
-        results = binningSelect(structure_ids.keys(),rows,table,config)
-
-        if config.verbosity >= 2:
-            t3 = time.time()
-            print('Time for insertResidues part 3:',t3-t2)
-
-        for row in results:
-            s_id = row[0]
-            r_id = row[1]
-
-            res_nr = row[2]
-            pdb_id,chain = structure_ids[s_id]
-            proteins.set_residue_db_id(pdb_id,chain,res_nr,r_id)
-
-        if config.verbosity >= 2:
-            t4 = time.time()
-            print('Time for insertResidues part 4:',t4-t3)
-    '''
 
 
 # called by serializedPipeline
@@ -1565,7 +1549,7 @@ def getAlignments(proteins, config, get_all_alignments=False):
         structure_id = row[1]
         seq_id = row[2]
         coverage = row[3]
-        alignment = row[4]
+        alignment = unpack(row[4])
 
         structure_ids.add(structure_id)
 
@@ -1642,7 +1626,7 @@ def getStructure_map(structure_ids, config):
 # called by indel_analysis
 def insert_indel_results(proteins, config):
     table = 'Indel'
-    columns = ['Indel_Id', 'Wildtype_Protein', 'Mutant_Protein', 'Indel_Notation', 'Delta_Delta_Classification']
+    columns = ['Indel_Id', 'Wildtype_Protein', 'Mutant_Protein', 'Indel_Notation', 'Analysis_Results']
 
     values = []
     for prot_id in proteins.indels:
@@ -1650,7 +1634,10 @@ def insert_indel_results(proteins, config):
             indel_obj = proteins.indels[prot_id][indel_notation]
             wt_prot_id = proteins.get_protein_database_id(proteins.indels[prot_id][indel_notation].wt_prot)
             mut_prot_id = proteins.get_protein_database_id(proteins.indels[prot_id][indel_notation].mut_prot)
-            values.append((indel_obj.database_id, wt_prot_id, mut_prot_id, indel_notation, indel_obj.delta_delta_classification))
+            analysis_results = pack((indel_obj.size, indel_obj.delta_delta_classification, indel_obj.wt_aggregates, indel_obj.mut_aggregates,
+                                        indel_obj.left_flank_wt_aggregates, indel_obj.left_flank_mut_aggregates,
+                                        indel_obj.right_flank_wt_aggregates, indel_obj.right_flank_mut_aggregates))
+            values.append((indel_obj.database_id, wt_prot_id, mut_prot_id, indel_notation, analysis_results))
     update(config, table, columns, values)
     return
 
@@ -1662,18 +1649,7 @@ def insertClassifications(proteins, config):
         t1 = time.time()
 
     table = 'Position'
-    columns = ['Position_Id', 'Amino_Acid_Change', 'Protein', 'Location', 'Mainchain_Location', 'Sidechain_Location',
-               'Weighted_Surface_Access', 'Weighted_Surface_Access_Main_Chain', 'Weighted_Surface_Access_Side_Chain',
-               'Class', 'RIN_Class', 'Simple_Class', 'RIN_Simple_Class', 'Interactions', 'Confidence',
-               'Secondary_Structure', 'Recommended_Structure', 'Max_Seq_Structure', 'Mapped_Structures', 'RIN_Profile', 'Modres_Score',
-               'B_Factor', 'Weighted_Centrality_Scores', 'Weighted_Phi', 'Weighted_Psi', 'Intra_SSBOND_Propensity',
-               'Inter_SSBOND_Propensity', 'Intra_Link_Propensity', 'Inter_Link_Propensity', 'CIS_Conformation_Propensity', 'CIS_Follower_Propensity',
-               'Weighted_Inter_Chain_Median_KD', 'Weighted_Inter_Chain_Dist_Weighted_KD', 'Weighted_Inter_Chain_Median_RSA',
-               'Weighted_Inter_Chain_Dist_Weighted_RSA', 'Weighted_Intra_Chain_Median_KD', 'Weighted_Intra_Chain_Dist_Weighted_KD',
-               'Weighted_Intra_Chain_Median_RSA', 'Weighted_Intra_Chain_Dist_Weighted_RSA',
-               'Weighted_Inter_Chain_Interactions_Median', 'Weighted_Inter_Chain_Interactions_Dist_Weighted',
-               'Weighted_Intra_Chain_Interactions_Median', 'Weighted_Intra_Chain_Interactions_Dist_Weighted'
-               ]
+    columns = ['Position_Id', 'Recommended_Structure_Data', 'Position_Data']
 
     values = createClassValues(proteins, config)
 
@@ -1697,7 +1673,6 @@ def createClassValues(proteins, config):
         positions = proteins.get_position_ids(u_ac)
         for pos in positions:
             aachange = proteins.get_aac_base(u_ac, pos)
-            prot_id = proteins.get_protein_database_id(u_ac)
             pos = int(aachange[1:])
 
             if proteins.is_position_stored(u_ac, pos):
@@ -1708,22 +1683,24 @@ def createClassValues(proteins, config):
             position = proteins.get_position(u_ac, pos)
             mappings = position.mappings
 
-            values.append((m, aachange, prot_id, mappings.weighted_location, mappings.weighted_mainchain_location,
+            values.append((m, pack((mappings.recommended_res, mappings.max_seq_res)),
+                           pack((mappings.weighted_location, mappings.weighted_mainchain_location,
                            mappings.weighted_sidechain_location, mappings.weighted_surface_value,
                            mappings.weighted_mainchain_surface_value, mappings.weighted_sidechain_surface_value,
                            mappings.Class, mappings.rin_class, mappings.simple_class, mappings.rin_simple_class,
-                           str(mappings.interaction_recommendations), mappings.classification_conf, mappings.weighted_ssa, mappings.recommended_res,
-                           mappings.max_seq_res, len(mappings.qualities), mappings.get_weighted_profile_str(),
+                           str(mappings.interaction_recommendations), mappings.classification_conf, mappings.weighted_ssa, len(mappings.qualities), mappings.get_weighted_profile_str(),
                            mappings.weighted_modres, mappings.weighted_b_factor, mappings.get_weighted_centralities_str(),
                            mappings.weighted_phi, mappings.weighted_psi, mappings.weighted_intra_ssbond, mappings.weighted_inter_ssbond,
                            mappings.weighted_intra_link, mappings.weighted_inter_link, mappings.weighted_cis_conformation,
-                           mappings.weighted_cis_follower, mappings.weighted_inter_chain_median_kd,
-                           mappings.weighted_inter_chain_dist_weighted_kd, mappings.weighted_inter_chain_median_rsa,
-                           mappings.weighted_inter_chain_dist_weighted_rsa, mappings.weighted_intra_chain_median_kd,
-                           mappings.weighted_intra_chain_dist_weighted_kd, mappings.weighted_intra_chain_median_rsa,
-                           mappings.weighted_intra_chain_dist_weighted_rsa,
+                           mappings.weighted_cis_follower,
+                           mappings.weighted_inter_chain_median_kd, mappings.weighted_inter_chain_dist_weighted_kd,
+                           mappings.weighted_inter_chain_median_rsa, mappings.weighted_inter_chain_dist_weighted_rsa,
+
+                           mappings.weighted_intra_chain_median_kd, mappings.weighted_intra_chain_dist_weighted_kd,
+                           mappings.weighted_intra_chain_median_rsa, mappings.weighted_intra_chain_dist_weighted_rsa,
+
                            mappings.weighted_inter_chain_interactions_median, mappings.weighted_inter_chain_interactions_dist_weighted,
-                           mappings.weighted_intra_chain_interactions_median, mappings.weighted_intra_chain_interactions_dist_weighted))
+                           mappings.weighted_intra_chain_interactions_median, mappings.weighted_intra_chain_interactions_dist_weighted))))
 
     return values
 
@@ -1760,6 +1737,7 @@ def getStoredResidues(proteins, config):
 
     if len(stored_ids) > 0:
 
+        """
         rows = ['Structure', 'Residue_Id', 'Number', 'Amino_Acid', 'Sub_Lig_Dist', 'Sub_Chain_Distances',
                 'Relative_Surface_Access', 'Relative_Surface_Access_Main_Chain', 'Relative_Surface_Access_Side_Chain',
                 'Secondary_Structure_Assignment', 'Homomer_Distances',
@@ -1772,6 +1750,8 @@ def getStoredResidues(proteins, config):
                 'Intra_Chain_Interactions_Median', 'Intra_Chain_Interactions_Dist_Weighted',
                 'Interacting_Chains', 'Interacting_Ligands'
                 ]
+        """
+        rows = ['Structure', 'Residue_Id', 'Residue_Data']
         table = 'Residue'
         results = binningSelect(stored_ids.keys(), rows, table, config)
 
@@ -1780,24 +1760,34 @@ def getStoredResidues(proteins, config):
             print("Time for getstoredresidues 2.1: %s" % str(t10 - t1))
 
         for row in results:
+
+            (res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+                           ssa, homo_str, profile_str,
+                           centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
+                           cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
+                           inter_chain_median_rsa, inter_chain_dist_weighted_rsa, intra_chain_median_kd,
+                           intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
+                           inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
+                           intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
+                           interacting_chains_str, interacting_ligands_str) = unpack(row[2])
+
             # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
-            residue = sdsc.Residue(row[2], aa=row[3], lig_dist_str=row[4], chain_dist_str=row[5], RSA=row[6],
-                                   relative_main_chain_acc=row[7], relative_side_chain_acc=row[8],
-                                   SSA=row[9], homo_dist_str=row[10], interaction_profile_str=row[11], centrality_score_str=row[12],
-                                   modres=row[13], b_factor=row[14], database_id=row[1], stored=True, phi=row[15], psi=row[16],
-                                   intra_ssbond=row[17], ssbond_length=row[18], intra_link=row[19], link_length=row[20],
-                                   cis_conformation=row[21], cis_follower=row[22], inter_chain_median_kd=row[23],
-                                   inter_chain_dist_weighted_kd=row[24], inter_chain_median_rsa=row[25],
-                                   inter_chain_dist_weighted_rsa=row[26], intra_chain_median_kd=row[27],
-                                   intra_chain_dist_weighted_kd=row[28], intra_chain_median_rsa=row[29],
-                                   intra_chain_dist_weighted_rsa=row[30],
-                                   inter_chain_interactions_median=row[31], inter_chain_interactions_dist_weighted=row[32],
-                                   intra_chain_interactions_median=row[33], intra_chain_interactions_dist_weighted=row[34],
-                                   interacting_chains_str=row[35], interacting_ligands_str=row[36])
+            residue = sdsc.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
+                                   relative_main_chain_acc=relative_main_chain_acc, relative_side_chain_acc=relative_side_chain_acc,
+                                   SSA=ssa, homo_dist_str=homo_str, interaction_profile_str=profile_str, centrality_score_str=centrality_score_str,
+                                   modres=modres, b_factor=b_factor, database_id=row[1], stored=True, phi=phi, psi=psi,
+                                   intra_ssbond=intra_ssbond, ssbond_length=ssbond_length, intra_link=intra_link, link_length=link_length,
+                                   cis_conformation=cis_conformation, cis_follower=cis_follower, inter_chain_median_kd=inter_chain_median_kd,
+                                   inter_chain_dist_weighted_kd=inter_chain_dist_weighted_kd, inter_chain_median_rsa=inter_chain_median_rsa,
+                                   inter_chain_dist_weighted_rsa=inter_chain_dist_weighted_rsa, intra_chain_median_kd=intra_chain_median_kd,
+                                   intra_chain_dist_weighted_kd=intra_chain_dist_weighted_kd, intra_chain_median_rsa=intra_chain_median_rsa,
+                                   intra_chain_dist_weighted_rsa=intra_chain_dist_weighted_rsa,
+                                   inter_chain_interactions_median=inter_chain_interactions_median, inter_chain_interactions_dist_weighted=inter_chain_interactions_dist_weighted,
+                                   intra_chain_interactions_median=intra_chain_interactions_median, intra_chain_interactions_dist_weighted=intra_chain_interactions_dist_weighted,
+                                   interacting_chains_str=interacting_chains_str, interacting_ligands_str=interacting_ligands_str)
             s_id = row[0]
-            res_nr = row[2]
             pdb_id, chain = stored_ids[s_id]
-            proteins.add_residue(pdb_id, chain, res_nr, residue)
+            proteins.add_residue(pdb_id, chain, res_id, residue)
 
     if config.verbosity >= 2:
         t2 = time.time()
@@ -2495,7 +2485,7 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
 
     proteins.set_stored_ids(prot_id_list, prot_ids_mutants_excluded)
 
-    cols = ['Protein', 'Amino_Acid_Change', 'Position_Id', 'Recommended_Structure']
+    cols = ['Protein', 'Position_Number', 'Position_Id', 'Recommended_Structure_Data']
     table = 'Position'
 
     results = binningSelect(prot_db_ids.keys(), cols, table, config)
@@ -2505,12 +2495,11 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
     for row in results:
         p_id = row[0]
 
-        aac = row[1]
         m_id = row[2]
-        pos = int(aac[1:])
-        wt_aa = aac[0]
-        recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(row[3])
-        pos_obj = sdsc.Position(pos=pos, wt_aa=wt_aa, checked=True, recommended_structure=recommended_structure, database_id=m_id)
+        pos = row[1]
+
+        recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(unpack(row[3])[0])
+        pos_obj = sdsc.Position(pos=pos, checked=True, recommended_structure=recommended_structure, database_id=m_id)
         prot_id = id_prot_id_map[p_id]
         proteins[prot_id].add_positions([pos_obj])
         pos_db_map[m_id] = (prot_id, pos)

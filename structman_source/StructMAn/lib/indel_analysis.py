@@ -198,7 +198,7 @@ def compare_classifications(proteins, config, prot_id, models, sub_infos, write_
 def para_indel_analysis(proteins, config):
     indel_result_ids = []
     modelling_result_ids = []
-    conf_dump = ray.put(config)
+
     prot_specific_mapping_dumps = {}
 
     mut_backmap = {}
@@ -209,64 +209,67 @@ def para_indel_analysis(proteins, config):
         print('Starting indel analysis with', len(proteins.indels), 'indels')
         t0 = time.time()
 
-    for prot_id in proteins.indels:
-        seq = proteins.get_sequence(prot_id)
-        aaclist = proteins.getAACList(prot_id)
-        prot_specific_mapping_dumps[prot_id] = ray.put((prot_id, seq, aaclist))
-        wt_structure_annotations = proteins.get_protein_structure_annotations(prot_id)
-        if len(wt_structure_annotations) == 0:
-            if config.verbosity >= 3:
-                print('Indel analysis not possible, no structures annotated', prot_id)
-            continue
+    if config.model_indel_structures:
+        conf_dump = ray.put(config)
 
-        rec_structs = proteins[prot_id].getRecommendedStructures()
+        for prot_id in proteins.indels:
+            seq = proteins.get_sequence(prot_id)
+            aaclist = proteins.getAACList(prot_id)
+            prot_specific_mapping_dumps[prot_id] = ray.put((prot_id, seq, aaclist))
+            wt_structure_annotations = proteins.get_protein_structure_annotations(prot_id)
+            if len(wt_structure_annotations) == 0:
+                if config.verbosity >= 3:
+                    print('Indel analysis not possible, no structures annotated', prot_id)
+                continue
 
-        if len(rec_structs) == 0:
-            if config.verbosity >= 3:
-                print('Indel analysis not possible, no recommended structures for', prot_id)
-            continue
+            rec_structs = proteins[prot_id].getRecommendedStructures()
 
-        for indel_notation in proteins.indels[prot_id]:
-            indel_obj = proteins.indels[prot_id][indel_notation]
+            if len(rec_structs) == 0:
+                if config.verbosity >= 3:
+                    print('Indel analysis not possible, no recommended structures for', prot_id)
+                continue
 
-            mut_structure_annotations = proteins.get_protein_structure_annotations(indel_obj.mut_prot)
-            #indel_result_ids.append(indel_analysis.remote(conf_dump, indel_obj, wt_structure_annotations, mut_structure_annotations))
-            mut_backmap[indel_obj.mut_prot] = indel_obj.wt_prot
+            for indel_notation in proteins.indels[prot_id]:
+                indel_obj = proteins.indels[prot_id][indel_notation]
 
-            for rec_struct in rec_structs:
-                pdb_id, tchain = rec_struct.split(':')
-                if not (pdb_id, tchain) in mut_structure_annotations:
-                    if config.verbosity >= 3:
-                        print('Indel analysis not possible, structure not annotated to mut protein', prot_id, indel_obj.wt_prot, pdb_id, tchain)
-                    continue
-                # modelling the WT for all recommended structures
-                compl_obj = ray.put(proteins.complexes[pdb_id])
-                structures = ray.put(proteins.get_complex_structures(pdb_id))
+                mut_structure_annotations = proteins.get_protein_structure_annotations(indel_obj.mut_prot)
+                #indel_result_ids.append(indel_analysis.remote(conf_dump, indel_obj, wt_structure_annotations, mut_structure_annotations))
+                mut_backmap[indel_obj.mut_prot] = indel_obj.wt_prot
 
-                if not (pdb_id, tchain, indel_obj.wt_prot) in model_stack:
-                    alignment_tuple = proteins.get_alignment(indel_obj.wt_prot, pdb_id, tchain)
-                    seq_id = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
-                    cov = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].coverage
-                    modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.wt_prot))
+                for rec_struct in rec_structs:
+                    pdb_id, tchain = rec_struct.split(':')
+                    if not (pdb_id, tchain) in mut_structure_annotations:
+                        if config.verbosity >= 3:
+                            print('Indel analysis not possible, structure not annotated to mut protein', prot_id, indel_obj.wt_prot, pdb_id, tchain)
+                        continue
+                    # modelling the WT for all recommended structures
+                    compl_obj = ray.put(proteins.complexes[pdb_id])
+                    structures = ray.put(proteins.get_complex_structures(pdb_id))
 
-                    model_stack.add((pdb_id, tchain, indel_obj.wt_prot))
+                    if not (pdb_id, tchain, indel_obj.wt_prot) in model_stack:
+                        alignment_tuple = proteins.get_alignment(indel_obj.wt_prot, pdb_id, tchain)
+                        seq_id = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
+                        cov = proteins[indel_obj.wt_prot].structure_annotations[(pdb_id, tchain)].coverage
+                        modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.wt_prot))
 
-                # modelling the MUT for all recommend structures
-                if not (pdb_id, tchain, indel_obj.mut_prot) in model_stack:
-                    alignment_tuple = proteins.get_alignment(indel_obj.mut_prot, pdb_id, tchain)
-                    seq_id = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
-                    cov = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].coverage
-                    modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.mut_prot))
+                        model_stack.add((pdb_id, tchain, indel_obj.wt_prot))
 
-                    model_stack.add((pdb_id, tchain, indel_obj.mut_prot))
+                    # modelling the MUT for all recommend structures
+                    if not (pdb_id, tchain, indel_obj.mut_prot) in model_stack:
+                        alignment_tuple = proteins.get_alignment(indel_obj.mut_prot, pdb_id, tchain)
+                        seq_id = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].sequence_identity
+                        cov = proteins[indel_obj.mut_prot].structure_annotations[(pdb_id, tchain)].coverage
+                        modelling_result_ids.append(modelling.model.remote(conf_dump, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, indel_obj.mut_prot))
+
+                        model_stack.add((pdb_id, tchain, indel_obj.mut_prot))
 
     if config.verbosity >= 2:
         t1 = time.time()
         print('Indel analysis, part 1:', t1 - t0)
 
     #indel_analysis_outs = ray.get(indel_result_ids)
-
-    models = ray.get(modelling_result_ids)
+    if config.model_indel_structures:
+        models = ray.get(modelling_result_ids)
 
     if config.verbosity >= 2:
         t2 = time.time()
@@ -274,27 +277,35 @@ def para_indel_analysis(proteins, config):
 
     alignment_results = []
     model_map = {}
-    for model in models:
-        if isinstance(model, str):
-            config.errorlog.add_warning(model)
-        else:
-            if model.target_protein not in model_map:
-                model_map[model.target_protein] = {}
-            model_map[model.target_protein][model.template_structure] = model
-            pdb_id, tchain = model.template_structure
-            if model.target_protein in mut_backmap:
-                align_prot = mut_backmap[model.target_protein]
-            else:
-                align_prot = model.target_protein
 
-            model_chain = model.chain_id_map[tchain]
-            alignment_results.append(serializedPipeline.align.remote(conf_dump, model.model_id, model_chain, prot_specific_mapping_dumps[align_prot], model_path=model.path))
+    if config.model_indel_structures:
+        for model in models:
+            if isinstance(model, str):
+                config.errorlog.add_warning(model)
+            else:
+                if model.target_protein not in model_map:
+                    model_map[model.target_protein] = {}
+                model_map[model.target_protein][model.template_structure] = model
+                pdb_id, tchain = model.template_structure
+                if model.target_protein in mut_backmap:
+                    align_prot = mut_backmap[model.target_protein]
+                else:
+                    align_prot = model.target_protein
+
+                model_chain = model.chain_id_map[tchain]
+
+                structure_infos = [(model.model_id, model_chain, [])]
+
+                chunk =  [(prot_specific_mapping_dumps[align_prot], structure_infos)]
+
+                alignment_results.append(serializedPipeline.align.remote(conf_dump, chunk, model_path=model.path))
 
     if config.verbosity >= 2:
         t3 = time.time()
         print('Indel analysis, part 3:', t3 - t2)
 
-    align_outs = ray.get(alignment_results)
+    if config.model_indel_structures:
+        result_chunks = ray.get(alignment_results)
 
     if config.verbosity >= 2:
         t4 = time.time()
@@ -302,58 +313,83 @@ def para_indel_analysis(proteins, config):
 
     warn_map = set()
     sub_info_map = {}
-    for out in align_outs:
 
-        if len(out) == 3:
-            config.errorlog.add_error('Illegal alignment output: %s' % (str(out)))
-            continue
+    if config.model_indel_structures:
 
-        if len(out) == 4:
-            (prot_id, pdb_id, chain, warn_text) = out
-            if prot_id not in warn_map:
-                config.errorlog.add_warning(warn_text)
-            warn_map.add(prot_id)
-            continue
+        for align_outs in result_chunks:
+            for out in align_outs[0]:
 
-        if len(out) == 5:
-            (prot_id, pdb_id, chain, sub_infos, seq_id) = out
-            if config.verbosity >= 3:
-                print('Aligment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id)
-            continue
+                if len(out) == 3:
+                    config.errorlog.add_error('Illegal alignment output: %s' % (str(out)))
+                    continue
 
-        (prot_id, model_id, model_chain, alignment, seq_id, coverage, interaction_partners, chain_type_map,
-         oligo, sub_infos, atom_count, last_residue, first_residue, chainlist, rare_residues) = out
+                if len(out) == 4:
+                    (prot_id, pdb_id, chain, warn_text) = out
+                    if prot_id not in warn_map:
+                        config.errorlog.add_warning(warn_text)
+                        warn_map.add(prot_id)
+                    continue
 
-        if prot_id not in sub_info_map:
-            sub_info_map[prot_id] = {}
-        sub_info_map[prot_id][model_id] = sub_infos
+                if len(out) == 5:
+                    (prot_id, pdb_id, chain, sub_infos, seq_id) = out
+                    if config.verbosity >= 3:
+                        print('Aligment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id)
+                    continue
+
+                (prot_id, model_id, model_chain, alignment, seq_id, coverage, interaction_partners, chain_type_map,
+                oligo, sub_infos, atom_count, last_residue, first_residue, chainlist, rare_residues) = out
+
+                if prot_id not in sub_info_map:
+                     sub_info_map[prot_id] = {}
+                sub_info_map[prot_id][model_id] = sub_infos
 
     if config.verbosity >= 2:
         t5 = time.time()
         print('Indel analysis, part 5:', t5 - t4)
 
+    n_filtered = 0
+    n_success = 0
+
     for prot_id in proteins.indels:
         for indel_notation in proteins.indels[prot_id]:
             indel_obj = proteins.indels[prot_id][indel_notation]
 
+            itype, terminal, terminal_end = indel_obj.get_type()
+            indel_obj.aggregate(proteins, config)
+            indel_obj.flank_aggregates(proteins, config)
+
+
+            if itype == 'Substitution':
+                pass #TODO
+            elif itype == 'Insertion':
+                pass #TODO
+            else:
+                pass
+
             if len(proteins.get_protein_structure_annotations(indel_obj.wt_prot)) == 0:
+                n_filtered += 1
                 continue
-            if indel_obj.wt_prot not in model_map:
-                config.errorlog.add_warning('Id not in model map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
 
-                continue
-            if indel_obj.wt_prot not in sub_info_map:
-                config.errorlog.add_warning('Id not in sub info map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
-                continue
-            wt_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.wt_prot], sub_info_map[indel_obj.wt_prot], write_output='WT')
-            mut_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.mut_prot], sub_info_map[indel_obj.wt_prot], write_output='MUT')
+            if config.model_indel_structures:
 
-            #print('ddC analysis:',prot_id,indel_notation,wt_model_delta_classification,mut_model_delta_classification)
-            indel_obj.delta_delta_classification = mut_model_delta_classification - wt_model_delta_classification
+                if indel_obj.wt_prot not in model_map:
+                    config.errorlog.add_warning('Id not in model map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
+
+                    continue
+                if indel_obj.wt_prot not in sub_info_map:
+                    config.errorlog.add_warning('Id not in sub info map: %s %s %s' % (prot_id, indel_obj.wt_prot, indel_notation))
+                    continue
+                wt_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.wt_prot], sub_info_map[indel_obj.wt_prot], write_output='WT')
+                mut_model_delta_classification = compare_classifications(proteins, config, indel_obj.wt_prot, model_map[indel_obj.mut_prot], sub_info_map[indel_obj.wt_prot], write_output='MUT')
+
+                #print('ddC analysis:',prot_id,indel_notation,wt_model_delta_classification,mut_model_delta_classification)
+                indel_obj.delta_delta_classification = mut_model_delta_classification - wt_model_delta_classification
+            n_success += 1
+
 
     if config.verbosity >= 2:
         t6 = time.time()
-        print('Indel analysis, part 6:', t6 - t5)
+        print('Indel analysis, part 6:', t6 - t5, n_filtered, n_success)
 
     database.insert_indel_results(proteins, config)
 

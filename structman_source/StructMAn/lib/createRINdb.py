@@ -85,6 +85,40 @@ def parsePDB(page):
     return original_chains, ligands, page
 
 
+def get_recently_modified_structures(time_of_last_update, status_path):
+    if time_of_last_update is None:
+        return None
+
+    time_struct = time.strptime(time_of_last_update)
+
+    recently_modified_structures = set()
+
+    for date_sub_folder in os.listdir(status_path):
+        date_sub_folder_path = '%s/%s' % (status_path, date_sub_folder)
+        if not os.path.isdir(date_sub_folder_path):
+            continue
+        if date_sub_folder_path == 'latest':
+            continue
+        year = int(date_sub_folder[:4])
+        month = int(date_sub_folder[4:6])
+        day = int(date_sub_folder[6:8])
+        if year < time_struct.tm_year:
+            continue
+        elif month < time_struct.tm_mon:
+            continue
+        elif day < time_struct.tm_mday:
+            continue
+        for status_file in date_sub_folder_path:
+            if status_file[:8] != 'modified':
+                continue
+            f = open('%s/%s' % (date_sub_folder_path, status_file), 'r')
+            lines = f.readlines()
+            f.close()
+            for line in lines:
+                line.replace('\n','')
+                recently_modified_structures.add(line)
+    return recently_modified_structures
+
 '''
 def changeBackChains(changed_chains,n_sif_file,n_intsc_file,n_nrint_file,n_res_file):
     for fn in [n_sif_file,n_intsc_file,n_nrint_file,n_res_file]:
@@ -222,7 +256,7 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
     os.system("gzip %s" % n_res_file)
 
 
-def createRinProc(in_queue, lock, fromScratch, i, forceCentrality, remove_tmp_files, base_path, rinerator_path, errorlog):
+def createRinProc(in_queue, lock, i, remove_tmp_files, base_path, rinerator_path, errorlog):
     with lock:
         in_queue.put(None)
     while True:
@@ -231,18 +265,13 @@ def createRinProc(in_queue, lock, fromScratch, i, forceCentrality, remove_tmp_fi
             if in_t is None:
                 #print('Terminate Rinerator Process: ',i)
                 return
-            (pdbgz_path, pdb_id, recently_modified) = in_t
+            (pdbgz_path, pdb_id) = in_t
         try:
             out_path = "%s/%s/%s" % (base_path, pdb_id[1:-1], pdb_id)
             if not os.path.exists(out_path):
                 os.mkdir(out_path)
 
             n_sif_file = "%s/%s.sif" % (out_path, pdb_id)
-            # skip, if network is already there
-            if os.path.isfile("%s.gz" % n_sif_file) and not fromScratch and not recently_modified:
-                if forceCentrality:
-                    centrality.main(n_sif_file)
-                continue
 
             f = gzip.open(pdbgz_path, 'rb')
             page = f.read()
@@ -346,9 +375,10 @@ def calculateRINsFromPdbList(pdbs, fromScratch=True, forceCentrality=True, remov
         processes[i].join()
 
 
-def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin_db_path='', n_proc=32, rinerator_base_path=''):
+def main(fromScratch=False, pdb_p='', rin_db_path='', n_proc=32, rinerator_base_path=''):
     bio_assembly_path = '%s/data/biounit/PDB/divided' % pdb_p
     AU_path = "%s/data/structures/divided/pdb" % pdb_p
+    status_path = "%s/data/status" % pdb_p
 
     rinerator_path = "%s/get_chains.py" % rinerator_base_path
     het_dict_path = "%s/reduce_wwPDB_het_dict.txt" % rinerator_base_path
@@ -357,9 +387,6 @@ def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin
 
     errorlog = "%s/createRINdb_errorlog.txt" % rinerator_base_path
 
-    starttime = time.time()
-    update_window = 60. * 60. * 24. * update_days
-
     lim = 100 * 1024 * 1024 * 1024
 
     #resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
@@ -367,6 +394,24 @@ def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin
     if not os.path.isfile(het_dict_path):
         print("%s not found" % het_dict_path)
         sys.exit(1)
+
+    meta_file_path = '%s/meta.txt' % base_path
+
+    if os.path.isfile(meta_file_path):
+        f = open(meta_file_path, 'r')
+        time_of_last_update = f.read()
+        f.close()
+    else:
+        time_of_last_update = None
+
+    f = open(meta_file_path,'w')
+    f.write(time.asctime(time.gmtime()))
+    f.close()
+
+    if not fromScratch:
+        recently_modified_structures = get_recently_modified_structures(time_of_last_update, status_path)
+    else:
+        recently_modified_structures = None
 
     os.environ["REDUCE_HET_DICT"] = het_dict_path
 
@@ -380,8 +425,6 @@ def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin
     bio_pdbs = set()
 
     subfolders = os.listdir(bio_assembly_path)
-
-    recently_modified_structures = set()
 
     N = 0
 
@@ -398,18 +441,14 @@ def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin
                 if os.path.getsize(pdbgz_path) > 50 * 1024 * 1024:
                     continue
 
-                modification_time = os.path.getmtime(pdbgz_path)
-
                 pdb_id = fn.replace('.pdb1.gz', '')
-
-                if starttime - modification_time < update_window:
-                    recently_modified = True
-                    recently_modified_structures.add(pdb_id)
-                else:
-                    recently_modified = False
-
                 bio_pdbs.add(pdb_id)
-                in_queue.put((pdbgz_path, pdb_id, recently_modified))
+
+                if recently_modified_structures is not None:
+                    if not pdb_id in recently_modified_structures:
+                        continue
+
+                in_queue.put((pdbgz_path, pdb_id))
                 N += 1
 
     subfolders = os.listdir(AU_path)
@@ -426,24 +465,22 @@ def main(fromScratch=False, forceCentrality=False, update_days=2., pdb_p='', rin
                 if os.path.getsize(pdbgz_path) > 50 * 1024 * 1024:
                     continue
                 pdb_id = fn[3:7]
+
+                if recently_modified_structures is not None:
+                    if not pdb_id in recently_modified_structures:
+                        continue
+
                 if pdb_id in bio_pdbs:
                     continue
 
-                modification_time = os.path.getmtime(pdbgz_path)
-                if starttime - modification_time < update_window:
-                    recently_modified = True
-                    recently_modified_structures.add(pdb_id)
-                else:
-                    recently_modified = False
-
-                in_queue.put((pdbgz_path, pdb_id, recently_modified))
+                in_queue.put((pdbgz_path, pdb_id))
                 N += 1
 
     print('Creating RINs for', N, 'structures.')
 
     processes = {}
     for i in range(1, min([num_of_proc, N]) + 1):
-        p = Process(target=createRinProc, args=(in_queue, lock, fromScratch, i, forceCentrality, True, base_path, rinerator_path, errorlog))
+        p = Process(target=createRinProc, args=(in_queue, lock, i, True, base_path, rinerator_path, errorlog))
         processes[i] = p
         p.start()
     for i in processes:

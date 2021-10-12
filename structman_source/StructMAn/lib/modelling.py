@@ -5,6 +5,7 @@ import sys
 import psutil
 import ray
 import time
+import traceback
 
 try:
     import modeller
@@ -63,16 +64,25 @@ def add_incomplete_residue_gaps(protein_aligned_sequence, template_aligned_seque
         # this is for non-standard residues
         elif aa == '.':
             template_aligned_sequence = '%s.%s' % (template_aligned_sequence[:ta_pos], template_aligned_sequence[(ta_pos + 1):])
+        elif aa == '?':
+            template_aligned_sequence = '%s?%s' % (template_aligned_sequence[:ta_pos], template_aligned_sequence[(ta_pos + 1):])
         ta_pos += 1
     return protein_aligned_sequence, template_aligned_sequence
 
 
-def createFullAlignment(pdb_id, prot_id, first_residue, last_residue, chains, sequences, target_chain, target_chains, ligand_counts, protein_aligned_sequence, template_aligned_sequence, removed_ligands):
+def createFullAlignment(config, pdb_id, prot_id, first_residue, last_residue, chains, sequences, target_chain, target_chains, ligand_counts, protein_aligned_sequence, template_aligned_sequence, removed_ligands):
 
     protein_aligned_sequence, template_aligned_sequence = globalAlignment.truncateSequences(protein_aligned_sequence, template_aligned_sequence)
     pdb_id = pdb_id.lower()
 
+    if config.verbosity >= 3:
+        print('Template aligned sequence after truncate:\n', template_aligned_sequence)
+        print('Template sequence after truncate:\n', sequences[target_chain])
+
     protein_aligned_sequence, template_aligned_sequence = add_incomplete_residue_gaps(protein_aligned_sequence, template_aligned_sequence, sequences[target_chain])
+
+    if config.verbosity >= 3:
+        print('Template aligned sequence after add_incomplete_residue_gaps:\n', template_aligned_sequence)
 
     truncated_prot_seq_len = len(protein_aligned_sequence) - protein_aligned_sequence.count('-')
 
@@ -87,13 +97,25 @@ def createFullAlignment(pdb_id, prot_id, first_residue, last_residue, chains, se
         if chain in removed_ligands:
             lc -= removed_ligands[chain]
         if chain in target_chains:
-            temp_seq_lines.append(template_aligned_sequence + ('.' * lc))
-            prot_seq_lines.append(protein_aligned_sequence + ('.' * lc))
+            if template_aligned_sequence[-1] == '?':
+                template_aligned_sequence = template_aligned_sequence[:-1]
+                temp_seq_lines.append(template_aligned_sequence + ('.' * lc) + ('.'))
+                prot_seq_lines.append(protein_aligned_sequence[:-1] + ('.' * lc) + ('.'))
+            else:
+                temp_seq_lines.append(template_aligned_sequence + ('.' * lc))
+                prot_seq_lines.append(protein_aligned_sequence + ('.' * lc))
             total_prot_len += truncated_prot_seq_len + lc
         else:
-            temp_seq = sequences[chain] + ('.' * lc)
-            temp_seq_lines.append(temp_seq)
-            prot_seq = temp_seq
+            if len(sequences[chain]) == 0:
+                continue
+            if sequences[chain][-1] == '?':
+                temp_seq = sequences[chain][:-1] + ('.' * lc) + ('.')
+                temp_seq_lines.append(temp_seq)
+                prot_seq = sequences[chain][:-1] + ('.' * lc) + ('.')
+            else:
+                temp_seq = sequences[chain] + ('.' * lc)
+                temp_seq_lines.append(temp_seq)
+                prot_seq = temp_seq
             prot_seq_lines.append(prot_seq)
             total_prot_len += len(prot_seq)
 
@@ -102,6 +124,9 @@ def createFullAlignment(pdb_id, prot_id, first_residue, last_residue, chains, se
     #template_header = '>P1;%s\nstructureX:%s:@:@:@:@::::\n' % (pdb_id,pdb_id)
 
     template_seq = '%s*\n' % '/\n'.join(temp_seq_lines)
+
+    if config.verbosity >= 3:
+        print('Template seq as is goes into the alignment pir:\n', template_seq)
 
     protein_header = '>P1;%s\nsequence:%s:1:%s:%s:%s::::\n' % (prot_id, prot_id, first_chain, str(total_prot_len), last_chain)
 
@@ -112,7 +137,7 @@ def createFullAlignment(pdb_id, prot_id, first_residue, last_residue, chains, se
     return modeller_alignment
 
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus = 1, max_calls = 1)
 def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, tchain, prot_id, skip_analysis=False, force_modelling=False):
     def model_core():
         env = modeller.Environ()
@@ -138,7 +163,10 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
         except:
             if config.verbosity <= 2:
                 sys.stdout = sys.__stdout__
-            config.errorlog.add_error('Modelling failed: %s' % model_id)
+            [e, f, g] = sys.exc_info()
+            g = traceback.format_exc()
+            errortext = '\n'.join([str(e), str(f), str(g)]) + '\n\n'
+            config.errorlog.add_error('Modelling failed: %s %s %s\n%s' % (model_id, str(homomers), str(mod_homomers), errortext))
 
     t0 = time.time()
 
@@ -157,7 +185,10 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
 
     process_top_folder = '%s/model_base/%s' % (config.tmp_folder, model_id[:6])
     if not os.path.exists(process_top_folder):
-        os.mkdir(process_top_folder)
+        try:
+            os.mkdir(process_top_folder)
+        except:
+            pass
 
     id_parts = model_id.split('_')
     if len(id_parts[0]) == 2:
@@ -170,12 +201,18 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
 
     process_prot_folder = '%s/%s' % (process_top_folder, wt_prot_id)
     if not os.path.exists(process_prot_folder):
-        os.mkdir(process_prot_folder)
+        try:
+            os.mkdir(process_prot_folder)
+        except:
+            pass
 
     process_folder = '%s/%s' % (process_prot_folder, model_id)
 
     if not os.path.exists(process_folder):
-        os.mkdir(process_folder)
+        try:
+            os.mkdir(process_folder)
+        except:
+            pass
 
     os.chdir(process_folder)
     config.temp_folder = process_folder
@@ -272,13 +309,19 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
 
         tmp_template_file = '%s/%s.pdb' % (process_folder, pdb_id.lower())
 
+        if config.verbosity >= 3:
+            print('Calling og relocate_hetatm with:', chains, sdsc.NOT_IN_MODELLER)
+
         template_page, removed_ligands = pdbParser.relocate_hetatm(template_page, filter_chains=set(chains), filter_het=sdsc.NOT_IN_MODELLER)
+
+        if config.verbosity >= 4:
+            print('Resulting page:\n', template_page)
 
         f = open(tmp_template_file, 'w')
         f.write(template_page)
         f.close()
 
-        modeller_alignment = createFullAlignment(pdb_id, prot_id, first_residue, last_residue, chains, sequences, tchain, target_chains, ligand_counts, protein_aligned_sequence, template_aligned_sequence, removed_ligands)
+        modeller_alignment = createFullAlignment(config, pdb_id, prot_id, first_residue, last_residue, chains, sequences, tchain, target_chains, ligand_counts, protein_aligned_sequence, template_aligned_sequence, removed_ligands)
 
         tmp_aln_file = '%s/%s_%s.ali' % (process_folder, pdb_id.lower(), prot_id)
 
@@ -310,7 +353,7 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
             return 'No Model got produced for %s %s %s' % (prot_id, pdb_id, tchain)
 
     else:
-        if config.verbosity <= 2:
+        if config.verbosity >= 3:
             print('Found model:', model_path)
 
     structman_model_obj = model_class.Model(model_id=model_id, path=model_path, tmp_folder=process_folder, template_structure=(pdb_id, tchain),
@@ -330,6 +373,6 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
 
     t1 = time.time()
 
-    if config.verbosity >= 2:
+    if config.verbosity >= 3:
         print('Finished modelling of:', prot_id, pdb_id, tchain, ',computation time:', (t1 - t0))
     return (structman_model_obj)

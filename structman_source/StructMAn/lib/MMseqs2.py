@@ -60,23 +60,6 @@ def geneSeqMapToFasta(proteins, outfile, config, filtering_db=None):
         return 'Empty fasta file'
 
 
-# Ask about that
-def getSequence(u_ac):
-    db_address = 'bioinfodb'
-    db_user_name = 'agress'
-    db_password = '3GccJS8c'
-    try:
-        db = MySQLdb.connect(db_address, db_user_name, db_password, 'struct_man_db_uniprot')
-        cursor = db.cursor()
-    except:
-        db = None
-        cursor = None
-    gene_sequence_map = uniprot.getSequencesPlain([u_ac], db, cursor)
-    if db is not None:
-        db.close()
-    return gene_sequence_map
-
-
 def parseHits(temp_outfile, option_seq_thresh, small_genes):
     f = open(temp_outfile, 'r')
     lines = f.read().split('\n')
@@ -97,16 +80,14 @@ def parseHits(temp_outfile, option_seq_thresh, small_genes):
         hitlist = words[1].split(',')
         seq_id = 100.0 * float(words[2])
         aln_length = int(words[3])
+        target_len = int(words[4])
+        coverage = float(words[5])
 
         if aln_length < 50:
             if gene not in small_genes:
                 continue
             elif seq_id < (option_seq_thresh * 2):
                 continue
-        # if seq_id < option_seq_thresh:
-        #    print seq_id
-        #    print hitlist
-        #    continue
 
         if gene not in entries:
             entries[gene] = {}
@@ -127,11 +108,11 @@ def parseHits(temp_outfile, option_seq_thresh, small_genes):
             oligos = hits[hit][1]
             if not len(chain) > 1:
                 if not (pdb_id, chain) in entries[gene]:
-                    entries[gene][(pdb_id, chain)] = {"Seq_Id": seq_id, "Coverage": '-', "Oligo": oligos, "Length": aln_length}
+                    entries[gene][(pdb_id, chain)] = [seq_id, coverage, oligos, aln_length, target_len]
                 else:
-                    if aln_length > entries[gene][(pdb_id, chain)]["Length"]:
-                        entries[gene][pdb_id] = {"Seq_Id": seq_id, "Coverage": '-', "Oligo": oligos, "Length": aln_length}
-                    entries[gene][(pdb_id, chain)]["Oligo"].update(oligos)
+                    if aln_length > entries[gene][(pdb_id, chain)][3]:
+                        entries[gene][pdb_id] = [seq_id, coverage, oligos, aln_length, target_len]
+                    entries[gene][(pdb_id, chain)][2].update(oligos)
 
     return entries, pdb_ids
 
@@ -177,24 +158,26 @@ def search(proteins, config):
     if config.verbosity >= 2:
         print(mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder)
 
+    out_format_str = 'query,target,fident,alnlen,tlen,qcov'
+
     if config.verbosity >= 3:
         if len(small_proteins) == 0:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder,
+            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
                     '--max-seqs', '999999', '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
             p = subprocess.Popen(cmds)
         else:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder,
+            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
                     '--max-seqs', '999999', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
             p = subprocess.Popen(cmds)
         p.wait()
     else:
         FNULL = open(os.devnull, 'w')
         if len(small_proteins) == 0:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder,
+            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
                     '--max-seqs', '999999', '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
             p = subprocess.Popen(cmds, stdout=FNULL)
         else:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder,
+            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
                     '--max-seqs', '999999', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
             p = subprocess.Popen(cmds, stdout=FNULL)
         p.wait()
@@ -209,7 +192,7 @@ def search(proteins, config):
         if u_ac.count(':') == 1:
             if u_ac not in hits:
                 pdb_id, chain = u_ac.split(':')
-                hits[u_ac] = {(pdb_id, chain): {'Seq_Id': 100.0, 'Length': len(proteins.get_sequence(u_ac)), 'Coverage': '-', 'Oligo': [chain]}}
+                hits[u_ac] = {(pdb_id, chain): [100.0, len(proteins.get_sequence(u_ac)), 1.0, [chain]]}
                 pdb_ids.add(pdb_id)
 
     os.remove(temp_outfile)
@@ -221,7 +204,8 @@ def search(proteins, config):
                 try:
                     shutil.rmtree(subfolder_path)
                 except:
-                    config.errorlog.add_warning('Tmp folder wipe failed for: %s' % subfolder_path)
+                    if config.verbosity >= 3:
+                        config.errorlog.add_warning('Tmp folder wipe failed for: %s' % subfolder_path)
 
     t3 = time.time()
 
