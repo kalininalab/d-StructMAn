@@ -7,7 +7,6 @@ import sys
 
 from structman import Config, settings
 
-
 if __name__ == "__main__":
     target_folder = sys.argv[1]
     config_path = sys.argv[2]
@@ -97,6 +96,24 @@ if __name__ == "__main__":
         target_path = f'{target_consts_path}/{const_file}'
         if os.path.isfile(source_path):
             shutil.copy(source_path, target_path)
+
+    setup_source_path = f'{settings.ROOT_DIR}/../setup.py'
+    setup_target_path = f'{target_folder}/setup.py'
+
+    new_lines = []
+    with open(setup_source_path, 'r') as f:
+        for line in f:
+            if line.startswith('path_to_readme'):
+                new_lines.append('path_to_readme = "../README.md"\n')
+            elif line.startswith('path_to_version_file'):
+                new_lines.append('path_to_version_file = "./StructMAn/_version.py"\n')
+            elif line.startswith('        "console_scripts":'):
+                new_lines.append('        "console_scripts": ["structman = StructMAn.structman_main:structman_cli"],\n')
+            else:
+                new_lines.append(line)
+
+    with open(setup_target_path, 'w') as f:
+        f.write(''.join(new_lines))
 
     config = Config(config_path, external_call=True)
 
