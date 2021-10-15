@@ -6,5 +6,6 @@ db_name=struct_man_db_1
 blast_path=
 dssp_path=mkdssp
 mmseqs2_path=mmseqs
+base_path = /usr/structman_library/sources/structman/lib
 
 resources=auto
