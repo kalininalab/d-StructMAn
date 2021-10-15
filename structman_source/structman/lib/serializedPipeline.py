@@ -953,8 +953,12 @@ def autoTemplateSelection(config, proteins):
         filtering_out = ray.get(filtering_results)
 
         for out_chunk in filtering_out:
-            for (pdb_id, resolution, homomer_dict) in out_chunk:
-                info_map[pdb_id] = (resolution, homomer_dict)
+
+            if isinstance(out_chunk, str):
+                config.errorlog.add_error(out_chunk)
+            else:
+                for (pdb_id, resolution, homomer_dict) in out_chunk:
+                    info_map[pdb_id] = (resolution, homomer_dict)
 
         u_acs = proteins.get_protein_ids()
         structure_list = proteins.get_structure_list()
@@ -991,14 +995,19 @@ def autoTemplateSelection(config, proteins):
 
 @ray.remote(max_calls = 1)
 def filter_structures(chunk, filtering_dump):
-    ray_hack()
+    try:
+        ray_hack()
 
-    pdb_path = filtering_dump
+        pdb_path = filtering_dump
 
-    outs = []
-    for pdb_id in chunk:
-        resolution, homomer_dict = pdbParser.getInfo(pdb_id, pdb_path)
-        outs.append((pdb_id, resolution, homomer_dict))
+        outs = []
+        for pdb_id in chunk:
+            resolution, homomer_dict = pdbParser.getInfo(pdb_id, pdb_path)
+            outs.append((pdb_id, resolution, homomer_dict))
+    except:
+        [e, f, g] = sys.exc_info()
+        g = traceback.format_exc()
+        outs = 'Filter structure error:\n%s\n%s\n%s' % (e, str(f), g)
 
     return outs
 

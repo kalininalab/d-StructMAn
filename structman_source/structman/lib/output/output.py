@@ -73,7 +73,7 @@ def appendOutput(proteins, outfolder, session_name, out_objects=None):
 
     for prot_id in prot_ids:
         u_id = proteins.get_u_id(prot_id)
-        refseq = proteins.get_ref_ids(prot_id)
+        refseq = proteins.get_ref_id(prot_id)
 
         u_ac = proteins[prot_id].u_ac
         input_id = proteins[prot_id].input_id
