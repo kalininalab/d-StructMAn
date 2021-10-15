@@ -27,7 +27,7 @@ try:
     if os.environ.get('STRUCTMAN_WARN', 'yes') != 'no':
         import autopep8
 except ImportError:
-    print("Autopep8 is not installed. For developers, please set up autopep8 git hooks according to the wiki here: https://wibi-git.helmholtz-hzi.de/ssr18/structman/wiki/Code-Formatting")
+    print("Autopep8 is not installed. For developers, please set up autopep8 git hooks according to the internal wiki")
     user_input = input("If you are not a developer, please input `x` to disable this message and re-activate your conda environment.\n>>> ")
     if user_input.lower().startswith('x'):
         env_path = os.path.join(os.environ['CONDA_PREFIX'], 'etc/conda/')
