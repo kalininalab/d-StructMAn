@@ -47,7 +47,8 @@ setup(
         "python-igraph>=0.8.3",
         "ray==1.6.0",
         "msgpack==1.0.2",
-        "zstd==1.5.0.2"
+        "zstd==1.5.0.2",
+        "pandas>=1.3.3"
     ],
     python_requires=">=3.8, <4",
     keywords="bioinformatics",
