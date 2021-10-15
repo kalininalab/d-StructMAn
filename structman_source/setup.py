@@ -5,6 +5,8 @@ path_to_readme = None
 if path_to_readme is not None:
     with open(path_to_readme, "r") as desc_file:
         long_description = desc_file.read()
+else:
+    long_description = ''
 
 path_to_version_file = "./StructMAn/_version.py"
 
