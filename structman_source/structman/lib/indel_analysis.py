@@ -3,7 +3,11 @@ import psutil
 import ray
 import time
 
-from structman.lib import database, output, modelling, serializedPipeline
+from structman.lib import database, output, serializedPipeline
+try:
+    from structman.lib import modelling
+except:
+    pass
 
 
 def separate_structure_annotations(wt_structure_annotations, mut_structure_annotations, config):
