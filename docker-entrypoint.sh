@@ -12,14 +12,12 @@ STRUCTMAN_DB_FOLDER_NAME='struct_man_db_1'
 # Concatenate the database
 # cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB
 
-# Adding "structman.py" to "/usr/local/bin" as a symlink to make it a command line utility
+# Install structman using pip
 configure_structman() {
-    if [[ -f /usr/structman_library/sources/StructMAn/structman.py ]]; then
-        if [[ ! -e /usr/local/bin/structman.py ]]; then
-            ln -s /usr/structman_library/sources/StructMAn/* /usr/local/bin/
-        fi
+    if [[ -f /usr/structman_library/sources/setup.py ]]; then
+        pip3 install /usr/structman_library/sources/
     else
-        echo "===>    **structman.py** script could not be found. Aborting the container setup!    <==="
+        echo "===>    **setup.py** script could not be found. Aborting the container setup!    <==="
         exit 1
     fi
 }
