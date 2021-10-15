@@ -331,6 +331,8 @@ class Config:
             db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password)
             cursor = db.cursor()
         elif mapping_db:
+            if self.mapping_db is None:
+                return None, None
             db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.mapping_db)
             cursor = db.cursor()
         else:
