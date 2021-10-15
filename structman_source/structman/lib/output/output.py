@@ -2,7 +2,11 @@
 import os
 import time
 
-from structman.lib import babel, database, modelling, sdsc
+from structman.lib import babel, database, sdsc
+try:
+    from structman.lib import modelling
+except:
+    pass
 import structman.lib.output as smo
 
 

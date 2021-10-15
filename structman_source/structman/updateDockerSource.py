@@ -18,7 +18,7 @@ if __name__ == "__main__":
         print('ERROR: Need path to config file as second argument.')
         sys.exit(1)
 
-    structman_target_folder = f'{target_folder}/StructMAn'
+    structman_target_folder = f'{target_folder}/structman'
     lib_target_folder = f'{structman_target_folder}/lib'
     rinerator_target_folder = f'{lib_target_folder}/rinerator'
     database_target_file = f'{target_folder}/StructMAn_db/struct_man_db.sql.gz'
@@ -57,12 +57,22 @@ if __name__ == "__main__":
     shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
 
     utils_lib_path = f'{settings.ROOT_DIR}/utils'
-    utils_target_path = f'{target_folder}/StructMAn/utils'
+    utils_target_path = f'{target_folder}/structman/utils'
     if not os.path.exists(utils_target_path):
         os.mkdir(utils_target_path)
     for utils_file in os.listdir(utils_lib_path):
         source_path = f'{utils_lib_path}/{utils_file}'
         target_path = f'{utils_target_path}/{utils_file}'
+        if os.path.isfile(source_path):
+            shutil.copy(source_path, target_path)
+
+    scripts_lib_path = f'{settings.ROOT_DIR}/scripts'
+    scripts_target_path = f'{target_folder}/structman/scripts'
+    if not os.path.exists(scripts_target_path):
+        os.mkdir(scripts_target_path)
+    for scripts_file in os.listdir(scripts_lib_path):
+        source_path = f'{scripts_lib_path}/{scripts_file}'
+        target_path = f'{scripts_target_path}/{scripts_file}'
         if os.path.isfile(source_path):
             shutil.copy(source_path, target_path)
 
@@ -107,11 +117,11 @@ if __name__ == "__main__":
     with open(setup_source_path, 'r') as f:
         for line in f:
             if line.startswith('path_to_readme'):
-                new_lines.append('path_to_readme = "../README.md"\n')
+                new_lines.append('path_to_readme = None\n')
             elif line.startswith('path_to_version_file'):
-                new_lines.append('path_to_version_file = "./StructMAn/_version.py"\n')
+                new_lines.append('path_to_version_file = "./structman/_version.py"\n')
             elif line.startswith('        "console_scripts":'):
-                new_lines.append('        "console_scripts": ["structman = StructMAn.structman_main:structman_cli"],\n')
+                new_lines.append('        "console_scripts": ["structman = structman.structman_main:structman_cli"],\n')
             else:
                 new_lines.append(line)
 
@@ -125,7 +135,7 @@ if __name__ == "__main__":
     pdb_fasta_name = 'pdbba_mmseqs2'
 
     source_mmseqs_db_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
-    database_target_folder = '%s/StructMAn/lib/base/blast_db' % target_folder
+    database_target_folder = '%s/structman/lib/base/blast_db' % target_folder
     target_mmseqs_db_path = '%s/%s' % (database_target_folder, pdb_fasta_name)
     if os.path.isfile(target_mmseqs_db_path):
         os.remove(target_mmseqs_db_path)

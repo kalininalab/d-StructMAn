@@ -45,7 +45,7 @@ setup(
         "psutil>=5.8.0",
         "pymysql>=1.0.2",
         "python-igraph>=0.8.3",
-        "ray>=1.6.0",
+        "ray==1.6.0",
         "msgpack==1.0.2",
         "zstd==1.5.0.2"
     ],
