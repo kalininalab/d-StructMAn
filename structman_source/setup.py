@@ -8,7 +8,7 @@ if path_to_readme is not None:
 else:
     long_description = ''
 
-path_to_version_file = "./StructMAn/_version.py"
+path_to_version_file = "./structman/_version.py"
 
 with open(path_to_version_file) as version_file:
     exec(version_file.read().strip())
@@ -52,6 +52,6 @@ setup(
     python_requires=">=3.8, <4",
     keywords="bioinformatics",
     entry_points={
-        "console_scripts": ["structman = StructMAn.structman_main:structman_cli"],
+        "console_scripts": ["structman = structman.structman_main:structman_cli"],
     },
 )
