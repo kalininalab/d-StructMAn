@@ -3,7 +3,12 @@ import shutil
 
 import ray
 
-from structman.lib import database, modelling
+from structman.lib import database
+try:
+    from structman.lib import modelling
+except:
+    pass
+
 from structman.lib.output.output import OutputGenerator
 
 
