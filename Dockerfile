@@ -50,6 +50,12 @@ RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
 python3 get-pip.py --force-reinstall && \
 rm get-pip.py
 
+# Install StructMAn Python dependencies
+RUN pip3 install biopython==1.78 matplotlib==3.3.2 numpy==1.19.2 pandas==1.2.4 pymysql==1.0.2 psutil==5.8.0 python-igraph==0.8.3 msgpack==1.0.2 ray==1.6.0 zstd==1.5.0.2
+
+# Clear pip cache
+RUN rm -rf /root/.cache/pip
+
 # Increase TCP backlog connection
 RUN sysctl -w net.core.somaxconn=1024
 
