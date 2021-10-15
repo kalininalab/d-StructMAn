@@ -81,6 +81,8 @@ def calculate_chunksizes(n_of_chunks, n_of_items):
     big_chunksize = small_chunksize + 1
     n_of_small_chunks = n_of_chunks * big_chunksize - n_of_items
     n_of_big_chunks = n_of_chunks - n_of_small_chunks
+    if n_of_big_chunks == 0:
+        big_chunksize = 0
     return small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks
 
 

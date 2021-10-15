@@ -1,9 +1,10 @@
 from setuptools import setup, find_packages
 
-path_to_readme = "../README.md"
+path_to_readme = None
 
-with open(path_to_readme, "r") as desc_file:
-    long_description = desc_file.read()
+if path_to_readme is not None:
+    with open(path_to_readme, "r") as desc_file:
+        long_description = desc_file.read()
 
 path_to_version_file = "./StructMAn/_version.py"
 

@@ -1275,13 +1275,14 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
                         continue
 
                     if len(out) == 5:
-                        (prot_id, pdb_id, chain, sub_infos, seq_id) = out
+                        (prot_id, pdb_id, chain, sub_infos, align_info) = out
                         proteins.remove_annotation(prot_id, pdb_id, chain)
                         if not skip_inserts:
                             sus_complexes.add(pdb_id)
                             sus_structures.add((pdb_id, chain))
                         if config.verbosity >= 4:
-                            print('Alignment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id)
+                            seq_id, alignment_text = align_info
+                            print('Alignment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id, alignment_text)
                         t_i_1 += time.time()
                         continue
                     t_i_1 += time.time()
@@ -1441,6 +1442,7 @@ def paraMap(mapping_dump, u_ac, pdb_id, chain, structure_id, target_seq, templat
     return (u_ac, pdb_id, chain, sub_infos, atom_count, last_residue, first_residue)
 
 
+#called (also) by indel_analysis.py
 @ray.remote(max_calls = 1)
 def align(align_dump, package, model_path=None):
     ray_hack()
@@ -1484,7 +1486,11 @@ def align(align_dump, package, model_path=None):
                 if 100.0 * seq_id >= option_seq_thresh:
                     results.append((u_ac, pdb_id, chain, alignment_pir, seq_id, coverage, interaction_partners, chain_type_map, oligo, sub_infos, atom_count, last_residue, first_residue, chainlist, rare_residues))
                 else:
-                    results.append((u_ac, pdb_id, chain, sub_infos, seq_id))
+                    if config.verbosity >= 4:
+                        align_out = alignment_pir
+                    else:
+                        align_out = None
+                    results.append((u_ac, pdb_id, chain, sub_infos, (seq_id, align_out)))
 
             except:
                 [e, f, g] = sys.exc_info()
@@ -2204,7 +2210,7 @@ def core(protein_list, indels, multi_mutation_objects, config, session, outfolde
     # transform the protein map into a Proteins object
     proteins = sdsc.Proteins(protein_list, indels, multi_mutation_objects, lite=config.lite)
 
-    if config.verbosity >= 4:
+    if config.verbosity >= 5:
         print('Proteins state after object initialization:')
         proteins.print_protein_state()
 
@@ -2225,7 +2231,7 @@ def core(protein_list, indels, multi_mutation_objects, config, session, outfolde
                 for multi_mutation in proteins.multi_mutations[wt_prot_id]:
                     multi_mutation.mutate(proteins, config)
 
-        if config.verbosity >= 4:
+        if config.verbosity >= 5:
             print('Proteins state after protCheck:')
             proteins.print_protein_state()
 
@@ -2242,7 +2248,7 @@ def core(protein_list, indels, multi_mutation_objects, config, session, outfolde
 
             database.insertMultiMutations(proteins, session, config)
 
-        if config.verbosity >= 4:
+        if config.verbosity >= 5:
             print('Proteins state after positionCheck:')
             proteins.print_protein_state()
 

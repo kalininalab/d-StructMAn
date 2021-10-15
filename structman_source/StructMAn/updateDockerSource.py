@@ -8,6 +8,9 @@ import sys
 from structman import Config, settings
 
 if __name__ == "__main__":
+
+    update_script_folder = os.path.abspath(sys.argv[0].rsplit('/',1)[0])
+
     target_folder = sys.argv[1]
     config_path = sys.argv[2]
 
@@ -97,7 +100,7 @@ if __name__ == "__main__":
         if os.path.isfile(source_path):
             shutil.copy(source_path, target_path)
 
-    setup_source_path = f'{settings.ROOT_DIR}/../setup.py'
+    setup_source_path = f'{update_script_folder}/../../setup.py'
     setup_target_path = f'{target_folder}/setup.py'
 
     new_lines = []

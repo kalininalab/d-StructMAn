@@ -348,10 +348,11 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
                     with open(feature_file_path, 'a') as feat_f:
                         feat_f.write(''.join(f_lines))
                 f_lines = []
+
         if len(c_lines) > max_lines:
-            with FileLock(os.path.abspath('%s.lock' % feature_file_path)):
-                with open(feature_file_path, 'a') as feat_f:
-                    feat_f.write(''.join(f_lines))
+            with FileLock(os.path.abspath('%s.lock' % classification_file_path)):
+                with open(classification_file_path, 'a') as f:
+                    f.write(''.join(c_lines))
             c_lines = []
 
     with FileLock(os.path.abspath('%s.lock' % feature_file_path)):
@@ -457,24 +458,28 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
     if config.verbosity >= 2:
         t4 = time.time()
         print("Time for classificationOutput part 4: ", t4 - t3)
+        print('Total number of positions:', len(all_results))
+        t5 = time.time()
 
     classification_output, f = init_classification_table(class_file)
     feature_output, feat_f = init_feature_table(feature_file)
 
-    max_rows_at_a_time = 2000000
+    max_rows_at_a_time = 10000000
     if len(all_results) > config.proc_n:
         #print('Store sizes:', sdsc.total_size(tag_map), sdsc.total_size(mutation_dict), sdsc.total_size(protein_dict))
         ray_init(config)
         data_store = ray.put((config, input_res_id_dict, class_file, feature_file))
 
-
     already_unpacked = False
     main_loop_counter = 0
     stat_dict = {}
-    while(main_loop_counter*max_rows_at_a_time <= len(all_results)):
+    while((main_loop_counter)*max_rows_at_a_time <= len(all_results)):
         if config.verbosity >= 2:
                 t4 = time.time()
-        results = all_results[main_loop_counter*max_rows_at_a_time:(main_loop_counter+1)*max_rows_at_a_time]
+        results = all_results[(main_loop_counter*max_rows_at_a_time):((main_loop_counter+1)*max_rows_at_a_time)]
+
+        if config.verbosity >= 3:
+            print('Processing row', main_loop_counter*max_rows_at_a_time, 'till', (main_loop_counter+1)*max_rows_at_a_time)
 
         main_loop_counter += 1
 
@@ -483,6 +488,9 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             feat_f.close()
 
             small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = calculate_chunksizes(config.proc_n, len(results))
+            if config.verbosity >= 3:
+                print('calculate_chunksizes output:', small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks)
+
             unpackaging_remote_ids = []
             i = 0
             for i in range(n_of_big_chunks):
@@ -515,6 +523,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
                 if config.verbosity >= 4:
                     print('Started unpack_rows, package number:', i)
+
             for j in range(n_of_small_chunks):
 
                 left = ((i+1)*big_chunksize)+j*small_chunksize
@@ -769,6 +778,12 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
             f.close()
             feat_f.close()
+
+    if os.path.isfile('%s.lock' % feature_file):
+        os.remove('%s.lock' % feature_file)
+
+    if os.path.isfile('%s.lock' % class_file):
+        os.remove('%s.lock' % class_file)
 
     if config.verbosity >= 2:
         t6 = time.time()

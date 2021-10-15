@@ -331,9 +331,10 @@ def para_indel_analysis(proteins, config):
                     continue
 
                 if len(out) == 5:
-                    (prot_id, pdb_id, chain, sub_infos, seq_id) = out
-                    if config.verbosity >= 3:
-                        print('Aligment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id)
+                    (prot_id, pdb_id, chain, sub_infos, align_info) = out
+                    if config.verbosity >= 4:
+                        seq_id, alignment_text = align_info
+                        print('Alignment got filtered:', prot_id, pdb_id, chain, len(sub_infos), seq_id, alignment_text)
                     continue
 
                 (prot_id, model_id, model_chain, alignment, seq_id, coverage, interaction_partners, chain_type_map,
