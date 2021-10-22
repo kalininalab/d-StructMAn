@@ -69,6 +69,8 @@ RUN cd /opt/xssp-3.0.7/ && ./autogen.sh && ./configure && make mkdssp && make in
 # Add the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
 
+RUN pip3 install /usr/structman_library/sources/
+
 # Copy the entrypoint script to implement all the configuration
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
