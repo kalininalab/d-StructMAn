@@ -177,7 +177,7 @@ build_mmseqs_index() {
 }
 
 # Initializing MySQL server configuration
-configure_structman
+#configure_structman
 create_mysql_dirs
 configure_mysql
 build_mmseqs_index
