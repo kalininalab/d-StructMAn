@@ -12,16 +12,6 @@ STRUCTMAN_DB_FOLDER_NAME='struct_man_db_1'
 # Concatenate the database
 # cat /usr/structman_library/sources/StructMAn_db/db_split* > /usr/structman_library/sources/StructMAn_db/$STRUCTMAN_DB
 
-# Install structman using pip
-configure_structman() {
-    if [[ -f /usr/structman_library/sources/setup.py ]]; then
-        pip3 install /usr/structman_library/sources/
-    else
-        echo "===>    **setup.py** script could not be found. Aborting the container setup!    <==="
-        exit 1
-    fi
-}
-
 # Create necessary directories for the MySQL server setup with proper permissions and ownership
 create_mysql_dirs(){
     # Setup the MySQL data directory
@@ -177,7 +167,6 @@ build_mmseqs_index() {
 }
 
 # Initializing MySQL server configuration
-#configure_structman
 create_mysql_dirs
 configure_mysql
 build_mmseqs_index
