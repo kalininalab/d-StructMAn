@@ -21,7 +21,6 @@ from structman.lib import database, output, repairDB, serializedPipeline, search
 from structman.scripts import update
 from structman.utils import resolve_path
 
-
 # Check if autopep8 is installed for developers. Disable warning for end users by utilizing conda environment variable `STRUCTMAN_WARN`
 try:
     if os.environ.get('STRUCTMAN_WARN', 'yes') != 'no':
@@ -127,7 +126,7 @@ class Config:
         self.pdb_path = cfg.get('pdb_path', fallback='')
 
         self.annovar_path = cfg.get('annovar_path', fallback='')
-        self.dssp_path = cfg.get('dssp_path', fallback='')
+        self.dssp_path = cfg.get('dssp_path', fallback = f'{structman.settings.TOOLS_DIR}/mkdssp')
         self.rin_db_path = cfg.get('rin_db_path', fallback='')
         self.iupred_path = cfg.get('iupred_path', fallback='')
 
