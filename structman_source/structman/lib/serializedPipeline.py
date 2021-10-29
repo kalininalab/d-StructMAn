@@ -249,7 +249,7 @@ def sequenceScan(config, proteins, indels):
 
         gene_sequence_map = uniprot.getSequencesPlain(sequenceScanProteins.keys(), config)
         for u_ac in gene_sequence_map:
-            if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0:
+            if gene_sequence_map[u_ac][0] == 1 or gene_sequence_map[u_ac][0] == 0 or gene_sequence_map[u_ac][0] is None:
                 config.errorlog.add_warning("Error in sequenceScan with gene: %s" % u_ac)
                 continue
             seq, disorder_scores, disorder_regions_datastruct = gene_sequence_map[u_ac]
@@ -1372,9 +1372,10 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
             break
 
 
-    if config.verbosity >= 3:
-        print('Maximal package runtime:', max(package_runtimes))
-        print('Minimal package runtime:', min(package_runtimes))
+    if config.verbosity >= 3 and max_runtime_package is not None:
+        if len(package_runtimes) > 0:
+            print('Maximal package runtime:', max(package_runtimes))
+            print('Minimal package runtime:', min(package_runtimes))
         if len(package_runtimes) > 0:
             print('Packages mean runtime:',  statistics.mean(package_runtimes))
             print('Packages runtime deviation:', statistics.stdev(package_runtimes))

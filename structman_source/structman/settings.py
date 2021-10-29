@@ -3,12 +3,14 @@ from pathlib import Path
 import structman
 import structman.lib as lib
 from structman.lib import rinerator
+from structman.lib import output
 from structman import scripts
 
 
 ROOT_DIR = Path(structman.__file__).parent.absolute()
 LIB_DIR = Path(lib.__file__).parent.absolute()
 RINERATOR_DIR = Path(rinerator.__file__).parent.absolute()
+OUTPUT_DIR = Path(output.__file__).parent.absolute()
 SCRIPTS_DIR = Path(scripts.__file__).parent.absolute()
 
 RINERATOR_PATH = f'{RINERATOR_DIR}/get_chains.py'

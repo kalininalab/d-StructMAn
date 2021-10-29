@@ -34,7 +34,7 @@ CREATE TABLE `Alignment` (
   `Structure` int(11) UNSIGNED NOT NULL,
   `Sequence_Identity` float DEFAULT NULL,
   `Coverage` float DEFAULT NULL,
-  `Alignment` varbinary(4096) DEFAULT NULL
+  `Alignment` varbinary(8000) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -178,7 +178,7 @@ CREATE TABLE `Pathway` (
 CREATE TABLE `Residue` (
   `Residue_Id` int(11) UNSIGNED NOT NULL,
   `Structure` int(11) UNSIGNED NOT NULL,
-  `Residue_Data` varbinary(1024) DEFAULT NULL
+  `Residue_Data` varbinary(8000) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------

@@ -44,8 +44,10 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
     first_residue = None
     res_atom_count = 0
     dotted_res_name = None
+
     for line in lines:
         record_name = line[0:6].replace(" ", "")
+
         if record_name.count('ATOM') > 0 and record_name != 'ATOM':  # 100k atom bug fix
             record_name = 'ATOM'
         atom_name = line[12:16].replace(" ", "")
@@ -58,6 +60,7 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
             chain_id = line[21]
             if chain_id == ' ':
                 chain_id = chain
+
             res_nr = line[22:27].replace(" ", "")  # this includes the insertion code
 
             if record_name == 'SEQRES':
@@ -131,7 +134,7 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
                     seq = '%s?' % seq[:-1]
 
     if seq_res_map == [] and not could_be_empty:
-        config.errorlog.add_warning('Warning: seq_res_map empty: %s:%s' % (template_name, chain))
+        config.errorlog.add_warning('Warning: seq_res_map empty: %s:%s\n%s' % (template_name, chain, template_page))
 
     if onlySeqResMap:
         return seq_res_map, last_residue, first_residue

@@ -9,6 +9,7 @@ import urllib.request
 
 from structman.lib import database, sdsc
 
+chain_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
 
 def is_connected():
     try:
@@ -532,7 +533,14 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
     rare_residues = set()
     newlines = []
 
-    fixed_10k_bug = False
+    page_altered = False
+    not_crystal = False
+    multi_model_mode = False
+    multi_model_chain_dict = {}
+    chain_order_pos_marker = 0
+    asymetric_chain_number = None
+    current_model_id = 0
+    multi_model_chain_dict[current_model_id] = {}
 
     current_serial = 1
     firstAltLoc = None
@@ -543,9 +551,41 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
         else:
             continue
 
-        if record_name == b'ENDMDL':
+        if record_name == b'EXPDTA':
+            words = line.split()
+            if len(words) < 3:
+                continue
+            if words[2] == b'NMR':
+                not_crystal = True
+
+            if words[1] == b'SOLUTION' and (words[2] == b'SCATTERING' or words[2] == b'SCATTERING;' or words[2] == b'NMR;' or words[2] == b'NMR'):
+                not_crystal = True
+
+            if line.count(b'NMR') > 0:
+                not_crystal = True
             newlines.append(line)
-            break
+            continue
+
+        elif record_name == b'MODEL':
+            current_model_id = line[10:14]
+            if not current_model_id in multi_model_chain_dict:
+                multi_model_chain_dict[current_model_id] = {}
+            if not multi_model_mode:
+                newlines.append(line)
+            elif len(multi_model_chain_dict) * asymetric_chain_number >= len(chain_order):
+                break
+            continue
+
+        elif record_name == b'ENDMDL':
+            if not_crystal:
+                newlines.append(line)
+                break
+            elif not multi_model_mode:
+                multi_model_mode = True
+                page_altered = True
+                asymetric_chain_number = len(chain_ids)
+            continue
+
         elif record_name == b'SEQRES':
             for tlc in line[19:].split():
                 tlc = tlc.strip().decode('ascii')
@@ -588,6 +628,18 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
 
             if chain_id not in chain_ids:
                 chain_ids.add(chain_id)
+                multi_model_chain_dict[current_model_id][chain_id] = chain_id
+            elif multi_model_mode:
+                if not chain_id in multi_model_chain_dict[current_model_id]:
+                    new_chain_id = None
+                    while new_chain_id is None:
+                        if not chain_order[chain_order_pos_marker] in chain_ids:
+                            new_chain_id = chain_order[chain_order_pos_marker]
+                        chain_order_pos_marker += 1
+                    multi_model_chain_dict[current_model_id][chain_id] = new_chain_id
+                    chain_id = new_chain_id
+                else:
+                    chain_id = multi_model_chain_dict[current_model_id][chain_id]
 
         else:
             # We are not interested in other record types
@@ -595,22 +647,29 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
 
         # Adjust serials after skipping records
         if current_serial > 99999:
-            fixed_10k_bug = True
+            page_altered = True
             newline = record_name[0:5].ljust(5, b' ') + str(current_serial).encode('ascii').rjust(6, b' ')
         else:
             newline = record_name.ljust(6, b' ') + str(current_serial).encode('ascii').rjust(5, b' ')
 
         newline += line[11:]
+
+        if multi_model_mode:
+            newline = newline[:21] + chain_id.encode('ascii') + newline[22:]
+
         newlines.append(newline)
         current_serial += 1
+
+    newlines.append(b'ENDMDL                                                                          \n')
+
     template_page = b'\n'.join(newlines).decode('ascii')
 
     buf.close()
 
     if return_10k_bool and get_is_local:
-        return template_page, fixed_10k_bug, path, current_serial
+        return template_page, page_altered, path, current_serial
     elif return_10k_bool:
-        return template_page, fixed_10k_bug, current_serial
+        return template_page, page_altered, current_serial
     elif get_is_local:
         return template_page, path, current_serial
     return template_page, current_serial
@@ -783,6 +842,15 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
     interaction_partners = []
 
     rare_residues = set()
+    chain_ids = set()
+
+    not_crystal = False
+    multi_model_mode = False
+    multi_model_chain_dict = {}
+    chain_order_pos_marker = 0
+    asymetric_chain_number = None
+    current_model_id = 0
+    multi_model_chain_dict[current_model_id] = {}
 
     current_serial = 1
     firstAltLoc = None
@@ -794,9 +862,39 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
         else:
             continue
 
-        if record_name == 'ENDMDL':
+        if record_name == 'EXPDTA':
+            words = line.split()
+            if len(words) < 3:
+                continue
+            if words[2] == 'NMR':
+                not_crystal = True
+
+            if words[1] == 'SOLUTION' and (words[2] == 'SCATTERING' or words[2] == 'SCATTERING;' or words[2] == 'NMR;' or words[2] == 'NMR'):
+                not_crystal = True
+
+            if line.count('NMR') > 0:
+                not_crystal = True
             newlines.append(line)
-            break
+            continue
+
+        elif record_name == 'MODEL':
+            current_model_id = line[10:14]
+            if not current_model_id in multi_model_chain_dict:
+                multi_model_chain_dict[current_model_id] = {}
+            if not multi_model_mode:
+                newlines.append(line)
+            elif len(multi_model_chain_dict) * asymetric_chain_number >= len(chain_order):
+                break
+            continue
+
+        elif record_name == 'ENDMDL':
+            if not_crystal:
+                newlines.append(line)
+                break
+            elif not multi_model_mode:
+                multi_model_mode = True
+                asymetric_chain_number = len(chain_ids)
+            continue
 
         elif record_name == 'SEQRES':
             for tlc in line[19:].split():
@@ -825,6 +923,22 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
                 continue
             res_name = line[17:20].strip()
             chain_id = line[21:22]
+
+            if chain_id not in chain_ids:
+                chain_ids.add(chain_id)
+                multi_model_chain_dict[current_model_id][chain_id] = chain_id
+            elif multi_model_mode:
+                if not chain_id in multi_model_chain_dict[current_model_id]:
+                    new_chain_id = None
+                    while new_chain_id is None:
+                        if not chain_order[chain_order_pos_marker] in chain_ids:
+                            new_chain_id = chain_order[chain_order_pos_marker]
+                        chain_order_pos_marker += 1
+                    multi_model_chain_dict[current_model_id][chain_id] = new_chain_id
+                    chain_id = new_chain_id
+                else:
+                    chain_id = multi_model_chain_dict[current_model_id][chain_id]
+
             res_nr = line[22:27].strip()
 
             #occupancy = float(line[54:60].replace(" ",""))
@@ -883,10 +997,16 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
         else:
             newline = record_name.ljust(6, ' ') + str(current_serial).rjust(5, ' ')
         newline += line[11:]
+
+        if multi_model_mode:
+            newline = newline[:21] + chain_id + newline[22:]
+
         newlines.append(newline)
         current_serial += 1
 
     buf.close()
+
+    newlines.append('ENDMDL                                                                          \n')
 
     pep_not_lig = []
     for chain_id in chain_type_map:
@@ -1125,111 +1245,56 @@ def updateLigandDB(new_ligands, smiles_path, inchi_path):
 
 
 # get called by database
-def getSI(pdb_id, name, res, chain, pdb_path, verbosity=0):
+def getSI(pdb_id, name, res, chain, pdb_path, config):
 
-    MMCIF_Flag = False
     AU = False
     if pdb_id.count('_AU') == 1:
         pdb_id = pdb_id[0:4]
         AU = True
 
-    buf = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=False, verbosity=verbosity)
+    buf = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=False, verbosity=config.verbosity)
 
-    # Added automatization here if pdb buffer does not exist, it goes into mmcif buffer
+    newlines = []
 
-    # if buf is None:
-    #    buf = getMMCIFBuffer(pdb_id,pdb_path,AU=AU)
-    #    MMCIF_Flag = True
-
-    if MMCIF_Flag:
-        newlines = []
-
-        for line in buf:
-            splitted = line.split()
-            if len(line) >= 27:
-                record_name = splitted[0]
-            else:
-                continue
-            if record_name == 'ENDMDL':
-                break
-
-            if record_name == 'HETATM':
-                res_name = splitted[5]
-                chain_id = splitted[6]
-                res_nr = splitted[8]
-                if chain == chain_id and name == res_name and res_nr == res:
-                    newlines.append(line)
-
-        buf.close()
-
-        page = (b''.join(newlines)).decode('ascii')
-
-        FNULL = open(os.devnull, 'w')
-        try:
-            inchiproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "inchi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            inchi, i_err = inchiproc.communicate(page, timeout=600)
-            smilesproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "smi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            smiles, s_err = smilesproc.communicate(page, timeout=600)
-        except:
-            print("[WARNING] Babel Package seems not to be installed")
-            return ("", "")
-
-        # print(i_err)
-        # print(s_err)
-        smiles = smiles.split()
-        if len(smiles) > 0:
-            smiles = smiles[0]
+    for line in buf:
+        if len(line) >= 27:
+            record_name = line[0:6].rstrip()
         else:
-            print("Ligand not found in database and Babel failed: ", name, res, chain, pdb_id, i_err, s_err)
+            continue
+        if record_name == b'ENDMDL':
+            break
 
-        inchi = inchi.replace('\n', '')
+        if record_name == b'HETATM':
+            res_name = line[17:20].strip().decode('ascii')
+            chain_id = line[21:22].decode('ascii')
+            res_nr = line[22:27].strip().decode('ascii')
+            if chain == chain_id and name == res_name and res_nr == res:
+                newlines.append(line)
 
-        return (smiles, inchi)
+    buf.close()
 
+    page = (b''.join(newlines)).decode('ascii')
+
+    FNULL = open(os.devnull, 'w')
+    try:
+        inchiproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "inchi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        inchi, i_err = inchiproc.communicate(page, timeout=600)
+        smilesproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "smi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        smiles, s_err = smilesproc.communicate(page, timeout=600)
+    except:
+        config.errorlog.add_warning("Babel Package seems not to be installed: %s %s %s %s\n%s\n%s" % (pdb_id, name, res, chain, i_err, s_err))
+        return ("", "")
+
+    smiles = smiles.split()
+    if len(smiles) > 0:
+        smiles = smiles[0]
     else:
+        config.errorlog.add_warning("Ligand not found in database and Babel failed: %s %s %s %s\n%s\n%s" % (name, res, chain, pdb_id, i_err, s_err))
+        return ("", "")
 
-        newlines = []
+    inchi = inchi.replace('\n', '')
 
-        for line in buf:
-            if len(line) >= 27:
-                record_name = line[0:6].rstrip()
-            else:
-                continue
-            if record_name == b'ENDMDL':
-                break
-
-            if record_name == b'HETATM':
-                res_name = line[17:20].strip().decode('ascii')
-                chain_id = line[21:22].decode('ascii')
-                res_nr = line[22:27].strip().decode('ascii')
-                if chain == chain_id and name == res_name and res_nr == res:
-                    newlines.append(line)
-
-        buf.close()
-
-        page = (b''.join(newlines)).decode('ascii')
-
-        FNULL = open(os.devnull, 'w')
-        try:
-            inchiproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "inchi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            inchi, i_err = inchiproc.communicate(page, timeout=600)
-            smilesproc = subprocess.Popen(["babel", "-i", "pdb", "-o", "smi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            smiles, s_err = smilesproc.communicate(page, timeout=600)
-        except:
-            print("[WARNING] Babel Package seems not to be installed", pdb_id, name, res, chain, i_err, s_err)
-            return ("", "")
-
-        # print(i_err)
-        # print(s_err)
-        smiles = smiles.split()
-        if len(smiles) > 0:
-            smiles = smiles[0]
-        else:
-            print("Ligand not found in database and Babel failed: ", name, res, chain, pdb_id, i_err, s_err)
-
-        inchi = inchi.replace('\n', '')
-
-        return (smiles, inchi)
+    return (smiles, inchi)
 
 
 def getPDBHeaderBuffer(pdb_id, pdb_path, tries=0, verbosity=0):

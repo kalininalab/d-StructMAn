@@ -20,6 +20,7 @@ from structman.lib.sdsc import THREE_TO_ONE
 
 # lowercase_map = {'a':'!','b':'@','c':'#'}#,'d':'$','e':'%','f':'^','g':'&','h':'*','i':'+','j':'=','k':'{','l':'}','m':'[','n':']','o':';','p':'<','q':'>','r':',','s':'?','t':'`','u':'~','v':'|','w':'/','x':'"','y':"'"}
 
+chain_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
 
 def parsePDB(page):
 
@@ -31,17 +32,61 @@ def parsePDB(page):
     lines = page.split('\n')
 
     original_chains = set([])
+    chain_ids = set()
 
     ligands = set()
     modres_map = {}
 
     new_lines = []
 
+    not_crystal = False
+    multi_model_mode = False
+    multi_model_chain_dict = {}
+    chain_order_pos_marker = 0
+    asymetric_chain_number = None
+    current_model_id = 0
+    multi_model_chain_dict[current_model_id] = {}
+
     #changed_chains = []
     firstAltLoc = None
     for line in lines:
+        record_name = line[0:6].replace(" ", "")
+
+        if record_name == 'EXPDTA':
+            words = line.split()
+            if len(words) < 3:
+                continue
+            if words[2] == 'NMR':
+                not_crystal = True
+
+            if words[1] == 'SOLUTION' and (words[2] == 'SCATTERING' or words[2] == 'SCATTERING;' or words[2] == 'NMR;' or words[2] == 'NMR'):
+                not_crystal = True
+
+            if line.count('NMR') > 0:
+                not_crystal = True
+            new_lines.append(line)
+            continue
+
         if len(line) > 26:
-            record_name = line[0:6].replace(" ", "")
+            if record_name == 'MODEL':
+                current_model_id = line[10:14]
+                if not current_model_id in multi_model_chain_dict:
+                    multi_model_chain_dict[current_model_id] = {}
+                if not multi_model_mode:
+                    new_lines.append(line)
+                elif len(multi_model_chain_dict) * asymetric_chain_number >= len(chain_order):
+                    break
+                continue
+
+            elif record_name == 'ENDMDL':
+                if not_crystal:
+                    new_lines.append(line)
+                    break
+                elif not multi_model_mode:
+                    multi_model_mode = True
+                    asymetric_chain_number = len(chain_ids)
+                continue
+
             atom_nr = line[6:11].replace(" ", "")
             atom_name = line[12:16].replace(" ", "")
             res_name = line[17:20].replace(" ", "")
@@ -51,11 +96,8 @@ def parsePDB(page):
             #    chain_id = lowercase_map[chain_id]
             #    changed_chains.append(chain_id)
 
-            line = '%s%s%s' % (line[:21], chain_id, line[22:])
-
             res_nr = line[22:27].replace(" ", "")
-            if record_name == 'ENDMDL':
-                break
+
             if record_name == 'MODRES':
                 chain_id = line[16]
                 res_nr = line[18:23].replace(" ", "")
@@ -63,6 +105,22 @@ def parsePDB(page):
                 if not (chain_id, res_nr) in modres_map:
                     modres_map[(chain_id, res_nr)] = res_name
             if record_name == "ATOM" or record_name == "HETATM":
+
+                if chain_id not in chain_ids:
+                    chain_ids.add(chain_id)
+                    multi_model_chain_dict[current_model_id][chain_id] = chain_id
+                elif multi_model_mode:
+                    if not chain_id in multi_model_chain_dict[current_model_id]:
+                        new_chain_id = None
+                        while new_chain_id is None:
+                            if not chain_order[chain_order_pos_marker] in chain_ids:
+                                new_chain_id = chain_order[chain_order_pos_marker]
+                            chain_order_pos_marker += 1
+                        multi_model_chain_dict[current_model_id][chain_id] = new_chain_id
+                        chain_id = new_chain_id
+                    else:
+                        chain_id = multi_model_chain_dict[current_model_id][chain_id]
+
                 altLoc = line[16]
                 if firstAltLoc is None and altLoc != ' ':
                     firstAltLoc = altLoc  # The first found alternative Location ID is set as the major alternative location ID or firstAltLoc
@@ -78,6 +136,9 @@ def parsePDB(page):
                             original_chains.add(chain_id)
                     else:
                         original_chains.add(chain_id)
+
+            line = '%s%s%s' % (line[:21], chain_id, line[22:])
+
         new_lines.append(line)
 
     page = '\n'.join(new_lines)
@@ -171,11 +232,19 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
     reduce_cmd = '%s/reduce' % rinerator_base_path
     probe_cmd = '%s/probe' % rinerator_base_path
 
-    if verbosity >= 4:
-        get_chains.main(tmp_pdb, out_path, tmp_chain, tmp_ligands, True, reduce_cmd, probe_cmd)
-    else:
-        with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+    try:
+        if verbosity >= 4:
             get_chains.main(tmp_pdb, out_path, tmp_chain, tmp_ligands, True, reduce_cmd, probe_cmd)
+        else:
+            with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+                get_chains.main(tmp_pdb, out_path, tmp_chain, tmp_ligands, True, reduce_cmd, probe_cmd)
+    except:
+        [e, f, g] = sys.exc_info()
+        #g = traceback.format_exc(g)
+        print("\nRIN calc Error:\n", pdb_id, structure_path, e, f, original_chains)
+        if verbosity >= 5:
+            print(page)
+        return
 
     '''
     cmd = ['python3',rinerator_path,'-d',tmp_pdb,out_path,tmp_chain,tmp_ligands]
@@ -385,7 +454,7 @@ def main(fromScratch=False, pdb_p='', rin_db_path='', n_proc=32, rinerator_base_
 
     base_path = rin_db_path
 
-    errorlog = "%s/createRINdb_errorlog.txt" % rinerator_base_path
+    errorlog = "createRINdb_errorlog.txt"
 
     lim = 100 * 1024 * 1024 * 1024
 

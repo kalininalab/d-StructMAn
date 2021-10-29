@@ -316,6 +316,8 @@ def parsePDB(input_page):
                         elif len(res_name) == 2:
                             chain_type_map[chain_id] = "DNA"
                             peptide_count[chain_id] = [0, 0]
+                        else:
+                            chain_type_map[chain_id] = 'MISC'
 
 
                 if record_name == 'HETATM':
@@ -644,7 +646,7 @@ def analysis_chain(target_chain, analysis_dump):
     (pdb_id, config, target_residues, siss_coord_map, centroid_map,
      res_contig_map, coordinate_map, fuzzy_dist_matrix, chain_type_map,
      b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map,
-     profiles, milieu_dict, dssp, dssp_dict) = analysis_dump
+     profiles, milieu_dict, dssp, dssp_dict, page_altered) = analysis_dump
     errorlist = []
 
     siss_map = {}
@@ -663,8 +665,11 @@ def analysis_chain(target_chain, analysis_dump):
     structural_analysis_dict = {}
 
     milieu_dict[target_chain] = {}
-    for target_res_id in target_residues[target_chain]:
+    sub_loop_broken = False
 
+    for target_res_id in target_residues[target_chain]:
+        if sub_loop_broken:
+            break
         milieu_dict[target_chain][target_res_id] = {}
         three_letter = res_contig_map[target_chain][target_res_id][1]
         if three_letter in sdsc.THREE_TO_ONE:
@@ -730,7 +735,9 @@ def analysis_chain(target_chain, analysis_dump):
                             inter_chain_rsas.append(rsa)
                             inter_chain_dist_weighted_rsas.append(rsa / dist)
                         if chain not in profiles:
-                            errorlist.append('target_chain not in profiles: %s %s' % (chain, list(profiles.keys())))
+                            errorlist.append('(1) target_chain not in profiles: %s %s %s' % (pdb_id, chain, list(profiles.keys())))
+                            sub_loop_broken = True
+                            break
                         else:
                             interface_score = profiles[chain][inter_chain_res][0].getTotalInterfaceInteractionScore()
                             inter_chain_interactions.append(interface_score)
@@ -787,8 +794,9 @@ def analysis_chain(target_chain, analysis_dump):
                         dist = inside_sphere[intra_chain_res]
                         total_dist_weights += 1 / dist
                         if not chain in profiles:
-                            errorlist.append('target_chain not in profiles: %s %s' % (chain,list(profiles.keys())))
-
+                            errorlist.append('(2) target_chain not in profiles: %s %s %s' % (pdb_id, chain, list(profiles.keys())))
+                            sub_loop_broken = True
+                            break
                         elif intra_chain_res in profiles[chain]:
                             interface_score = profiles[chain][intra_chain_res][0].getTotalInterfaceInteractionScore()
                             intra_chain_interactions.append(interface_score)
@@ -854,7 +862,7 @@ def analysis_chain(target_chain, analysis_dump):
                     psi = None
             else:
                 atomic_coverage = get_atomic_coverage(coordinate_map, chain)
-                if atomic_coverage > 0.5: #DSSP does not work for chains with missing atomic coordinates, no need for a warning here
+                if atomic_coverage > 0.5 and not page_altered: #DSSP does not work for chains with missing atomic coordinates or chains over the 10K atoms mark, no need for a warning here
                     errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id, target_chain)))
                 dssp = False
                 if target_res_id in siss_map:
@@ -967,11 +975,14 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         t0 = time.time()
         print('Start structuralAnalysis of:', pdb_id)
 
-    page, fixed_10k_bug, path, atom_count = pdbParser.standardParsePDB(pdb_id, pdb_path, return_10k_bool=True, get_is_local=True, model_path=model_path)
+    page, page_altered, path, atom_count = pdbParser.standardParsePDB(pdb_id, pdb_path, return_10k_bool=True, get_is_local=True, model_path=model_path)
 
     if verbosity >= 4:
         t1 = time.time()
         print('Time for structuralAnalysis Part 1:', t1 - t0)
+
+    if verbosity >= 5:
+        print('\n',pdb_id,'\n\n',page)
 
     errorlist = []
 
@@ -1015,7 +1026,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
 
     if dssp:
         # write temp pdb file only if we had to fix the 10k atom bug or the file is not stored locally
-        if fixed_10k_bug or path is None:
+        if page_altered or path is None:
             tmp_path = '%s/tmp_%s.pdb' % (config.temp_folder, pdb_id)
             f = open(tmp_path, 'w')
             f.write(page)
@@ -1027,7 +1038,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         dssp_dict, errlist = calcDSSP(tmp_path, dssp_path, angles=True, verbosity_level=verbosity)
         errorlist += errlist
         # remove tmp_file
-        if fixed_10k_bug:
+        if page_altered:
             try:
                 os.remove(tmp_path)
             except:
@@ -1096,7 +1107,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         analysis_dump = ray.put((pdb_id, config, target_residues, siss_coord_map, centroid_map,
                                  res_contig_map, coordinate_map, fuzzy_dist_matrix, chain_type_map,
                                  b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map,
-                                 profiles, milieu_dict, dssp, dssp_dict))
+                                 profiles, milieu_dict, dssp, dssp_dict, page_altered))
 
         core_results = []
 
@@ -1139,7 +1150,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         analysis_dump = (pdb_id, config, target_residues, siss_coord_map, centroid_map,
                          res_contig_map, coordinate_map, fuzzy_dist_matrix, chain_type_map,
                          b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map,
-                         profiles, milieu_dict, dssp, dssp_dict)
+                         profiles, milieu_dict, dssp, dssp_dict, page_altered)
         for target_chain in target_residues:
             if chain_type_map[target_chain] != 'Protein':
                 continue

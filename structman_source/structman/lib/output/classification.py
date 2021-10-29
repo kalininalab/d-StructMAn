@@ -1,14 +1,32 @@
 import os
+import sys
 import time
 from ast import literal_eval
 import ray
+import structman
+from structman import settings
 from structman.lib import database, rin, sdsc
-from structman.utils import unpack, ray_init, calculate_chunksizes
 from structman.lib.output.feature import init_feature_table
 from structman.lib.output.output import OutputGenerator
 from structman.lib.output.utils import makeViolins
 from filelock import FileLock
 
+def ray_init(config):
+    if ray.is_initialized():
+        if config.verbosity >= 2:
+            print('Ray_init was called, but ray was already initialised')
+        return
+    os.environ["PYTHONPATH"] = f'{settings.ROOT_DIR}:{os.environ.get("PYTHONPATH", "")}'
+    os.environ["PYTHONPATH"] = f'{settings.LIB_DIR}:{os.environ.get("PYTHONPATH", "")}'
+    os.environ["PYTHONPATH"] = f'{settings.RINERATOR_DIR}:{os.environ.get("PYTHONPATH", "")}'
+    os.environ["PYTHONPATH"] = f'{settings.OUTPUT_DIR}:{os.environ.get("PYTHONPATH", "")}'
+    if config.iupred_path != '':
+        os.environ["PYTHONPATH"] = f'{os.path.abspath(os.path.realpath(config.iupred_path))}:{os.environ.get("PYTHONPATH", "")}'
+
+    logging_level = 20
+    if config.verbosity <= 1:
+        logging_level = 0
+    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level)
 
 def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
     seq_id_threshold = 0.99
@@ -122,7 +140,7 @@ def init_classification_table(class_file, obj_only = False):
 
 @ray.remote(max_calls = 1)
 def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict):
-
+    from structman.utils import unpack
     config, input_res_id_dict, classification_file_path, feature_file_path = store_data
 
     classification_output = init_classification_table(None, obj_only = True)
@@ -159,6 +177,10 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
                 intra_chain_median_kd, intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
                 weighted_inter_chain_interactions_median, weighted_inter_chain_interactions_dist_weighted,
                 weighted_intra_chain_interactions_median, weighted_intra_chain_interactions_dist_weighted) = [None]*38
+
+            centrality_scores = rin.Centrality_scores()
+            rin_profile = rin.Interaction_profile()
+
         else:
             try:
                 (weighted_sc, mainchain_location, sidechain_location, rsa, mainchain_rsa, sidechain_rsa, Class, rin_class, simple_class, rin_simple_class,
@@ -464,8 +486,11 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
     classification_output, f = init_classification_table(class_file)
     feature_output, feat_f = init_feature_table(feature_file)
 
-    max_rows_at_a_time = 10000000
-    if len(all_results) > config.proc_n:
+    max_rows_at_a_time = 5000000
+
+    use_ray = len(all_results) > config.proc_n
+
+    if use_ray:
         #print('Store sizes:', sdsc.total_size(tag_map), sdsc.total_size(mutation_dict), sdsc.total_size(protein_dict))
         ray_init(config)
         data_store = ray.put((config, input_res_id_dict, class_file, feature_file))
@@ -483,11 +508,11 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
         main_loop_counter += 1
 
-        if len(results) > config.proc_n:
+        if use_ray:
             f.close()
             feat_f.close()
 
-            small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = calculate_chunksizes(config.proc_n, len(results))
+            small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = structman.utils.calculate_chunksizes(config.proc_n, len(results))
             if config.verbosity >= 3:
                 print('calculate_chunksizes output:', small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks)
 
@@ -569,7 +594,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             print("Time for classificationOutput part 5: ", t5 - t4, main_loop_counter)
 
         if not already_unpacked:
-
+            from structman.utils import unpack
             for row in results:
                 m = row[0]
                 position_number = row[1]

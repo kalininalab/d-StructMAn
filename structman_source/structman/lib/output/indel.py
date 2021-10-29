@@ -2,7 +2,6 @@ import os
 
 from structman.lib import database, rin
 from structman.lib.output.output import OutputGenerator
-from structman.utils import unpack
 
 def add_aggregate_results(aggregates, indel_output, aggregate_type, raw_aggregate_header_base_names):
     if aggregates is None:
@@ -124,12 +123,16 @@ def create_indel_results_table(config, output_path, session_name, session_id):
 
     protein_dict = database.getProteinDict(prot_id_list, session_id, config)
 
+    from structman.utils import unpack
     for row in results:
         indel_id = row[0]
         indel_output.add_value('Indel', row[1])
         indel_output.add_value('Tags', tag_map[indel_id])
 
-        (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = unpack(row[2])
+        if row[2] is not None:
+            (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = unpack(row[2])
+        else:
+            (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = [None] * 8
 
         indel_output.add_value('Size', size)
         indel_output.add_value('Delta delta classification', ddC)

@@ -32,7 +32,7 @@ def geneSeqMapToFasta(proteins, outfile, config, filtering_db=None):
 
         seq = proteins.get_sequence(prot_id)
 
-        if seq == 0 or seq == 1 or seq == '':
+        if seq == 0 or seq == 1 or seq == '' or seq == None:
             continue
         if filtering_db is not None:
             folder_key = prot_id.split('-')[0][-2:]

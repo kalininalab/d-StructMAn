@@ -33,7 +33,7 @@ CREATE TABLE `UNIPROT` (
   `Uniprot_Id` varchar(32) COLLATE utf8_unicode_ci DEFAULT NULL,
   `RefSeq` varchar(16) COLLATE utf8_unicode_ci DEFAULT NULL,
   `RefSeq_NT` varchar(16) COLLATE utf8_unicode_ci DEFAULT NULL,
-  `Sequence` varbinary(4096) DEFAULT NULL
+  `Sequence` varbinary(8000) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 --
@@ -44,7 +44,10 @@ CREATE TABLE `UNIPROT` (
 -- Indizes für die Tabelle `UNIPROT`
 --
 ALTER TABLE `UNIPROT`
-  ADD PRIMARY KEY (`Uniprot_Ac`);
+  ADD PRIMARY KEY (`Uniprot_Ac`),
+  ADD KEY `Uniprot_Id` (`Uniprot_Id`),
+  ADD KEY `RefSeq` (`RefSeq`),
+  ADD KEY `RefSeq_NT` (`RefSeq_NT`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

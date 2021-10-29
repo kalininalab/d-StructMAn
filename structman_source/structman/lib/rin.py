@@ -838,6 +838,8 @@ def getProfile(interaction_map, residue, ligands, metals, ions, res_contig_map, 
                 elif (chain_b, res_b) in ions:
                     interaction_type = 'ion'
                 elif chain != chain_b:
+                    if chain_b not in chain_type_map:
+                        continue
                     interaction_type = chain_type_map[chain_b]
                 else:
                     if res_b not in res_contig_map[chain]:
@@ -951,6 +953,9 @@ def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, re
         createRINdb.calcRIN(page.encode(), folder_path, pdb_id, rinerator_path, True, config.verbosity, structure_path=model_path)
         path_stem = "%s/%s" % (folder_path, pdb_id)
         interaction_score_file = "%s_intsc.ea.gz" % (path_stem)
+        
+        if not os.path.isfile(interaction_score_file):
+            return 'RIN not found and calculation of RIN failed for: %s' % pdb_id
 
     network_file = "%s.sif.gz" % (path_stem)
     interaction_count_file = "%s_nrint.ea.gz" % (path_stem)

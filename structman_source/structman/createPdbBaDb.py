@@ -15,7 +15,7 @@ from structman.utils import ray_init, ray_hack
 @ray.remote(num_cpus=1)
 def parseByAtom(parse_dump, sub_folder):
     ray_hack()
-
+    chain_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
     divide_folder = parse_dump
 
     files = os.listdir("%s%s" % (divide_folder, sub_folder))
@@ -46,6 +46,16 @@ def parseByAtom(parse_dump, sub_folder):
         lines = page.split('\n')
 
         seqs = {}
+        chain_ids = set()
+
+        not_crystal = False
+        multi_model_mode = False
+        multi_model_chain_dict = {}
+        chain_order_pos_marker = 0
+        asymetric_chain_number = None
+        current_model_id = 0
+        multi_model_chain_dict[current_model_id] = {}
+
         used_res = {}
         firstAltLoc = None
         for line in lines:
@@ -53,16 +63,62 @@ def parseByAtom(parse_dump, sub_folder):
             atom_nr = line[6:11].replace(" ", "")
             atom_name = line[12:16].replace(" ", "")
             res_name = line[17:20].replace(" ", "")
-            if record_name == 'ENDMDL':
-                break
+
+            if record_name == 'EXPDTA':
+                words = line.split()
+                if len(words) < 3:
+                    continue
+                if words[2] == 'NMR':
+                    not_crystal = True
+
+                if words[1] == 'SOLUTION' and (words[2] == 'SCATTERING' or words[2] == 'SCATTERING;' or words[2] == 'NMR;' or words[2] == 'NMR'):
+                    not_crystal = True
+
+                if line.count('NMR') > 0:
+                    not_crystal = True
+                continue
+
+            if record_name == 'MODEL':
+                current_model_id = line[10:14]
+                if not current_model_id in multi_model_chain_dict:
+                    multi_model_chain_dict[current_model_id] = {}
+                if multi_model_mode:
+                    if len(multi_model_chain_dict) * asymetric_chain_number >= len(chain_order):
+                        break
+                continue
+            elif record_name == 'ENDMDL':
+                if not_crystal:
+                    break
+                elif not multi_model_mode:
+                    multi_model_mode = True
+                    asymetric_chain_number = len(chain_ids)
+                continue
+
             if len(res_name) < 3:
                 continue
             if len(line) > 21:
-
-                chain_id = line[21]
-                res_nr = line[22:27].replace(" ", "")
-
                 if record_name == "ATOM" or record_name == 'HETATM':
+                    chain_id = line[21]
+
+                    if chain_id not in chain_ids:
+                        chain_ids.add(chain_id)
+                        multi_model_chain_dict[current_model_id][chain_id] = chain_id
+                    elif multi_model_mode:
+                        if not chain_id in multi_model_chain_dict[current_model_id]:
+                            new_chain_id = None
+                            while new_chain_id is None:
+                                if chain_order_pos_marker == len(chain_order):
+                                    print(pdb_id, filename)
+                                if not chain_order[chain_order_pos_marker] in chain_ids:
+                                    new_chain_id = chain_order[chain_order_pos_marker]
+                                chain_order_pos_marker += 1
+                            multi_model_chain_dict[current_model_id][chain_id] = new_chain_id
+                            chain_id = new_chain_id
+                        else:
+                            chain_id = multi_model_chain_dict[current_model_id][chain_id]
+
+                    res_nr = line[22:27].replace(" ", "")
+
                     altLoc = line[16]
 
                     if firstAltLoc is None and altLoc != ' ':

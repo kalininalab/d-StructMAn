@@ -594,7 +594,16 @@ def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_e
             u_ac = row[0]
             if u_ac not in u_acs:
                 continue
-            seq = unpack(row[1])
+            if row[1] is None:
+                config.errorlog.add_warning('Sequence field is None in Mapping DB, for: %s' % u_ac) 
+                #gene_sequence_map[u_ac] = None, None, None
+                continue
+            try:
+                seq = unpack(row[1])
+            except:
+                config.errorlog.add_warning('Sequence field is defect in Mapping DB, for: %s' % u_ac)
+                #gene_sequence_map[u_ac] = None, None, None
+                continue
 
             if max_seq_len is not None:
                 if len(seq) > max_seq_len:
@@ -732,8 +741,26 @@ def getSequences(proteins, config):
                 protein_map[iso_u_ac].go_terms = go_terms
                 protein_map[iso_u_ac].pathways = pathways
 
+def get_last_version(u_ac):
+    url = 'https://www.uniprot.org/uniprot/%s?version=*' % u_ac
+    #connection_sleep_cycle(config.verbosity)
+    try:
+        request = urllib.request.Request(url)
+        response = urllib.request.urlopen(request)
+        page = response.read(9000000).decode('utf-8')
+    except:
+        e, f, g = sys.exc_info()
+        config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url, str(e), str(f)))
+        return None
+    print(page)
 
-def getSequence(uniprot_ac, config, tries=0, return_id=False):
+def get_obsolete_sequence(u_ac, config, return_id=False):
+    uniparc_id = getUniprotIds(config, [u_ac], 'ACC', target_type="UPARC")[u_ac]
+    if config.verbosity >= 3:
+        print('Uniparc ID of potential obsolete uniprot entry (', u_ac, ') is:', uniparc_id)
+    return getSequence(uniparc_id, config, return_id=return_id, obsolete_try = True)
+
+def getSequence(uniprot_ac, config, tries=0, return_id=False, obsolete_try = False):
     if config.verbosity >= 3:
         print('uniprot.getSequence for ', uniprot_ac)
 
@@ -762,6 +789,11 @@ def getSequence(uniprot_ac, config, tries=0, return_id=False):
             config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url, str(e), str(f)))
             return None
 
+    if config.verbosity >= 3 and obsolete_try:
+        print('Obsolete entry try:', uniprot_ac, url)
+        if config.verbosity >= 4:
+            print('Online return:\n', page)
+
     lines = page.split("\n")
 
     wildtype_sequences = []
@@ -776,7 +808,11 @@ def getSequence(uniprot_ac, config, tries=0, return_id=False):
     wildtype_sequence = ("".join(wildtype_sequences)).replace(" ", "").replace("\n", "")
 
     if wildtype_sequence == '':
-        return None
+        if obsolete_try: #Unless it could come to an endless loop
+            return None
+        if config.verbosity >= 3:
+            print('Try to search for obsolete uniprot entry:', uniprot_ac)
+        return get_obsolete_sequence(uniprot_ac, config, return_id=return_id)
 
     if uniprot_ac[0:3] == 'UPI':
         if return_id:

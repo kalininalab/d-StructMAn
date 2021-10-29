@@ -203,13 +203,14 @@ def insert(table, columns, values, config, n_trials=3, mapping_db = False):
             try:
                 cursor.execute(statement, params)
                 db.commit()
+                db.close()
                 break
             except:
-                if n == 0:
+                db.close()
+                n += 1
+                if n == 1:
                     [e, f, g] = sys.exc_info()
                     g = traceback.format_exc()
-                n += 1
-            db.close()
         if n == n_trials:
             raise NameError('Invalid Insert: %s\nParam size:%s\n%s\n%s\n%s\n%s' % (statement[:500], str(len(params)), str(params[:500]), e, str(f), g))
 
@@ -1082,7 +1083,7 @@ def insertComplexes(proteins, config):
                     smiles = "[%s%s]" % (name[0], name[1].lower())
                 inchi = "InChI=1S/%s" % smiles
             else:
-                (smiles, inchi) = pdbParser.getSI(pdb_id, name, res, chain, pdb_path)
+                (smiles, inchi) = pdbParser.getSI(pdb_id, name, res, chain, pdb_path, config)
                 update_ligands.append((name, smiles, inchi))
             new_ligands.add(name)
             lig_values.append((name, smiles, inchi))
@@ -1760,8 +1761,8 @@ def getStoredResidues(proteins, config):
             print("Time for getstoredresidues 2.1: %s" % str(t10 - t1))
 
         for row in results:
-
-            (res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+            try:
+                (res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
                            ssa, homo_str, profile_str,
                            centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
                            cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
@@ -1770,6 +1771,9 @@ def getStoredResidues(proteins, config):
                            inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
                            intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
                            interacting_chains_str, interacting_ligands_str) = unpack(row[2])
+            except:
+                config.errorlog.add_warning('Defective database entry in Residue table: %s %s' % (str(row[0]), str(row[1])))
+                continue
 
             # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
             residue = sdsc.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
