@@ -52,6 +52,13 @@ setup(
         "autopep8>=1.5.7"
     ],
 
+    package_data = {
+        "": [
+            'structman/lib/rinerator/reduce',
+            'structman/lib/rinerator/probe',
+            'structman/lib/rinerator/reduce_wwPDB_het_dict.txt'
+            ]
+    },
     python_requires=">=3.8, <4",
     keywords="bioinformatics",
     entry_points={

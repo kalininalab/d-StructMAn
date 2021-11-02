@@ -950,7 +950,13 @@ def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, re
         if config.verbosity >= 3:
             print("Did not find RIN: %s" % interaction_score_file)
         rinerator_path = config.rinerator_path
-        createRINdb.calcRIN(page.encode(), folder_path, pdb_id, rinerator_path, True, config.verbosity, structure_path=model_path)
+
+        if os.path.exists(folder_path):
+            rin_target_path = folder_path
+        else:
+            rin_target_path = config.tmp_folder
+
+        createRINdb.calcRIN(page.encode(), rin_target_path, pdb_id, rinerator_path, True, config.verbosity, structure_path=model_path)
         path_stem = "%s/%s" % (folder_path, pdb_id)
         interaction_score_file = "%s_intsc.ea.gz" % (path_stem)
         
