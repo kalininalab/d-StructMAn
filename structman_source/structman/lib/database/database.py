@@ -1491,7 +1491,7 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
 
             t_11 += time.time()
 
-            values.append([s_id, pack((res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+            packed_res_info = pack((res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
                            ssa, homo_str, profile_str,
                            centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
                            cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
@@ -1500,8 +1500,8 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
                            inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
                            intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
                            interacting_chains_str, interacting_ligands_str))
-                           ])
-
+            
+            values.append([s_id, packed_res_info])
             t_12 += time.time()
 
             if not (pdb_id, chain) in interacting_structure_ids:

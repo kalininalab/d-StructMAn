@@ -52,11 +52,6 @@ setup(
         "autopep8>=1.5.7"
     ],
 
-    package_data = {
-        "": [
-            'tools/mkdssp'
-            ]
-    },
     python_requires=">=3.8, <4",
     keywords="bioinformatics",
     entry_points={

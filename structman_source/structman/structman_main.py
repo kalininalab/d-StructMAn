@@ -126,7 +126,7 @@ class Config:
         self.pdb_path = cfg.get('pdb_path', fallback='')
 
         self.annovar_path = cfg.get('annovar_path', fallback='')
-        self.dssp_path = cfg.get('dssp_path', fallback = f'{structman.settings.TOOLS_DIR}/mkdssp')
+        self.dssp_path = cfg.get('dssp_path', fallback = '')
         self.rin_db_path = cfg.get('rin_db_path', fallback='')
         self.iupred_path = cfg.get('iupred_path', fallback='')
 

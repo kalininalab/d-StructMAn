@@ -418,7 +418,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
     return proteins, indel_map
 
 
-def getUniprotIds(config, query_ids, querytype, target_type="ID"):
+def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60):
     # print query_ids
     if len(query_ids) == 0:
         return {}
@@ -437,7 +437,7 @@ def getUniprotIds(config, query_ids, querytype, target_type="ID"):
     contact = config.user_mail  # Please set your email address here to help us debug in case of problems.
     request.add_header('User-Agent', 'Python %s' % contact)
     try:
-        response = urllib.request.urlopen(request, timeout=60)
+        response = urllib.request.urlopen(request, timeout = timeout)
     except:
         e, f, g = sys.exc_info()
         config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e), str(f)))
@@ -754,8 +754,14 @@ def get_last_version(u_ac):
         return None
     print(page)
 
-def get_obsolete_sequence(u_ac, config, return_id=False):
-    uniparc_id = getUniprotIds(config, [u_ac], 'ACC', target_type="UPARC")[u_ac]
+def get_obsolete_sequence(u_ac, config, return_id=False, tries = 0):
+    uniparc_id_map = getUniprotIds(config, [u_ac], 'ACC', target_type="UPARC", timeout = 60 * (tries + 1))
+    if not u_ac in uniparc_id_map:
+        if tries < 3:
+             return get_obsolete_sequence(u_ac, config, return_id=return_id, tries = (tries + 1))
+        config.errorlog.add_warning(f'Couldnt find uniparc id for: {u_ac}, {uniparc_id_map}')
+        return None
+    uniparc_id = uniparc_id_map[u_ac]
     if config.verbosity >= 3:
         print('Uniparc ID of potential obsolete uniprot entry (', u_ac, ') is:', uniparc_id)
     return getSequence(uniparc_id, config, return_id=return_id, obsolete_try = True)

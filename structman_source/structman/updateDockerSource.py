@@ -76,17 +76,6 @@ if __name__ == "__main__":
         if os.path.isfile(source_path):
             shutil.copy(source_path, target_path)
 
-    tools_source_path = settings.TOOLS_DIR
-    tools_target_folder = f'{structman_target_folder}/tools'
-    if not os.path.exists(tools_target_folder):
-        os.mkdir(tools_target_folder)
-    for tools_file in os.listdir(tools_source_path):
-        source_path = f'{tools_source_path}/{tools_file}'
-        target_path = f'{tools_target_folder}/{tools_file}'
-        try:
-            shutil.copy(source_path, target_path)
-        except:
-            pass
 
     for libfile in os.listdir(settings.LIB_DIR):
         source_path = f'{settings.LIB_DIR}/{libfile}'

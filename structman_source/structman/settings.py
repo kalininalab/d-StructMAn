@@ -13,8 +13,6 @@ RINERATOR_DIR = Path(rinerator.__file__).parent.absolute()
 OUTPUT_DIR = Path(output.__file__).parent.absolute()
 SCRIPTS_DIR = Path(scripts.__file__).parent.absolute()
 
-TOOLS_DIR = f'{ROOT_DIR}/tools'
-
 RINERATOR_PATH = f'{RINERATOR_DIR}/get_chains.py'
 
 UNIPROT_DB_SQL = f'{SCRIPTS_DIR}/struct_man_db_uniprot.sql'
