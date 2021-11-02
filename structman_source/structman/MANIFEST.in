@@ -1,0 +1,3 @@
+include structman/lib/rinerator/reduce
+include structman/lib/rinerator/probe
+include structman/lib/rinerator/reduce_wwPDB_het_dict.txt

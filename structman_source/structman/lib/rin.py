@@ -957,7 +957,7 @@ def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, re
             rin_target_path = config.tmp_folder
 
         createRINdb.calcRIN(page.encode(), rin_target_path, pdb_id, rinerator_path, True, config.verbosity, structure_path=model_path)
-        path_stem = "%s/%s" % (folder_path, pdb_id)
+        path_stem = "%s/%s" % (rin_target_path, pdb_id)
         interaction_score_file = "%s_intsc.ea.gz" % (path_stem)
         
         if not os.path.isfile(interaction_score_file):
