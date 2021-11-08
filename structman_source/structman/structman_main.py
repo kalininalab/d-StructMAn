@@ -82,6 +82,7 @@ class Config:
         self.test_low_mem_system = cfg.getboolean('test_low_mem_system', fallback=False)
 
         self.resources = cfg.get('resources', fallback='manu')
+        self.container_version = cfg.getboolean('container_version', fallback = False)
 
         self.proc_n = 48
         self.blast_processes = self.proc_n
@@ -698,7 +699,7 @@ def structman_cli():
             'help', 'profile', 'skipref', 'rlimit=', 'verbosity=',
             'printerrors', 'printwarnings', 'chunksize=', 'norin',
             'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit=',
-            'model_indel_structures'
+            'model_indel_structures', 'ignore_local_pdb'
         ]
         opts, args = getopt.getopt(argv, "c:i:n:o:h:lvdp:", long_paras)
 
@@ -724,6 +725,8 @@ def structman_cli():
     skip_indel_analysis = False
     only_wt = False
     model_indel_structures = None
+    ignore_local_pdb = False
+    ignore_local_rindb = False
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -803,6 +806,12 @@ def structman_cli():
         if opt == '--model_indel_structures':
             model_indel_structures = True
 
+        if opt == '--ignore_local_pdb':
+            ignore_local_pdb = True
+
+        if opt == '--ignore_local_rindb':
+            ignore_local_rindb = True
+
     if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
@@ -872,6 +881,12 @@ def structman_cli():
     config.only_wt = only_wt
     if model_indel_structures is not None:
         config.model_indel_structures = model_indel_structures
+
+    if ignore_local_pdb:
+        config.pdb_path = ''
+
+    if ignore_local_rindb:
+        config.rin_db_path = ''
 
     if mem_limit is not None:
         mem = virtual_memory()
@@ -981,11 +996,23 @@ def structman_cli():
             f = open(config_path, 'w')
             config.config_parser_obj.write(f)
             f.close()
-        elif os.path.exists('/structman/resources/'):
-            if not os.path.exists('/structman/resources/pdb'):
-                os.mkdir('/structman/resources/pdb')
-            config.pdb_path = '/structman/resources/pdb'
-            config.config_parser_obj.set('user', 'pdb_path', '/structman/resources/pdb')
+        elif config.container_version:
+            if update_pdb:
+                if not os.path.exists('/structman/resources/pdb'):
+                    os.mkdir('/structman/resources/pdb')
+                config.pdb_path = '/structman/resources/pdb'
+                config.config_parser_obj.set('user', 'pdb_path', '/structman/resources/pdb')
+
+            if update_rindb:
+                if not os.path.exists('/structman/resources/rindb'):
+                    os.mkdir('/structman/resources/rindb')
+                config.rin_db_path = '/structman/resources/rindb'
+                config.config_parser_obj.set('user', 'rin_db_path', '/structman/resources/rindb')
+
+            if update_mapping_db:
+                config.mapping_db = 'struct_man_db_mapping'
+                config.mapping_db_is_set = True
+
             f = open(config_path, 'w')
             config.config_parser_obj.write(f)
             f.close()

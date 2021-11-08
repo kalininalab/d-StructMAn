@@ -33,7 +33,7 @@ CREATE TABLE `UNIPROT` (
   `Uniprot_Id` varchar(32) COLLATE utf8_unicode_ci DEFAULT NULL,
   `RefSeq` varchar(16) COLLATE utf8_unicode_ci DEFAULT NULL,
   `RefSeq_NT` varchar(16) COLLATE utf8_unicode_ci DEFAULT NULL,
-  `Sequence` varbinary(8000) DEFAULT NULL
+  `Sequence` BLOB(65535) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 --

@@ -47,9 +47,12 @@ class MultiMutation:
         return db_ids
 
     def mutate(self, proteins, config):
+        if self.mut_prot is None:
+            return
         if proteins[self.mut_prot].sequence is None:
             if proteins[self.wt_prot].sequence is None:
                 config.errorlog.add_error('Sequence is None: %s %s' % (self.wt_prot, self.mut_prot))
+                return
             mut_seq = proteins[self.wt_prot].sequence
             indel_position_order = {}
             for pos in self.snvs:

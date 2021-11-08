@@ -41,7 +41,7 @@ class Mappings:
                  'weighted_homo_dist', 'homo_dist_conf', 'weighted_surface_value', 'weighted_mainchain_surface_value', 'weighted_sidechain_surface_value',
                  'weighted_location', 'weighted_mainchain_location', 'weighted_sidechain_location', 'max_cov', 'location_conf',
                  'res_classes', 'aa_ids', 'max_seq_res', 'recommended_res', 'interaction_recommendations',
-                 'rin_class', 'rin_simple_class', 'Class', 'simple_class', 'classification_conf', 'max_cov_rsa', 'resolutions', 'res_aas']
+                 'rin_class', 'rin_simple_class', 'Class', 'simple_class', 'classification_conf', 'max_cov_rsa', 'resolutions', 'res_aas', 'amount_of_structures']
 
     def __init__(self, raw_results=None):
         self.qualities = {}
@@ -144,6 +144,7 @@ class Mappings:
         self.homo_dist_conf = None
         self.location_conf = None
         self.classification_conf = None
+        self.amount_of_structures = 0
         if raw_results is not None:
             (self.recommended_res, self.max_seq_res, self.weighted_surface_value, self.weighted_mainchain_surface_value,
              self.weighted_sidechain_surface_value, self.weighted_location, self.weighted_mainchain_location,
@@ -160,7 +161,7 @@ class Mappings:
              self.weighted_metal_dist, self.weighted_ion_dist, self.weighted_chain_dist, self.weighted_rna_dist, self.weighted_dna_dist,
              self.weighted_homo_dist, self.rin_class, self.rin_simple_class, self.Class, self.simple_class, self.interaction_recommendations,
              self.lig_dist_conf, self.metal_dist_conf, self.ion_dist_conf, self.chain_dist_conf, self.rna_dist_conf, self.dna_dist_conf,
-             self.homo_dist_conf, self.location_conf, self.classification_conf) = raw_results
+             self.homo_dist_conf, self.location_conf, self.classification_conf, self.amount_of_structures) = raw_results
 
     def add_mapping(self, mapping_id, mapping):
         (quality, seq_id, cov, rsa, mc_rsa, sc_rsa, ssa, lig_dist, metal_dist, ion_dist, chain_dist, rna_dist, dna_dist, homo_dist, profile, centralities,
@@ -172,6 +173,8 @@ class Mappings:
          intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
          b_factor, modres, res_class, res_simple_class,
          identical_aa, resolution, res_aa) = mapping
+        if mapping_id not in self.qualities:
+            self.amount_of_structures += 1
         self.qualities[mapping_id] = quality
         self.seq_ids[mapping_id] = seq_id
         self.covs[mapping_id] = cov
@@ -228,6 +231,8 @@ class Mappings:
              lig_dist, metal_dist, ion_dist, chain_dist, rna_dist, dna_dist,
              homo_dist, res_class, res_simple_class) = raw_results
 
+        if mapping_id not in self.qualities:
+            self.amount_of_structures += 1
         self.qualities[mapping_id] = quality
         self.seq_ids[mapping_id] = seq_id
         self.covs[mapping_id] = cov
@@ -386,7 +391,7 @@ class Mappings:
                 self.weighted_metal_dist, self.weighted_ion_dist, self.weighted_chain_dist, self.weighted_rna_dist, self.weighted_dna_dist,
                 self.weighted_homo_dist, self.rin_class, self.rin_simple_class, self.Class, self.simple_class, self.interaction_recommendations,
                 self.lig_dist_conf, self.metal_dist_conf, self.ion_dist_conf, self.chain_dist_conf, self.rna_dist_conf, self.dna_dist_conf,
-                self.homo_dist_conf, self.location_conf, self.classification_conf)
+                self.homo_dist_conf, self.location_conf, self.classification_conf, self.amount_of_structures)
 
     def get_result_for_indel_aggregation(self):
         
@@ -473,6 +478,7 @@ class Mappings:
         result_obj.homo_dist_conf = self.homo_dist_conf
         result_obj.location_conf = self.location_conf
         result_obj.classification_conf = self.classification_conf
+        result_obj.amount_of_structures = self.amount_of_structures
         return result_obj
 
     def weight_all(self, config, disorder_score, disorder_region, for_indel_aggregation = False):

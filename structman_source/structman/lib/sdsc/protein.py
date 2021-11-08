@@ -408,18 +408,24 @@ class Protein:
             print('Starting multi mutation mutation of', self.primary_protein_id)
         for mm_nr, multi_mutation in enumerate(self.multi_mutations):
             name_parts = []
+            at_least_one_indel = False
             for mut in multi_mutation:
-                if not isinstance(mut, tuple):
+                if not isinstance(mut, tuple): #In case of indels
                     name_parts.append(mut.get_notation())
+                    at_least_one_indel = True
                 else:
                     position, aa2 = mut
                     name_parts.append('%s%s%s' % (position.wt_aa, str(position.pos), aa2))
-            protein_name = '%s_%s' % (self.primary_protein_id, '_'.join(sorted(name_parts)))
-            mut_protein = Protein(config.errorlog, primary_protein_id=protein_name, wildtype_protein=self.primary_protein_id)
-            proteins[protein_name] = mut_protein
+            if at_least_one_indel: #create mutated protein only for multimutations with at least one indel
+                protein_name = '%s_%s' % (self.primary_protein_id, '_'.join(sorted(name_parts)))
+                mut_protein = Protein(config.errorlog, primary_protein_id=protein_name, wildtype_protein=self.primary_protein_id)
+                proteins[protein_name] = mut_protein
 
-            if config.verbosity >= 4:
-                print('Created new mutant:', protein_name)
+                if config.verbosity >= 4:
+                    print('Created new mutant:', protein_name)
+            else:
+                protein_name = None
+
 
             multi_mutation_obj = MultiMutation(self.primary_protein_id, protein_name, multi_mutation)
             multi_mutation_objects.append(multi_mutation_obj)

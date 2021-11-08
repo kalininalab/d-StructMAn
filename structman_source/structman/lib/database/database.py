@@ -490,35 +490,43 @@ def insertMultiMutations(proteins, session, config):
 
     wt_prot_db_ids = []
     values = []
+    obj_map = {}
     for wt_prot in proteins.multi_mutations:
         wt_db_id = proteins.get_protein_database_id(wt_prot)
         wt_prot_db_ids.append(wt_db_id)
         for multi_mutation in proteins.multi_mutations[wt_prot]:
             if multi_mutation.stored:
                 continue
-            mut_db_id = proteins[multi_mutation.mut_prot].database_id
+            if multi_mutation.mut_prot is not None:
+                mut_db_id = proteins[multi_mutation.mut_prot].database_id
+            else:
+                mut_db_id = None
             snv_db_ids = ','.join([str(x) for x in multi_mutation.get_snv_db_ids()])
             indel_db_ids = ','.join([str(x) for x in multi_mutation.get_indel_db_ids()])
             values.append((wt_db_id, mut_db_id, snv_db_ids, indel_db_ids))
+
+            mm_obj_id = (wt_db_id, snv_db_ids, indel_db_ids)
+
+            obj_map[mm_obj_id] = multi_mutation
 
     if len(values) > 0:
         columns = ['Wildtype_Protein', 'Mutant_Protein', 'SNVs', 'Indels']
         table = 'Multi_Mutation'
         insert(table, columns, values, config)
 
-    columns = ['Wildtype_Protein', 'Mutant_Protein', 'Multi_Mutation_Id']
+    columns = ['Wildtype_Protein', 'Multi_Mutation_Id', 'SNVs', 'Indels']
     table = 'Multi_Mutation'
 
     results = binningSelect(wt_prot_db_ids, columns, table, config)
     for row in results:
         wt_db_id = row[0]
         wt_prot_id = proteins.getU_acByDbId(wt_db_id)
-        mut_db_id = row[1]
-        mut_prot_id = proteins.getU_acByDbId(mut_db_id)
-        for multi_mutation in proteins.multi_mutations[wt_prot_id]:
-            if multi_mutation.mut_prot != mut_prot_id:
-                continue
-            multi_mutation.database_id = row[2]
+
+        mm_obj_id = (wt_db_id, row[2], row[3])
+        if not mm_obj_id in obj_map:
+            continue
+
+        obj_map[mm_obj_id].database_id = row[1]
 
     columns = ['Multi_Mutation', 'Session', 'Tags']
     table = 'RS_Multi_Mutation_Session'
@@ -1689,7 +1697,7 @@ def createClassValues(proteins, config):
                            mappings.weighted_sidechain_location, mappings.weighted_surface_value,
                            mappings.weighted_mainchain_surface_value, mappings.weighted_sidechain_surface_value,
                            mappings.Class, mappings.rin_class, mappings.simple_class, mappings.rin_simple_class,
-                           str(mappings.interaction_recommendations), mappings.classification_conf, mappings.weighted_ssa, len(mappings.qualities), mappings.get_weighted_profile_str(),
+                           str(mappings.interaction_recommendations), mappings.classification_conf, mappings.weighted_ssa, mappings.amount_of_structures, mappings.get_weighted_profile_str(),
                            mappings.weighted_modres, mappings.weighted_b_factor, mappings.get_weighted_centralities_str(),
                            mappings.weighted_phi, mappings.weighted_psi, mappings.weighted_intra_ssbond, mappings.weighted_inter_ssbond,
                            mappings.weighted_intra_link, mappings.weighted_inter_link, mappings.weighted_cis_conformation,

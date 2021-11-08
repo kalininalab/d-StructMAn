@@ -8,5 +8,6 @@ dssp_path=mkdssp
 mmseqs2_path=mmseqs
 base_path = /usr/structman_library/sources/structman/lib
 mmseqs_tmp_folder = /tmp
+container_version = True
 
 resources=auto

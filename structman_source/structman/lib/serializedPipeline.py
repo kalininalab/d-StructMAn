@@ -393,7 +393,7 @@ def parseFasta(config, nfname):
                 positions = [position]
                 add_to_prot_map(pos_map, entry_id, positions, multi_mutations, config)
         else:
-            seq_map[entry_id] += line.replace('\n', '').upper()
+            seq_map[entry_id] += line.replace('\n', '').replace('/','').upper()
 
     proteins = {}
     indels = {}
@@ -2028,6 +2028,9 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
                 nested_protein_map[u_ac] = proteins.protein_map[u_ac]
                 for (pdb, chain) in nested_protein_map[u_ac].get_annotation_list():
                     if (pdb, chain) in nested_structures:
+                        continue
+                    if (pdb, chain) not in proteins.structures:
+                        config.errorlog.add_warning(f'Structure {pdb}, {chain} not in structure dict')
                         continue
                     nested_structures[(pdb, chain)] = proteins.structures[(pdb, chain)]
                     if pdb in nested_complexes:

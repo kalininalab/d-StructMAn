@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     shutil.copy(f'{settings.ROOT_DIR}/structman_main.py', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/settings.py', structman_target_folder)
-    shutil.copy(f'{settings.ROOT_DIR}/MANIFEST.in', structman_target_folder)
+    shutil.copy(f'{update_script_folder}/../../MANIFEST.in', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/_version.py', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/__init__.py', structman_target_folder)
     shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
@@ -130,22 +130,28 @@ if __name__ == "__main__":
     with open(setup_target_path, 'w') as f:
         f.write(''.join(new_lines))
 
-    config = Config(config_path, external_call=True)
+    build_mmseqs_db = True
+    if len(sys.argv) > 3:
+        if sys.argv[3] == 'skip_mmseqs_db':
+            build_mmseqs_db = False
 
-    mmseqs2_db_path = config.mmseqs2_db_path
-    search_db_base_path = mmseqs2_db_path.rsplit('/', 1)[0]
-    pdb_fasta_name = 'pdbba_mmseqs2'
+    if build_mmseqs_db:
+        config = Config(config_path, external_call=True)
 
-    source_mmseqs_db_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
-    database_target_folder = '%s/structman/lib/base/blast_db' % target_folder
-    target_mmseqs_db_path = '%s/%s' % (database_target_folder, pdb_fasta_name)
-    if os.path.isfile(target_mmseqs_db_path):
-        os.remove(target_mmseqs_db_path)
-    shutil.copy(source_mmseqs_db_path, target_mmseqs_db_path)
-    print('Source for mmseqs db:', source_mmseqs_db_path, 'Target for mmseqs db:', target_mmseqs_db_path)
+        mmseqs2_db_path = config.mmseqs2_db_path
+        search_db_base_path = mmseqs2_db_path.rsplit('/', 1)[0]
+        pdb_fasta_name = 'pdbba_mmseqs2'
 
-    p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=database_target_folder)
-    p.wait()
+        source_mmseqs_db_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
+        database_target_folder = '%s/structman/lib/base/blast_db' % target_folder
+        target_mmseqs_db_path = '%s/%s' % (database_target_folder, pdb_fasta_name)
+        if os.path.isfile(target_mmseqs_db_path):
+            os.remove(target_mmseqs_db_path)
+        shutil.copy(source_mmseqs_db_path, target_mmseqs_db_path)
+        print('Source for mmseqs db:', source_mmseqs_db_path, 'Target for mmseqs db:', target_mmseqs_db_path)
 
-    if os.path.isfile(target_mmseqs_db_path):
-        os.remove(target_mmseqs_db_path)
+        p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=database_target_folder)
+        p.wait()
+
+        if os.path.isfile(target_mmseqs_db_path):
+            os.remove(target_mmseqs_db_path)
