@@ -857,7 +857,7 @@ def structman_cli():
             os.path.dirname(os.path.dirname(main_file_path)),  # top level of structman repo
             os.path.dirname(main_file_path),  # inside structman package (same level as structman_main.py)
             os.path.expanduser('~'),  # user's home folder
-            '/usr/structman_library/sources/structman', # container source folder
+            '/structman/resources/', # container source folder
         ]
         search_names = ['config.txt', 'structman_config.txt']  # possible config filenames
         # search all possible paths with all possible filenames
