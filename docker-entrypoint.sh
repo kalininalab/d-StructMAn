@@ -166,10 +166,17 @@ build_mmseqs_index() {
     fi
 }
 
+configure_structman_config() {
+    if [[ ! -f /structman/resources/config.txt ]]; then
+        cp /usr/structman_library/sources/structman/config.txt /structman/resources/
+    fi
+}
+
 # Initializing MySQL server configuration
 create_mysql_dirs
 configure_mysql
 build_mmseqs_index
+configure_structman_config
 
 # Initialize MySQL server and create users
 if [[ ! -d /var/lib/mysql/mysql ]]; then
