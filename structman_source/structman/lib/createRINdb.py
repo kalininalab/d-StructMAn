@@ -232,6 +232,9 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
     reduce_cmd = '%s/reduce' % rinerator_base_path
     probe_cmd = '%s/probe' % rinerator_base_path
 
+    reduce_file = "%s/%s_h.ent" % (out_path, pdb_id)
+    probe_file = "%s/%s_h.probe" % (out_path, pdb_id)
+
     try:
         if verbosity >= 4:
             get_chains.main(tmp_pdb, out_path, tmp_chain, tmp_ligands, True, reduce_cmd, probe_cmd)
@@ -244,6 +247,15 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
         print("\nRIN calc Error:\n", pdb_id, structure_path, e, f, original_chains)
         if verbosity >= 5:
             print(page)
+        if os.path.exists(reduce_file):
+            os.remove(reduce_file)
+        if os.path.exists(probe_file):
+            os.remove(probe_file)
+        if remove_tmp_files:
+            if structure_path is None:
+                os.remove(tmp_pdb)
+            os.remove(tmp_chain)
+            os.remove(tmp_ligands)
         return
 
     '''
@@ -269,8 +281,7 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
         print(tmp_chain)
         print(tmp_ligands)
 
-    reduce_file = "%s/%s_h.ent" % (out_path, pdb_id)
-    probe_file = "%s/%s_h.probe" % (out_path, pdb_id)
+
     sif_file = "%s/%s_h.sif" % (out_path, pdb_id)
     n_sif_file = "%s/%s.sif" % (out_path, pdb_id)
 

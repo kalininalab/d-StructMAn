@@ -60,6 +60,8 @@ class Config:
         self.db_name = cfg.get('db_name', fallback='')
         self.mapping_db = cfg.get('mapping_db', fallback=None)
 
+        self.ignore_local_mapping_db = False
+
         self.user_mail = cfg.get('mail', fallback='')
 
         self.outfolder = resolve_path(output_path)
@@ -331,6 +333,9 @@ class Config:
             db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password)
             cursor = db.cursor()
         elif mapping_db:
+            if self.ignore_local_mapping_db:
+                return None, None
+
             if self.mapping_db is None:
                 return None, None
             db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.mapping_db)
@@ -553,7 +558,7 @@ def structman_cli():
         'mapping_db                downloads protein identifier mapping information and sequences from UNIPROT.\n',
         '                          Builds a SQL database and removes the downloaded files again.\n',
         '                          Requires a configured SQL database server connection.\n',
-        '                          Requires around 100Gb of temporal disk space and 20Gb of space on the SQL server.\n\n',
+        '                          Requires around 100Gb of temporal disk space and 35Gb of space on the SQL server.\n\n',
 
         'mapping_db_from_scratch   same as mapping_db but removes an existing instance of the mapping DB.\n'
     ])
@@ -699,7 +704,7 @@ def structman_cli():
             'help', 'profile', 'skipref', 'rlimit=', 'verbosity=',
             'printerrors', 'printwarnings', 'chunksize=', 'norin',
             'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit=',
-            'model_indel_structures', 'ignore_local_pdb'
+            'model_indel_structures', 'ignore_local_pdb', 'ignore_local_mapping_db'
         ]
         opts, args = getopt.getopt(argv, "c:i:n:o:h:lvdp:", long_paras)
 
@@ -727,6 +732,7 @@ def structman_cli():
     model_indel_structures = None
     ignore_local_pdb = False
     ignore_local_rindb = False
+    ignore_local_mapping_db = False
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -812,6 +818,9 @@ def structman_cli():
         if opt == '--ignore_local_rindb':
             ignore_local_rindb = True
 
+        if opt == '--ignore_local_mapping_db':
+            ignore_local_mapping_db = True
+
     if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
@@ -887,6 +896,8 @@ def structman_cli():
 
     if ignore_local_rindb:
         config.rin_db_path = ''
+
+    config.ignore_local_mapping_db = ignore_local_mapping_db
 
     if mem_limit is not None:
         mem = virtual_memory()

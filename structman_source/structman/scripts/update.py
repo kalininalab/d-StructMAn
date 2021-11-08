@@ -53,10 +53,17 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, u
                 FNULL = open(os.devnull, 'w')
                 p = subprocess.Popen([pdb_update_script], stderr=FNULL, stdout=FNULL)
             p.wait()
+
+            p = subprocess.Popen(['chmod', '777', '-R', '.'], cwd=pdb_path)
+            p.wait()
+
             print('Update PDB done')
         if not skip_rindb:
             # update rin db
             recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path)
+
+            p = subprocess.Popen(['chmod', '777', '-R', '.'], cwd=rin_db_path)
+            p.wait()
 
             print('Update RIN db done')
 

@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     shutil.copy(f'{settings.ROOT_DIR}/structman_main.py', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/settings.py', structman_target_folder)
-    shutil.copy(f'{update_script_folder}/../../MANIFEST.in', structman_target_folder)
+    shutil.copy(f'{update_script_folder}/../../MANIFEST.in', target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/_version.py', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/__init__.py', structman_target_folder)
     shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
