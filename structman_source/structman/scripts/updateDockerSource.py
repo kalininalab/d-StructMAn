@@ -153,5 +153,8 @@ if __name__ == "__main__":
         p = subprocess.Popen(['mmseqs', 'createdb', pdb_fasta_name, 'pdbba_search_db_mmseqs2'], cwd=database_target_folder)
         p.wait()
 
+        p = subprocess.Popen(['gzip', 'pdbba_search_db_mmseqs2'], cwd=database_target_folder)
+        p.wait()
+
         if os.path.isfile(target_mmseqs_db_path):
             os.remove(target_mmseqs_db_path)
