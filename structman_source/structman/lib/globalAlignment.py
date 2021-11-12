@@ -189,7 +189,7 @@ def getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, 
 
         if align_map[target_pos][1] != target_aa:
 
-            if target_aa != '?':
+            if target_aa != '?' and aac_base != 'X':
                 if not (target_aa == 'U' and align_map[target_pos][1] == 'C'):
                     if not (target_aa == 'O' and align_map[target_pos][1] == 'K'):
                         if not (target_aa == 'J' and align_map[target_pos][1] == 'I'):

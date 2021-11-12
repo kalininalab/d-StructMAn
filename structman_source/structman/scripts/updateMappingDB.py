@@ -70,14 +70,21 @@ def retrieve_raw_data(config, fromScratch = False):
     return mapping_file_path, sequence_file_paths
 
 def retrieve_data_from_uniprot(config, uniprot_sub_folder, uniprot_file_name, fromScratch = False):
-    file_path = '%s/%s' % (config.human_id_mapping_path, uniprot_file_name)
+    file_path = '%s/%s' % (config.tmp_folder, uniprot_file_name)
     if os.path.isfile(file_path) and fromScratch:
         os.remove(file_path)
     if not os.path.isfile(file_path):
         cmds = ' '.join(['wget', 'ftp://ftp.uniprot.org/pub/databases/uniprot/knowledgebase/%s/%s' % (uniprot_sub_folder, uniprot_file_name)])
-        p = subprocess.Popen(cmds, shell=True, cwd = config.human_id_mapping_path)
+        p = subprocess.Popen(cmds, shell=True, cwd = config.tmp_folder)
         p.wait()
     return file_path
+
+def put_seqs_to_database(seq_map, config):
+    values = []
+    for u_ac in seq_map:
+        values.append((u_ac, pack(seq_map[u_ac])))
+
+    database.update(config, 'UNIPROT', ['Uniprot_Ac','Sequence'], values, mapping_db = True)
 
 def main(config, fromScratch = False):
     #Step 1: Check if mapping SQL DB instance is there, create if not. Recreate for fromScratch mode
@@ -96,6 +103,8 @@ def main(config, fromScratch = False):
     ac_ref_values = []
     ac_ref_nt_values = []
 
+    max_values_at_a_time = 1000000 * config.gigs_of_ram
+
     with gzip.open(mapping_file_path, 'rb') as f:
         for line in f:
             words = line.decode('ascii').split()
@@ -110,21 +119,40 @@ def main(config, fromScratch = False):
 
             if id_name == 'UniProtKB-ID':
                 ac_id_values.append((u_ac, id_value))
+
+                if len(ac_id_values) == max_values_at_a_time:
+                    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'Uniprot_Id'], ac_id_values, mapping_db = True)
+                    ac_id_values = []
+
             elif id_name == 'RefSeq':
                 ac_ref_values.append((u_ac, id_value))
+
+                if len(ac_ref_values) == max_values_at_a_time:
+                    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq'], ac_ref_values, mapping_db = True)
+                    ac_ref_values = []
+
             elif id_name == 'RefSeq_NT':
                 ac_ref_nt_values.append((u_ac, id_value))
 
+                if len(ac_ref_nt_values) == max_values_at_a_time:
+                    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq_NT'], ac_ref_nt_values, mapping_db = True)
+                    ac_ref_nt_values = []
+
     print('\nParsing of mapping data file done.\n')
 
-    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'Uniprot_Id'], ac_id_values, mapping_db = True)
+    if len(ac_id_values) > 0:
+        database.update(config, 'UNIPROT', ['Uniprot_Ac', 'Uniprot_Id'], ac_id_values, mapping_db = True)
     print('\nDatabase update of Uniprot IDs done.\n')
 
-    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq'], ac_ref_values, mapping_db = True)
+    if len(ac_ref_values) > 0:
+        database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq'], ac_ref_values, mapping_db = True)
     print('\nDatabase update of RefSeq IDs done.\n')
 
-    database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq_NT'], ac_ref_nt_values, mapping_db = True)
+    if len(ac_ref_nt_values) > 0:
+        database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq_NT'], ac_ref_nt_values, mapping_db = True)
     print('\nDatabase update of RefSeq NTs done.\n')
+
+    max_seqs_at_a_time = 100000 * config.gigs_of_ram
 
     for seq_file in seq_file_paths:
         with gzip.open(seq_file, 'rb') as f:
@@ -135,18 +163,18 @@ def main(config, fromScratch = False):
                     continue
                 line = line[:-1]
                 if line[0] == '>':
+
+                    if len(seq_map) == max_seqs_at_a_time:
+                        put_seqs_to_database(seq_map, config)
+                        seq_map = {}
+
                     u_ac = line.split('|')[1]
                     seq_map[u_ac] = ''
                 else:
                     seq_map[u_ac] += (line)
-
-            values = []
-            for u_ac in seq_map:
-                values.append((u_ac, pack(seq_map[u_ac])))
-
-            print('\nParsing of sequence data: %s file done.\n' % seq_file)
-
-            database.update(config, 'UNIPROT', ['Uniprot_Ac','Sequence'], values, mapping_db = True)
+            if len(seq_map) > 0:
+                put_seqs_to_database(seq_map, config)
+            
             print('\nDatabase update of sequences done.\n')
 
     #Step 4: Remove the raw files

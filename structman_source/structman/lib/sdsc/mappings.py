@@ -698,6 +698,7 @@ class Mappings:
             seq_id = self.seq_ids[mapping_id]
             cov = self.covs[mapping_id]
             qual = self.qualities[mapping_id]
+
             if seq_id > max_seq_id:
                 max_seq_id = seq_id
                 self.max_seq_res = qual, (mapping_id, seq_id, cov)

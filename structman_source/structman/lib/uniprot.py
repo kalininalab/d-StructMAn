@@ -243,14 +243,15 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
 
                 # This part is identical to the part, when no local database is used
                 id_ac_map = getUniprotIds(config, unstored_ids, 'ID', target_type="ACC")
-                for u_id in id_ac_map:
-                    u_ac = id_ac_map[u_id]
-                    integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
+                if not id_ac_map is None:
+                    for u_id in id_ac_map:
+                        u_ac = id_ac_map[u_id]
+                        integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
-                    # This part is different
-                    if not sdsc.is_mutant_ac(u_ac):
-                        update_acs.append(u_ac)
-                # updateMappingDatabase(update_acs,db,config)
+                        # This part is different
+                        if not sdsc.is_mutant_ac(u_ac):
+                            update_acs.append(u_ac)
+                    # updateMappingDatabase(update_acs,db,config)
 
         else:
             id_ac_map = getUniprotIds(config, list(id_map.keys()), 'ID', target_type="ACC")
@@ -422,6 +423,10 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
     # print query_ids
     if len(query_ids) == 0:
         return {}
+
+    if config.verbosity >= 4:
+        print('Call of getUniprotIds:', query_ids, querytype, target_type)
+
     query = ' '.join(query_ids)
     url = 'https://www.uniprot.org/uploadlists/'
     connection_sleep_cycle(config.verbosity)
@@ -444,13 +449,18 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
         return {}
 
     page = response.read(2000000).decode('utf-8')
+
+    if config.verbosity >= 4:
+        print('Uniprot answer:\n',page)
+
     uniprot_ids = {}
     try:
-        error = False
+        error = True
         lines = page.split("\n")
         for line in lines[1:]:
             words = line.split()
             if len(words) > 1:
+                error = False
                 quer = words[0]
                 target = words[1]
                 if quer not in query_ids:
@@ -462,7 +472,13 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
         if error:
 
             if len(query_ids) == 1:
-                return {query_ids.pop(): None}
+                quer = query_ids.pop()
+                if querytype == 'ACC' and quer.count('-'):
+                    int_quer = set([quer.split('-')[0]])
+                    intermediate_map = getUniprotIds(config, int_quer, querytype, target_type=target_type)
+                    return {quer: intermediate_map[quer.split('-')[0]]}
+                else:
+                    return {quer: None}
             # try a divide and conqer solution
             set_A = set()
             set_B = set()
@@ -490,6 +506,7 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
             else:
                 return {}
         '''
+        config.errorlog.add_warning(f'Parse error of uniprot ID-mapping webservice\n{page}')
         return {}
     return uniprot_ids
 
@@ -791,9 +808,7 @@ def getSequence(uniprot_ac, config, tries=0, return_id=False, obsolete_try = Fal
         if tries < 3:
             return getSequence(uniprot_ac, config, tries=tries + 1, return_id=return_id)
         else:
-            e, f, g = sys.exc_info()
-            config.errorlog.add_error('Error trying to reach: %s\n%s\n%s' % (url, str(e), str(f)))
-            return None
+            return get_obsolete_sequence(uniprot_ac, config, return_id=return_id)
 
     if config.verbosity >= 3 and obsolete_try:
         print('Obsolete entry try:', uniprot_ac, url)

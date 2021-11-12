@@ -192,7 +192,7 @@ def search(proteins, config):
         if u_ac.count(':') == 1:
             if u_ac not in hits:
                 pdb_id, chain = u_ac.split(':')
-                hits[u_ac] = {(pdb_id, chain): [100.0, len(proteins.get_sequence(u_ac)), 1.0, [chain]]}
+                hits[u_ac] = {(pdb_id, chain): [100.0, 1.0, [chain], len(proteins.get_sequence(u_ac)), len(proteins.get_sequence(u_ac))]}
                 pdb_ids.add(pdb_id)
 
     os.remove(temp_outfile)

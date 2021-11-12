@@ -385,7 +385,13 @@ def parseFasta(config, nfname):
                         aac = aac_tag_tuple
                         tags = set()
 
-                    positions, multi_mutations = process_mutations_str(aac, tags)
+                    pr_mut_str_result = process_mutations_str(aac, tags)
+
+                    if pr_mut_str_result is None:
+                        config.errorlog.add_warning(f'Couldnt process mutation_str: {aac}, {tags}')
+                        continue
+
+                    positions, multi_mutations = pr_mut_str_result
                     add_to_prot_map(pos_map, entry_id, positions, multi_mutations, config)
             else:
                 position = sdsc.Position()
@@ -448,7 +454,10 @@ def process_mutations_str(mutation_str, tags, pdb_style=False):
 
         else:
             indel = None
-            aachange, aa1, aa2, pos = processAAChange(aachange, pdb_style=pdb_style)  # if pdb_style is True, then pos is actually pdb res_id
+            try:
+                aachange, aa1, aa2, pos = processAAChange(aachange, pdb_style=pdb_style)  # if pdb_style is True, then pos is actually pdb res_id
+            except:
+                return None
 
             if pdb_style:
                 if aa2 is None:
@@ -1108,6 +1117,8 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     sus_complexes = set()
     sus_structures = set()
 
+    task_list = []
+
     for prot_id in prot_ids:
         if not proteins.is_protein_stored(prot_id):
             continue
@@ -1133,7 +1144,33 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
                 target_seq, template_seq = proteins.pop_alignment(prot_id, pdb_id, chain)
             aaclist = proteins.getAACList(prot_id)
             prot_db_id = proteins.get_protein_db_id(prot_id)
-            mapping_results.append(paraMap.remote(mapping_dump, prot_id, pdb_id, chain, structure_id, target_seq, template_seq, aaclist, prot_db_id))
+
+            task_list.append((prot_id, pdb_id, chain, structure_id, target_seq, template_seq, aaclist, prot_db_id))
+
+    if len(task_list) <= config.proc_n:
+        for task in task_list:
+            mapping_results.append(paraMap.remote(mapping_dump, [task]))
+    else:
+        small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = calculate_chunksizes(config.proc_n, len(task_list))
+        chunk = []
+        n = 0
+        for task in task_list:
+            chunk.append(task)
+            if n < n_of_big_chunks:
+                if len(chunk) == big_chunksize:
+                    mapping_results.append(paraMap.remote(mapping_dump, chunk))
+                    chunk = []
+                    n += 1
+            elif n <= n_of_big_chunks + n_of_small_chunks:
+                if len(chunk) == small_chunksize:
+                    mapping_results.append(paraMap.remote(mapping_dump, chunk))
+                    chunk = []
+                    n += 1
+            else:
+                print('Warning: too few chunks')
+
+        if len(chunk) != 0:
+            mapping_results.append(paraMap.remote(mapping_dump, chunk))
 
     gc.collect()
 
@@ -1142,11 +1179,12 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
         print("Alignment Part 2: %s" % (str(t2 - t1)))
 
     mappings_outs = ray.get(mapping_results)
-    for (prot_id, pdb_id, chain, sub_infos, atom_count, last_residue, first_residue) in mappings_outs:
-        proteins.set_sub_infos(prot_id, pdb_id, chain, sub_infos)
-        proteins.set_atom_count(pdb_id, atom_count)
-        proteins.set_last_residue(pdb_id, chain, last_residue)
-        proteins.set_first_residue(pdb_id, chain, first_residue)
+    for results in mappings_outs:
+        for (prot_id, pdb_id, chain, sub_infos, atom_count, last_residue, first_residue) in results:
+            proteins.set_sub_infos(prot_id, pdb_id, chain, sub_infos)
+            proteins.set_atom_count(pdb_id, atom_count)
+            proteins.set_last_residue(pdb_id, chain, last_residue)
+            proteins.set_first_residue(pdb_id, chain, first_residue)
 
     t3 = time.time()
     if config.verbosity >= 2:
@@ -1431,25 +1469,31 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
 
 
 @ray.remote(max_calls = 1)
-def paraMap(mapping_dump, u_ac, pdb_id, chain, structure_id, target_seq, template_seq, aaclist, prot_id):
+def paraMap(mapping_dump, tasks):
     ray_hack()
 
     config = mapping_dump
 
     pdb_path = config.pdb_path
 
-    template_page, atom_count = pdbParser.standardParsePDB(pdb_id, pdb_path, obsolete_check=True)
+    results = []
 
-    seq_res_map, last_residue, first_residue = globalAlignment.createTemplateFasta(template_page, pdb_id, chain, config, onlySeqResMap=True)
+    for u_ac, pdb_id, chain, structure_id, target_seq, template_seq, aaclist, prot_id in tasks:
 
-    sub_out = globalAlignment.getSubPos(config, u_ac, target_seq, template_seq, aaclist, seq_res_map)
+        template_page, atom_count = pdbParser.standardParsePDB(pdb_id, pdb_path, obsolete_check=True)
 
-    if isinstance(sub_out, str):
-        config.errorlog.add_error("%s %s %s\n%s\n%s" % (sub_out, pdb_id, chain, template_seq.replace('-', ''), seq_res_map))
+        seq_res_map, last_residue, first_residue = globalAlignment.createTemplateFasta(template_page, pdb_id, chain, config, onlySeqResMap=True)
 
-    sub_infos, aaclist = sub_out
+        sub_out = globalAlignment.getSubPos(config, u_ac, target_seq, template_seq, aaclist, seq_res_map)
 
-    return (u_ac, pdb_id, chain, sub_infos, atom_count, last_residue, first_residue)
+        if isinstance(sub_out, str):
+            config.errorlog.add_error("%s %s %s\n%s\n%s" % (sub_out, pdb_id, chain, template_seq.replace('-', ''), seq_res_map))
+
+        sub_infos, aaclist = sub_out
+
+        results.append((u_ac, pdb_id, chain, sub_infos, atom_count, last_residue, first_residue))
+
+    return results
 
 
 #called (also) by indel_analysis.py
