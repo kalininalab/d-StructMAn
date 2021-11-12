@@ -8,7 +8,7 @@ import traceback
 
 import ray
 
-from structman.utils import ray_init, calc_checksum, pack, unpack
+from structman.base_utils.base_utils import ray_init, calc_checksum, pack, unpack
 from structman.lib import pdbParser, rin, sdsc, serializedPipeline, templateFiltering
 
 

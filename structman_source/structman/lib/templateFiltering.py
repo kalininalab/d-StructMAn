@@ -10,7 +10,7 @@ import ray
 import pickle
 
 from structman.lib import database, pdbParser, rin, sdsc, spherecon, serializedPipeline
-from structman.utils import median, distance, pack, unpack, decompress
+from structman.base_utils.base_utils import median, distance, pack, unpack, decompress
 from structman.lib.sdsc.consts.residues import CORRECT_COUNT, THREE_TO_ONE
 try:
     from memory_profiler import profile

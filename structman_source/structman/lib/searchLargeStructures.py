@@ -5,7 +5,7 @@ import ray
 
 from structman import settings
 from structman.lib import pdbParser, serializedPipeline
-from structman.utils import ray_init
+from structman.base_utils.base_utils import ray_init
 
 
 @ray.remote(num_cpus=1)

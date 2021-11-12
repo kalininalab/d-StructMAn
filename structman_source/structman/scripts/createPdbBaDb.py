@@ -9,7 +9,7 @@ import ray
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__))))))
 from structman.lib import sdsc, serializedPipeline
-from structman.utils import ray_init, ray_hack
+from structman.base_utils.base_utils import ray_init, ray_hack
 
 
 @ray.remote(num_cpus=1)

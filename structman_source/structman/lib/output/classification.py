@@ -8,7 +8,7 @@ from structman import settings
 from structman.lib import database, rin, sdsc
 from structman.lib.output.feature import init_feature_table
 from structman.lib.output.output import OutputGenerator
-from structman.lib.output.utils import makeViolins
+from structman.lib.output.out_utils import makeViolins
 from filelock import FileLock
 
 def ray_init(config):

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import structman
-import structman.lib as lib
+from structman import lib
 from structman.lib import rinerator
 from structman.lib import output
 from structman import scripts

@@ -10,7 +10,7 @@ from Bio import Entrez
 import pymysql as MySQLdb
 
 from structman.lib import database, sdsc
-from structman.utils import unpack
+from structman import base_utils
 
 def is_connected():
     try:
@@ -616,7 +616,7 @@ def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_e
                 #gene_sequence_map[u_ac] = None, None, None
                 continue
             try:
-                seq = unpack(row[1])
+                seq = base_utils.unpack(row[1])
             except:
                 config.errorlog.add_warning('Sequence field is defect in Mapping DB, for: %s' % u_ac)
                 #gene_sequence_map[u_ac] = None, None, None

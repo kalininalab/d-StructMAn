@@ -5,7 +5,7 @@ import traceback
 import gzip
 
 from structman.lib.database import database
-from structman.utils import pack
+from structman.base_utils.base_utils import pack
 
 def check_instance(config, fromScratch = False):
     fresh_instance = False

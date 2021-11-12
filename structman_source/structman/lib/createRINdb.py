@@ -12,7 +12,7 @@ from multiprocessing import Manager, Process
 from structman import settings
 from structman.lib import centrality
 from structman.lib.rinerator import get_chains
-from structman.lib.sdsc import THREE_TO_ONE
+from structman.lib.sdsc.consts import residues
 
 #lowercase_order = {y:x for x,y in lowercase_map.iteritems()}
 
@@ -130,7 +130,7 @@ def parsePDB(page):
                     ligands.add((res_name, chain_id, res_nr))
                 else:
                     if record_name == "HETATM":
-                        if not (chain_id, res_nr) in modres_map and res_name not in THREE_TO_ONE:
+                        if not (chain_id, res_nr) in modres_map and res_name not in residues.THREE_TO_ONE:
                             ligands.add((res_name, chain_id, res_nr))
                         else:
                             original_chains.add(chain_id)

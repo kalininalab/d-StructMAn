@@ -19,7 +19,7 @@ if __name__ == "__main__":
 import structman
 from structman.lib import database, output, repairDB, serializedPipeline, searchLargeStructures
 from structman.scripts import update
-from structman.utils import resolve_path
+from structman.base_utils.base_utils import resolve_path
 
 # Check if autopep8 is installed for developers. Disable warning for end users by utilizing conda environment variable `STRUCTMAN_WARN`
 try:

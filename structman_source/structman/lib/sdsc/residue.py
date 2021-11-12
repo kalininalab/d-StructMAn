@@ -1,6 +1,6 @@
 # sdsc: structman datastructures and classes
 from structman.lib.rin import Interaction_profile, Centrality_scores
-from structman.lib.sdsc.consts import METAL_ATOMS, ION_ATOMS
+from structman.lib.sdsc.consts.residues import METAL_ATOMS, ION_ATOMS
 from structman.lib.sdsc.utils import rin_classify
 
 

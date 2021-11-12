@@ -4,7 +4,7 @@ import sys
 import traceback
 
 from structman.lib import createRINdb
-from structman.lib.sdsc import BORING_LIGANDS, THREE_TO_ONE
+from structman.lib.sdsc.consts import residues, ligands
 
 
 class Ligand_types:
@@ -721,9 +721,9 @@ def getIAmap(interaction_score_file):
 
         res_nr_a = "%s%s" % (res_nr_a, insertioncode_a.replace('_', ''))
         res_nr_b = "%s%s" % (res_nr_b, insertioncode_b.replace('_', ''))
-        if res_name_a in BORING_LIGANDS and res_name_a not in THREE_TO_ONE:
+        if res_name_a in ligands.BORING_LIGANDS and res_name_a not in residues.THREE_TO_ONE:
             continue
-        if res_name_b in BORING_LIGANDS and res_name_b not in THREE_TO_ONE:
+        if res_name_b in ligands.BORING_LIGANDS and res_name_b not in residues.THREE_TO_ONE:
             continue
 
         if chain_a not in IAmap:

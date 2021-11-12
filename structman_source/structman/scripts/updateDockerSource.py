@@ -5,7 +5,8 @@ import shutil
 import subprocess
 import sys
 
-from structman import Config, settings
+from structman.structman_main import Config
+from structman import settings
 
 if __name__ == "__main__":
 
@@ -57,8 +58,8 @@ if __name__ == "__main__":
     shutil.copy(f'{settings.ROOT_DIR}/__init__.py', structman_target_folder)
     shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
 
-    utils_lib_path = f'{settings.ROOT_DIR}/utils'
-    utils_target_path = f'{target_folder}/structman/utils'
+    utils_lib_path = f'{settings.ROOT_DIR}/base_utils'
+    utils_target_path = f'{target_folder}/structman/base_utils'
     if not os.path.exists(utils_target_path):
         os.mkdir(utils_target_path)
     for utils_file in os.listdir(utils_lib_path):

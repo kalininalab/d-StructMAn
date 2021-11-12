@@ -29,7 +29,7 @@ from structman.lib import (
     templateSelection,
     uniprot
 )
-from structman.utils import ray_init, ray_hack, monitor_ray_store, calculate_chunksizes, pack, unpack
+from structman.base_utils.base_utils import ray_init, ray_hack, monitor_ray_store, calculate_chunksizes, pack, unpack
 
 try:
     from memory_profiler import profile
