@@ -73,9 +73,9 @@ def main(path, pdb_id=None):
 
         res_type1 = res1.split(":")[3]
         res_type2 = res2.split(":")[3]
-        if res_type1 in ligand_counts.BORING_LIGANDS and res_type1 not in residue_consts.THREE_TO_ONE:
+        if res_type1 in ligand_consts.BORING_LIGANDS and res_type1 not in residue_consts.THREE_TO_ONE:
             continue
-        if res_type2 in ligand_counts.BORING_LIGANDS and res_type2 not in residue_consts.THREE_TO_ONE:
+        if res_type2 in ligand_consts.BORING_LIGANDS and res_type2 not in residue_consts.THREE_TO_ONE:
             continue
 
         vertex_id1 = chains[chain1].res_to_vertex[res1]

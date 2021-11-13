@@ -20,7 +20,6 @@ from structman.lib import (
     globalAlignment,
     indel_analysis,
     MMseqs2,
-    output,
     pdbParser,
     rin,
     templateFiltering,
@@ -37,6 +36,7 @@ from structman.lib.sdsc import mappings as mappings_package
 from structman.lib.sdsc import protein as protein_package
 from structman.lib.sdsc import indel as indel_package
 from structman.lib.database import database
+from structman.lib.output import output
 from structman.base_utils.base_utils import calculate_chunksizes, pack, unpack
 from structman.base_utils.ray_utils import ray_init, ray_hack, monitor_ray_store
 
