@@ -4,6 +4,8 @@ import shutil
 import time
 
 from structman.lib import annovar, sdsc, serializedPipeline
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc import protein as protein_package
 
 
 def appendOutput(proteins, outfile):
@@ -35,9 +37,9 @@ def appendOutput(proteins, outfile):
             conf = mappings.classification_conf
             weighted_sc = mappings.weighted_location
             recommended_structure_str = mappings.get_recommended_res_str(proteins)
-            recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_str)
+            recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(recommended_structure_str)
             max_seq_structure_str = mappings.get_max_seq_structure_res_str(proteins)
-            max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc.process_recommend_structure_str(max_seq_structure_str)
+            max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc_utils.process_recommend_structure_str(max_seq_structure_str)
 
             amount_of_structures = len(mappings.qualities)
             mv_sec_ass = mappings.weighted_ssa
@@ -134,7 +136,7 @@ def main(filename, config, output_path, main_file_path):
 
         try:
             # transform the protein map into a Proteins object
-            proteins = sdsc.Proteins(proteins, indels, lite=True)
+            proteins = protein_package.Proteins(proteins, indels, lite=True)
 
             if verbose:
                 t3 = time.time()

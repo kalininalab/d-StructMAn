@@ -9,8 +9,10 @@ import urllib.request
 from Bio import Entrez
 import pymysql as MySQLdb
 
-from structman.lib import database, sdsc
-from structman import base_utils
+from structman.lib.database import database
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc import protein as protein_package
+from structman.base_utils import base_utils
 
 def is_connected():
     try:
@@ -168,7 +170,7 @@ def u_ac_isoform_search(gene_sequence_map, stems, ref_stem_map, config):
 def integrate_protein(config, proteins, indels, primary_protein_id, input_id, prot_map, u_ac=None, u_id=None, ref=None, pdb_id = None, other_ids={}, is_pdb_input = False):
 
     if primary_protein_id not in proteins:
-        protein = sdsc.Protein(config.errorlog, primary_protein_id=primary_protein_id, u_ac=u_ac, u_id=u_id, ref_id=ref, positions=prot_map[input_id][0], input_id=input_id, pdb_id = pdb_id)
+        protein = protein_package.Protein(config.errorlog, primary_protein_id=primary_protein_id, u_ac=u_ac, u_id=u_id, ref_id=ref, positions=prot_map[input_id][0], input_id=input_id, pdb_id = pdb_id)
         proteins[primary_protein_id] = protein
     else:
         proteins[primary_protein_id].u_id = u_id
@@ -204,7 +206,7 @@ def indel_insert(config, proteins, indel_map, indels, ac):
                     break
             if broken:
                 continue
-        indel_mut_protein = sdsc.Protein(config.errorlog, primary_protein_id=indel_protein_name)
+        indel_mut_protein = protein_package.Protein(config.errorlog, primary_protein_id=indel_protein_name)
         proteins[indel_protein_name] = indel_mut_protein
         indel.set_proteins(ac, indel_protein_name)
         indel_map[ac].append(indel)
@@ -249,7 +251,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                         integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
 
                         # This part is different
-                        if not sdsc.is_mutant_ac(u_ac):
+                        if not sdsc_utils.is_mutant_ac(u_ac):
                             update_acs.append(u_ac)
                     # updateMappingDatabase(update_acs,db,config)
 
@@ -299,7 +301,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
                     integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
-                    if not sdsc.is_mutant_ac(u_ac):
+                    if not sdsc_utils.is_mutant_ac(u_ac):
                         update_acs.append(u_ac)
                 # updateMappingDatabase(update_acs,db,config)
 
@@ -370,7 +372,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
             unstored_u_acs = []
             for u_ac in id_search:
                 if u_ac not in stored_u_acs:
-                    if not sdsc.is_mutant_ac(u_ac):
+                    if not sdsc_utils.is_mutant_ac(u_ac):
                         unstored_u_acs.append(u_ac)
 
             if len(unstored_u_acs) > 0:
@@ -531,7 +533,7 @@ def get_refseq_sequences(refseqs, config, seq_type='nucleotide'):
     if seq_type == 'protein':
         right_split = ' '
         left_split = None
-    seq_map = sdsc.parseFasta(page=page, left_split=left_split, right_split=right_split)
+    seq_map = sdsc_utils.parseFasta(page=page, left_split=left_split, right_split=right_split)
 
     return seq_map
 
@@ -540,7 +542,7 @@ def translateGNSMap(gene_nuc_sequence_map):
     gene_sequence_map = {}
     for ref in gene_nuc_sequence_map:
         nuc_seq = gene_nuc_sequence_map[ref]
-        aa_seq = sdsc.translate(nuc_seq)
+        aa_seq = sdsc_utils.translate(nuc_seq)
         gene_sequence_map[ref] = aa_seq
     return gene_sequence_map
 
@@ -787,7 +789,7 @@ def getSequence(uniprot_ac, config, tries=0, return_id=False, obsolete_try = Fal
     if config.verbosity >= 3:
         print('uniprot.getSequence for ', uniprot_ac)
 
-    if sdsc.is_mutant_ac(uniprot_ac):
+    if sdsc_utils.is_mutant_ac(uniprot_ac):
         config.errorlog.add_error('Cannot call getSequence with a mutant protein: %s' % uniprot_ac)
         return None
 

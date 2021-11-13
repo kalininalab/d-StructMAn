@@ -7,7 +7,7 @@ import sys
 
 import pymysql as MySQLdb
 
-from structman.lib import sdsc
+from structman.lib.sdsc.consts import codons as codon_consts
 
 
 # called by serializedPipeline
@@ -60,8 +60,8 @@ def ToSmlf(vcf_file, fasta):
                         nucleic = False
             """
 
-    stop_codons = set(sdsc.STOP_CODONS)
-    rev_stop_codons = set(sdsc.REV_STOP_CODONS)
+    stop_codons = set(codon_consts.STOP_CODONS)
+    rev_stop_codons = set(codon_consts.REV_STOP_CODONS)
 
     inverse = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
 
@@ -140,8 +140,8 @@ def ToSmlf(vcf_file, fasta):
             if triple in stop_codons:
                 continue
 
-            old_aa = sdsc.CODONS[triple]
-            new_aa = sdsc.CODONS[new_triple]
+            old_aa = codon_consts.CODONS[triple]
+            new_aa = codon_consts.CODONS[new_triple]
 
             if old_aa != new_aa:
                 s_line = "%s\t%s%s%s" % (g_id, old_aa, aa_pos, new_aa)

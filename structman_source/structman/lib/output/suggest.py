@@ -1,6 +1,6 @@
 
 import pandas as pd
-import structman.lib.database as smdb
+import structman.lib.database.database as smdb
 
 
 def score_consensus(df):

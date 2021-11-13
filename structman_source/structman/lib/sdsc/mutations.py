@@ -1,24 +1,11 @@
-from structman.lib import sdsc
-
-
-class SNV:
-    __slots__ = ['new_aa', 'database_id', 'stored', 'tags']
-
-    def __init__(self, new_aa, tags=set(), database_id=None):
-        self.new_aa = new_aa
-        self.tags = tags.copy()
-        self.database_id = database_id
-        self.stored = (database_id is not None)
-
-    def fuse(self, other_snv):
-        self.tags = self.tags | other_snv.tags
+from structman.lib.sdsc import position as position_package
+from structman.lib.sdsc.indel import Indel
 
 
 class MultiMutation:
     __slots__ = ['wt_prot', 'mut_prot', 'snvs', 'indels', 'database_id', 'stored', 'tags']
 
     def __init__(self, wt_prot, mut_prot, mutation_list, tags=set()):
-        from structman.lib.sdsc.indel import Indel
 
         self.wt_prot = wt_prot
         self.mut_prot = mut_prot
@@ -72,5 +59,5 @@ class MultiMutation:
 
         for (pos, aa) in enumerate(mut_seq):
             seq_pos = pos + 1
-            position = sdsc.Position(pos=seq_pos, wt_aa=aa, checked=True)
+            position = position_package.Position(pos=seq_pos, wt_aa=aa, checked=True)
             proteins[self.mut_prot].positions[seq_pos] = position

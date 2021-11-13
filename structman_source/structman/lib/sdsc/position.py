@@ -1,7 +1,6 @@
 from structman.lib.sdsc.mappings import Mappings
-from structman.lib.sdsc.mutations import SNV
-from structman.lib.sdsc.utils import process_recommend_structure_str
-
+from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str
+from structman.lib.sdsc import snv as snv_package
 
 class Position:
     __slots__ = ['pos', 'wt_aa', 'mut_aas', 'pos_tags', 'stored', 'database_id', 'pdb_res_nr', 'checked', 'mappings',
@@ -18,7 +17,7 @@ class Position:
                 mut_tags = mut_tags_map[new_aa]
             else:
                 mut_tags = set()
-            snv = SNV(new_aa, tags=mut_tags)
+            snv = snv_package.SNV(new_aa, tags=mut_tags)
             self.mut_aas[new_aa] = snv
         self.pos_tags = tags.copy()
         self.database_id = database_id

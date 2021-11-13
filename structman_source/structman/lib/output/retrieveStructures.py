@@ -1,5 +1,5 @@
 import os
-from structman.lib import database
+from structman.lib.database import database
 
 def retrieve_annotated_structures(session, config, outfile):
     if os.path.exists(outfile):

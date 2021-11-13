@@ -5,12 +5,12 @@ import ray
 
 from structman import settings
 from structman.lib import pdbParser, serializedPipeline
-from structman.base_utils.base_utils import ray_init
+from structman.base_utils import ray_utils
 
 
 @ray.remote(num_cpus=1)
 def parse(parse_dump, sub_folder):
-    serializedPipeline.ray_hack()
+    ray_utils.ray_hack()
 
     divide_folder, in_set, chain_limit, config = parse_dump
     pdb_path = config.pdb_path
@@ -110,7 +110,7 @@ def search(config, chain_limit, infile=None):
     outlines = []
     pdb_path = config.pdb_path
 
-    ray_init(config)
+    ray_utils.ray_init(config)
 
     divide_folder = "%s/data/biounit/PDB/divided/" % pdb_path
 

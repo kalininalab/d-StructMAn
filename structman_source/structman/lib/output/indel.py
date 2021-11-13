@@ -1,7 +1,8 @@
 import os
 
-from structman.lib import database, rin
-from structman.lib.output.output import OutputGenerator
+from structman.lib import rin
+from structman.lib.database import database
+from structman.lib.output import out_generator
 
 def add_aggregate_results(aggregates, indel_output, aggregate_type, raw_aggregate_header_base_names):
     if aggregates is None:
@@ -76,7 +77,7 @@ def create_indel_results_table(config, output_path, session_name, session_id):
     cols = ['Indel_Id', 'Indel_Notation', 'Analysis_Results', 'Wildtype_Protein', 'Mutant_Protein']
     results = database.binningSelect(ids, cols, 'Indel', config)
 
-    indel_output = OutputGenerator()
+    indel_output = out_generator.OutputGenerator()
 
     headers = ['Indel', 'Protein', 'Tags', 'Size', 'Delta delta classification']
 

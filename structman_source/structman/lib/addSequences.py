@@ -11,8 +11,8 @@ import sys
 import pymysql as MySQLdb
 
 import structman
-from structman.lib import database
-from structman.utils import resolve_path
+from structman.lib.database import database
+from structman.base_utils import resolve_path
 
 
 def parseSeqFile(seq_file_path, config):

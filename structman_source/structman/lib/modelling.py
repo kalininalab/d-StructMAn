@@ -13,8 +13,10 @@ try:
 except:
     pass
 
-from structman.lib import globalAlignment, pdbParser, sdsc, serializedPipeline, templateFiltering
+from structman.lib import globalAlignment, pdbParser, serializedPipeline, templateFiltering
+from structman.lib.sdsc import structure as structure_package
 from structman.lib import model as model_class
+from structman.lib.sdsc.consts import residues as residue_consts
 
 modeller_chains_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -267,7 +269,7 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
         # adding structure objects for not directly mapped chains
         for chain in chains:
             if not (pdb_id, chain) in structures:
-                struct = sdsc.Structure(pdb_id, chain)
+                struct = structure_package.Structure(pdb_id, chain)
                 struct.parse_page(template_page, config)
                 structures[(pdb_id, chain)] = struct
 
@@ -310,9 +312,9 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
         tmp_template_file = '%s/%s.pdb' % (process_folder, pdb_id.lower())
 
         if config.verbosity >= 3:
-            print('Calling og relocate_hetatm with:', chains, sdsc.NOT_IN_MODELLER)
+            print('Calling og relocate_hetatm with:', chains, residue_consts.NOT_IN_MODELLER)
 
-        template_page, removed_ligands = pdbParser.relocate_hetatm(template_page, filter_chains=set(chains), filter_het=sdsc.NOT_IN_MODELLER)
+        template_page, removed_ligands = pdbParser.relocate_hetatm(template_page, filter_chains=set(chains), filter_het=residue_consts.NOT_IN_MODELLER)
 
         if config.verbosity >= 4:
             print('Resulting page:\n', template_page)

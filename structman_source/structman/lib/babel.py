@@ -4,7 +4,7 @@ import time
 
 import pymysql as MySQLdb
 
-from structman.lib import database
+from structman.lib.database import database
 
 
 # Needs either a ligand_db or it creates one, but then it needs contact to the database

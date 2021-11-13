@@ -3,7 +3,9 @@ import psutil
 import ray
 import time
 
-from structman.lib import database, output, serializedPipeline
+from structman.lib import serializedPipeline
+from structman.lib.output import output
+from structman.lib.database import database
 try:
     from structman.lib import modelling
 except:

@@ -2,7 +2,7 @@ import sys
 from structman.lib.sdsc.consts import codons
 from structman.lib.sdsc.indel import Indel
 from structman.lib.sdsc.mutations import MultiMutation
-from structman.lib.sdsc.utils import process_recommend_structure_str
+from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str
 from structman.lib.sdsc.position import Position
 
 

@@ -2,49 +2,19 @@
 import os
 import time
 
-from structman.lib import babel, database, sdsc
+from structman.lib import babel
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc.consts import residues as residue_consts
+from structman.lib.database import database
+
 try:
     from structman.lib import modelling
 except:
     pass
-import structman.lib.output as smo
-
-
-class OutputGenerator:
-    null_symbol = '-'
-
-    def __init__(self):
-        self.columns = []
-        self.current_line = []
-        self.header_map = {}
-
-    def add_headers(self, headers):
-        n = len(self.columns)
-        for pos, header in enumerate(headers):
-            self.header_map[header] = pos + n
-            self.columns.append(header)
-
-    def get_header(self):
-        header = '\t'.join(self.columns) + '\n'
-        return header
-
-    def add_value(self, header, value):
-        if value is None:
-            value = OutputGenerator.null_symbol
-        if not isinstance(value, str):
-            value = str(value)
-
-        pos = self.header_map[header]
-        if len(self.current_line) <= pos:
-            self.current_line += [OutputGenerator.null_symbol] * (1 + (pos - len(self.current_line)))
-        self.current_line[pos] = value
-
-    def pop_line(self):
-        if len(self.current_line) < len(self.columns):
-            self.current_line += [OutputGenerator.null_symbol] * (len(self.columns) - len(self.current_line))
-        line = '\t'.join(self.current_line) + '\n'
-        self.current_line = []
-        return line
+from structman.lib.output import classification as classification_package
+from structman.lib.output import feature as feature_package
+from structman.lib.output import indel as indel_package
+from structman.lib.output import out_utils
 
 
 def appendOutput(proteins, outfolder, session_name, out_objects=None):
@@ -60,8 +30,8 @@ def appendOutput(proteins, outfolder, session_name, out_objects=None):
         if os.path.isfile(feature_file):
             os.remove(feature_file)
 
-        classification_output, f = smo.init_classification_table(class_file)
-        feature_output, feat_f = smo.init_feature_table(feature_file)
+        classification_output, f = classification_package.init_classification_table(class_file)
+        feature_output, feat_f = feature_package.init_feature_table(feature_file)
     else:
 
         feature_file = "%s.features.tsv" % (outfile)
@@ -97,9 +67,9 @@ def appendOutput(proteins, outfolder, session_name, out_objects=None):
             conf = mappings.classification_conf
             weighted_sc = mappings.weighted_location
             recommended_structure_str = mappings.get_recommended_res_str()
-            recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_str)
+            recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(recommended_structure_str)
             max_seq_structure_str = mappings.get_max_seq_structure_res_str()
-            max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc.process_recommend_structure_str(max_seq_structure_str)
+            max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc_utils.process_recommend_structure_str(max_seq_structure_str)
 
             amount_of_structures = len(mappings.qualities)
             mv_sec_ass = mappings.weighted_ssa
@@ -181,10 +151,10 @@ def appendOutput(proteins, outfolder, session_name, out_objects=None):
                 feature_output.add_value('Phi', mappings.weighted_phi)
                 feature_output.add_value('Psi', mappings.weighted_psi)
 
-                KDmean = abs(sdsc.HYDROPATHY[aa1] - sdsc.HYDROPATHY[new_aa])
+                KDmean = abs(residue_consts.HYDROPATHY[aa1] - residue_consts.HYDROPATHY[new_aa])
                 feature_output.add_value('KD mean', KDmean)
 
-                d_vol = abs(sdsc.VOLUME[aa1] - sdsc.VOLUME[new_aa])
+                d_vol = abs(residue_consts.VOLUME[aa1] - residue_consts.VOLUME[new_aa])
                 feature_output.add_value('Volume mean', d_vol)
 
                 chemical_distance = database.getChemicalDistance(aac)
@@ -193,15 +163,15 @@ def appendOutput(proteins, outfolder, session_name, out_objects=None):
                 blosum_value = database.getBlosumValue(aac)
                 feature_output.add_value('Blosum62', aac)
 
-                aliphatic_change = int((aa1 in sdsc.AA_MAP_ALIPHATIC) != (new_aa in sdsc.AA_MAP_ALIPHATIC))
-                hydrophobic_change = int((aa1 in sdsc.AA_MAP_HYDROPHOBIC) != (new_aa in sdsc.AA_MAP_HYDROPHOBIC))
-                aromatic_change = int((aa1 in sdsc.AA_MAP_AROMATIC) != (new_aa in sdsc.AA_MAP_AROMATIC))
-                positive_change = int((aa1 in sdsc.AA_MAP_POSITIVE) != (new_aa in sdsc.AA_MAP_POSITIVE))
-                polar_change = int((aa1 in sdsc.AA_MAP_POLAR) != (new_aa in sdsc.AA_MAP_POLAR))
-                negative_change = int((aa1 in sdsc.AA_MAP_NEGATIVE) != (new_aa in sdsc.AA_MAP_NEGATIVE))
-                charged_change = int((aa1 in sdsc.AA_MAP_CHARGED) != (new_aa in sdsc.AA_MAP_CHARGED))
-                small_change = int((aa1 in sdsc.AA_MAP_SMALL) != (new_aa in sdsc.AA_MAP_SMALL))
-                tiny_change = int((aa1 in sdsc.AA_MAP_TINY) != (new_aa in sdsc.AA_MAP_TINY))
+                aliphatic_change = int((aa1 in residue_consts.AA_MAP_ALIPHATIC) != (new_aa in residue_consts.AA_MAP_ALIPHATIC))
+                hydrophobic_change = int((aa1 in residue_consts.AA_MAP_HYDROPHOBIC) != (new_aa in residue_consts.AA_MAP_HYDROPHOBIC))
+                aromatic_change = int((aa1 in residue_consts.AA_MAP_AROMATIC) != (new_aa in residue_consts.AA_MAP_AROMATIC))
+                positive_change = int((aa1 in residue_consts.AA_MAP_POSITIVE) != (new_aa in residue_consts.AA_MAP_POSITIVE))
+                polar_change = int((aa1 in residue_consts.AA_MAP_POLAR) != (new_aa in residue_consts.AA_MAP_POLAR))
+                negative_change = int((aa1 in residue_consts.AA_MAP_NEGATIVE) != (new_aa in residue_consts.AA_MAP_NEGATIVE))
+                charged_change = int((aa1 in residue_consts.AA_MAP_CHARGED) != (new_aa in residue_consts.AA_MAP_CHARGED))
+                small_change = int((aa1 in residue_consts.AA_MAP_SMALL) != (new_aa in residue_consts.AA_MAP_SMALL))
+                tiny_change = int((aa1 in residue_consts.AA_MAP_TINY) != (new_aa in residue_consts.AA_MAP_TINY))
                 total_change = aliphatic_change + hydrophobic_change + aromatic_change + positive_change + polar_change + negative_change + charged_change + small_change + tiny_change
                 feature_output.add_value('Aliphatic change', aliphatic_change)
                 feature_output.add_value('Hydrophobic change', hydrophobic_change)
@@ -413,20 +383,20 @@ def main(sess_id, output_path, config, intertable=False):
 
     if classification:
         t00 = time.time()
-        classfiles, interfiles = smo.classificationOutput(config, output_path, session_name, session_id)
+        classfiles, interfiles = classification_package.classificationOutput(config, output_path, session_name, session_id)
         t01 = time.time()
         if config.verbosity >= 2:
             print("Time for classificationOutput: ", t01 - t00)
         for classfile in classfiles:
-            smo.classDistributionFromFile(classfile, output_path, session_name, config)
-            smo.classDistributionFromFile(classfile, output_path, session_name, config, rin_classes=True)
+            out_utils.classDistributionFromFile(classfile, output_path, session_name, config)
+            out_utils.classDistributionFromFile(classfile, output_path, session_name, config, rin_classes=True)
         t02 = time.time()
         if config.verbosity >= 2:
             print("Time for producing classification distributions: ", t02 - t01)
 
         if intertable:
             for interfile in interfiles:
-                smo.InteractionScoreAveragesFromFile(interfile, output_path, session_name, by_tag=True)
+                out_utils.InteractionScoreAveragesFromFile(interfile, output_path, session_name, by_tag=True)
             t03 = time.time()
             if config.verbosity >= 2:
                 print("Time for producing Interaction files: ", t03 - t02)
@@ -435,7 +405,7 @@ def main(sess_id, output_path, config, intertable=False):
         print("Time for producing classification file: ", t1 - t0)
 
     if config.indels_given_by_input:
-        smo.create_indel_results_table(config, output_path, session_name, session_id)
+        indel_package.create_indel_results_table(config, output_path, session_name, session_id)
 
     db, cursor = config.getDB()
 
@@ -452,7 +422,7 @@ def main(sess_id, output_path, config, intertable=False):
             if len(go_files) == 2:
                 fileA = "%s/%s" % (output_path, go_files[0])
                 fileB = "%s/%s" % (output_path, go_files[1])
-                smo.godiffAna(fileA, fileB)
+                godiffAna(fileA, fileB)
     if path:
         database.pathwayAnalysis(session_id, "%s/%s.pathway.tsv" % (output_path, session_name), db, cursor)
         if pathdiff:
@@ -464,7 +434,7 @@ def main(sess_id, output_path, config, intertable=False):
             if len(path_files) == 2:
                 fileA = "%s/%s" % (output_path, path_files[0])
                 fileB = "%s/%s" % (output_path, path_files[1])
-                smo.pathdiffAna(fileA, fileB)
+                pathdiffAna(fileA, fileB)
     if do_modelling:
         modelling.massModel(session_id, db, cursor, output_path, total_models=0, model_per_gene=int(mod_per_gene), multiple_mutations=multi_modelling)
 

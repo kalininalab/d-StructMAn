@@ -5,7 +5,7 @@ import os
 import sys
 
 import pymysql as MySQLdb
-from structman.utils import resolve_path
+from structman.base_utils import resolve_path
 
 
 def parseConfig(config):

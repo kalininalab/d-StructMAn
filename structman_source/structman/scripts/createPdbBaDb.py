@@ -8,8 +8,9 @@ import ray
 # if running as script, add local structman package to path
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__))))))
-from structman.lib import sdsc, serializedPipeline
-from structman.base_utils.base_utils import ray_init, ray_hack
+from structman.lib import serializedPipeline
+from structman.lib.sdsc.consts import residues as residue_consts
+from structman.base_utils.ray_utils import ray_init, ray_hack
 
 
 @ray.remote(num_cpus=1)
@@ -128,11 +129,11 @@ def parseByAtom(parse_dump, sub_folder):
                     if chain_id not in seqs:
                         seqs[chain_id] = ""
                         used_res[chain_id] = set()
-                    if record_name == 'HETATM' and res_name not in sdsc.THREE_TO_ONE:
+                    if record_name == 'HETATM' and res_name not in residue_consts.THREE_TO_ONE:
                         continue
                     if res_nr not in used_res[chain_id]:
-                        if res_name in sdsc.THREE_TO_ONE:
-                            aa = sdsc.THREE_TO_ONE[res_name][0]
+                        if res_name in residue_consts.THREE_TO_ONE:
+                            aa = residue_consts.THREE_TO_ONE[res_name][0]
                         else:
                             aa = 'X'
                         seqs[chain_id] += aa
@@ -200,11 +201,11 @@ def parseByAtomAU(sub_folder, AU_dump):
                     if chain_id not in seqs:
                         seqs[chain_id] = ""
                         used_res[chain_id] = set()
-                    if record_name == 'HETATM' and res_name not in sdsc.THREE_TO_ONE:
+                    if record_name == 'HETATM' and res_name not in residue_consts.THREE_TO_ONE:
                         continue
                     if res_nr not in used_res[chain_id]:
-                        if res_name in sdsc.THREE_TO_ONE:
-                            aa = sdsc.THREE_TO_ONE[res_name][0]
+                        if res_name in residue_consts.THREE_TO_ONE:
+                            aa = residue_consts.THREE_TO_ONE[res_name][0]
                         else:
                             aa = 'X'
                         seqs[chain_id] += aa
@@ -246,7 +247,7 @@ def parseBySeqres(path, pdb_id, great_seq_map):
                 #mod = line[12:15]
                 #tlc = line[24:27]
                 # print(mod,tlc)
-                # modres_map[mod] = sdsc.THREE_TO_ONE[tlc]"""
+                # modres_map[mod] = residue_consts.THREE_TO_ONE[tlc]"""
                 print(line)
             continue
 
@@ -256,9 +257,9 @@ def parseBySeqres(path, pdb_id, great_seq_map):
         seq = line[19:].split()
         for aa in seq:
             if len(aa) == 3:
-                if aa in sdsc.THREE_TO_ONE:
-                    if sdsc.THREE_TO_ONE[aa][0] in sdsc.ONE_TO_THREE:
-                        seqs[chain] += sdsc.THREE_TO_ONE[aa][0]
+                if aa in residue_consts.THREE_TO_ONE:
+                    if residue_consts.THREE_TO_ONE[aa][0] in residue_consts.ONE_TO_THREE:
+                        seqs[chain] += residue_consts.THREE_TO_ONE[aa][0]
                     else:
                         seqs[chain] += 'X'
                 else:

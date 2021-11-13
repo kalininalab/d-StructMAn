@@ -1,6 +1,7 @@
-from structman.lib.sdsc.utils import translate
-from structman.lib.sdsc.position import Position
+from structman.lib.sdsc.sdsc_utils import translate
+
 from structman.lib.sdsc.mappings import Mappings
+from structman.lib.sdsc import position as position_package
 
 def majority_vote(secs):
     class_dict = {}
@@ -197,7 +198,7 @@ class Insertion(Indel):
         proteins[self.mut_prot].sequence = mutated_sequence
         for (pos, aa) in enumerate(mutated_sequence):
             seq_pos = pos + 1
-            position = Position(pos=seq_pos, wt_aa=aa, checked=True)
+            position = position_package.Position(pos=seq_pos, wt_aa=aa, checked=True)
             proteins[self.mut_prot].positions[seq_pos] = position
 
     def get_positions(self, proteins, config):
@@ -365,7 +366,7 @@ class Deletion(Indel):
         proteins[self.mut_prot].sequence = mutated_sequence
         for (pos, aa) in enumerate(mutated_sequence):
             seq_pos = pos + 1
-            position = Position(pos=seq_pos, wt_aa=aa, checked=True)
+            position = position_package.Position(pos=seq_pos, wt_aa=aa, checked=True)
             proteins[self.mut_prot].positions[seq_pos] = position
 
     def get_positions(self, proteins, config):
@@ -538,7 +539,7 @@ class Substitution(Indel):
         proteins[self.mut_prot].sequence = mutated_sequence
         for (pos, aa) in enumerate(mutated_sequence):
             seq_pos = pos + 1
-            position = Position(pos=seq_pos, wt_aa=aa, checked=True)
+            position = position_package.Position(pos=seq_pos, wt_aa=aa, checked=True)
             proteins[self.mut_prot].positions[seq_pos] = position
 
     def get_positions(self, proteins, config):

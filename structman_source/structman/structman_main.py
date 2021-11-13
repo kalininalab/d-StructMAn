@@ -17,7 +17,9 @@ from psutil import virtual_memory
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__)))))
 import structman
-from structman.lib import database, output, repairDB, serializedPipeline, searchLargeStructures
+from structman.lib import repairDB, serializedPipeline, searchLargeStructures
+from structman.lib.output import output
+from structman.lib.database import database
 from structman.scripts import update
 from structman.base_utils.base_utils import resolve_path
 

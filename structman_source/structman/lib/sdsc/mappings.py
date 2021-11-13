@@ -2,7 +2,7 @@
 import re
 import numpy as np
 from structman.lib import rin
-from structman.lib.sdsc.utils import rin_classify, triple_locate
+from structman.lib.sdsc.sdsc_utils import rin_classify, triple_locate
 
 MobiDB_map = {'D_PA': 'Polyampholite', 'D_WC': 'Weak polyampholie', 'D_NPE': 'D_NPE', 'D_PPE': 'D_PPE'}
 

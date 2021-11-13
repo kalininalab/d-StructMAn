@@ -1,5 +1,5 @@
 from structman.lib import globalAlignment, pdbParser
-from structman.lib.sdsc.utils import process_alignment_data
+from structman.lib.sdsc.sdsc_utils import process_alignment_data
 
 
 class Structure:

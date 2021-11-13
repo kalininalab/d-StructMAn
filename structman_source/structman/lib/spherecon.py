@@ -8,7 +8,7 @@ import sys
 import numpy
 from Bio.Data import SCOPData as scd
 
-from structman.lib import sdsc
+from structman.lib.sdsc.consts import residues as residue_consts
 
 
 threeToOne = scd.protein_letters_3to1
@@ -175,7 +175,7 @@ def parsePDB(input_file, chains, c_alpha, target_atom='CA', page=None):
                         if res_name not in threeToOne:
                             continue
                         else:
-                            res_name = sdsc.ONE_TO_THREE[threeToOne[res_name][0]]
+                            res_name = residue_consts.ONE_TO_THREE[threeToOne[res_name][0]]
                     # if chain not given, take first one found
                     if chains is None:
                         chains = [chain_id]
@@ -308,7 +308,7 @@ def parseDM(input_file, add_neighbors=False):
     res_name_map = {'A': {}}
 
     for pos, letter in enumerate(seq):
-        res_name_map['A'][str(pos + 1)] = sdsc.ONE_TO_THREE[letter]
+        res_name_map['A'][str(pos + 1)] = residue_consts.ONE_TO_THREE[letter]
 
     for res in res_name_map['A']:
         res2 = str(int(res) + 1)

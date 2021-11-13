@@ -1,7 +1,6 @@
 import os
-from structman.lib import database
-from structman.lib.output.output import OutputGenerator
-
+from structman.lib.database import database
+from structman.lib.output import out_generator
 
 # called by structman_main
 def create_annotation_table(session, config, outfile):
@@ -9,7 +8,7 @@ def create_annotation_table(session, config, outfile):
         os.remove(outfile)
     proteins = database.proteinsFromDb(session, config, with_residues=True, filter_mutant_proteins=True, with_alignments=True)
 
-    fat_output = OutputGenerator()
+    fat_output = out_generator.OutputGenerator()
 
     headers = ['Protein-ID', 'Input-ID', 'Position', 'PDB-ID', 'Chain', 'Residue-ID', 'Residue AA type',
                'Sequence identity', 'Coverage', 'Resolution',

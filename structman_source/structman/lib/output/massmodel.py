@@ -3,7 +3,7 @@ import shutil
 
 import ray
 
-from structman.lib import database
+from structman.lib.database import database
 try:
     from structman.lib import modelling
 except:

@@ -7,7 +7,7 @@ import sys
 import traceback
 
 import structman
-from structman.lib import database
+from structman.lib.database import database
 
 
 # Tries to reclassify all positions with no classification in the database

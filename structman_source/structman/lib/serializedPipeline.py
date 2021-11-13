@@ -17,19 +17,28 @@ from ray.util.queue import Queue
 from structman.lib import (
     annovar,
     blast,
-    database,
     globalAlignment,
     indel_analysis,
     MMseqs2,
     output,
     pdbParser,
     rin,
-    sdsc,
     templateFiltering,
     templateSelection,
     uniprot
 )
-from structman.base_utils.base_utils import ray_init, ray_hack, monitor_ray_store, calculate_chunksizes, pack, unpack
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc import position as position_package
+from structman.lib.sdsc.consts import residues as residue_consts
+from structman.lib.sdsc.consts import codons as codon_consts
+from structman.lib.sdsc import structure as structure_package
+from structman.lib.sdsc import complex as complex_package
+from structman.lib.sdsc import mappings as mappings_package
+from structman.lib.sdsc import protein as protein_package
+from structman.lib.sdsc import indel as indel_package
+from structman.lib.database import database
+from structman.base_utils.base_utils import calculate_chunksizes, pack, unpack
+from structman.base_utils.ray_utils import ray_init, ray_hack, monitor_ray_store
 
 try:
     from memory_profiler import profile
@@ -152,7 +161,7 @@ def sequenceScan(config, proteins, indels):
             continue
         if prot_id.count(':') > 0:
             sequenceScanPDB[prot_id] = tags, uni_pos  # PDB inputs are always processed by the sequence scan, but the positions are only added if uni_pos is true
-        elif not sdsc.is_mutant_ac(prot_id):
+        elif not sdsc_utils.is_mutant_ac(prot_id):
             if proteins[prot_id].input_id[:2] == 'NM':
                 if proteins[prot_id].input_id in indels:  # Indel proteins need complete classification
                     uni_pos = True
@@ -198,7 +207,7 @@ def sequenceScan(config, proteins, indels):
                     proteins[primary_protein_id].positions[seq_pos].check(aa, overwrite=config.overwrite_incorrect_wt_aa)
                     proteins[primary_protein_id].positions[seq_pos].add_tags(tags)
                 elif uni_pos:
-                    position = sdsc.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
+                    position = position_package.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
                     proteins[primary_protein_id].positions[seq_pos] = position
 
             # sanity check filter
@@ -237,7 +246,7 @@ def sequenceScan(config, proteins, indels):
                     proteins[primary_protein_id].positions[seq_pos].check(aa, overwrite=config.overwrite_incorrect_wt_aa)
                     proteins[primary_protein_id].positions[seq_pos].add_tags(tags)
                 elif uni_pos:
-                    position = sdsc.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
+                    position = position_package.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
                     proteins[primary_protein_id].positions[seq_pos] = position
 
             # sanity check filter
@@ -263,7 +272,7 @@ def sequenceScan(config, proteins, indels):
                     proteins[u_ac].positions[seq_pos].check(aa, overwrite=config.overwrite_incorrect_wt_aa)
                     proteins[u_ac].positions[seq_pos].add_tags(tags)
                 elif uni_pos:
-                    position = sdsc.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
+                    position = position_package.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
                     proteins[u_ac].positions[seq_pos] = position
 
             proteins[u_ac].set_disorder_scores(disorder_scores)
@@ -295,7 +304,7 @@ def sequenceScan(config, proteins, indels):
                         continue
                     proteins[u_ac].positions[seq_pos].add_tags(tags)
                 elif uni_pos:
-                    position = sdsc.Position(pos=seq_pos, pdb_res_nr=res_id, wt_aa=aa, tags=tags)
+                    position = position_package.Position(pos=seq_pos, pdb_res_nr=res_id, wt_aa=aa, tags=tags)
                     proteins[u_ac].positions[seq_pos] = position
                     proteins[u_ac].res_id_map[res_id] = position
 
@@ -307,7 +316,7 @@ def sequenceScan(config, proteins, indels):
 
             for (pos, aa) in enumerate(seq):
                 seq_pos = pos + 1
-                position = sdsc.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
+                position = position_package.Position(pos=seq_pos, wt_aa=aa, tags=tags, checked=True)
                 proteins[prot_id].positions[seq_pos] = position
 
     if config.verbosity >= 3:
@@ -394,7 +403,7 @@ def parseFasta(config, nfname):
                     positions, multi_mutations = pr_mut_str_result
                     add_to_prot_map(pos_map, entry_id, positions, multi_mutations, config)
             else:
-                position = sdsc.Position()
+                position = position_package.Position()
                 multi_mutations = []
                 positions = [position]
                 add_to_prot_map(pos_map, entry_id, positions, multi_mutations, config)
@@ -441,15 +450,15 @@ def process_mutations_str(mutation_str, tags, pdb_style=False):
         if aachange == '':
             continue
         if aachange.count('delins') == 1:
-            indel = sdsc.Substitution(raw_str=aachange, tags=tags)
+            indel = indel_package.Substitution(raw_str=aachange, tags=tags)
             multi_mutations.append(indel)
 
         elif aachange.count('del') == 1:
-            indel = sdsc.Deletion(raw_str=aachange, tags=tags)
+            indel = indel_package.Deletion(raw_str=aachange, tags=tags)
             multi_mutations.append(indel)
 
         elif aachange.count('ins') == 1:
-            indel = sdsc.Insertion(raw_str=aachange, tags=tags)
+            indel = indel_package.Insertion(raw_str=aachange, tags=tags)
             multi_mutations.append(indel)
 
         else:
@@ -461,17 +470,17 @@ def process_mutations_str(mutation_str, tags, pdb_style=False):
 
             if pdb_style:
                 if aa2 is None:
-                    position = sdsc.Position(pdb_res_nr=pos, wt_aa=aa1, mut_aas=set(aa2), tags=tags, mut_tags_map={aa2: tags})
+                    position = position_package.Position(pdb_res_nr=pos, wt_aa=aa1, mut_aas=set(aa2), tags=tags, mut_tags_map={aa2: tags})
                     positions.append(position)
                 else:
-                    position = sdsc.Position(pdb_res_nr=pos, wt_aa=aa1, tags=tags)
+                    position = position_package.Position(pdb_res_nr=pos, wt_aa=aa1, tags=tags)
                     multi_mutations.append((position, aa2))
             else:
                 if aa2 is None:
-                    position = sdsc.Position(pos=pos, wt_aa=aa1, tags=tags)
+                    position = position_package.Position(pos=pos, wt_aa=aa1, tags=tags)
                     positions.append(position)
                 else:
-                    position = sdsc.Position(pos=pos, wt_aa=aa1, mut_aas=set(aa2), tags=tags, mut_tags_map={aa2: tags})
+                    position = position_package.Position(pos=pos, wt_aa=aa1, mut_aas=set(aa2), tags=tags, mut_tags_map={aa2: tags})
                     multi_mutations.append((position, aa2))
     return positions, multi_mutations
 
@@ -641,7 +650,7 @@ def buildQueue(config, filename, already_split=False):
 
         try:
             if len(words) == 1 or words[1] == '':
-                position = sdsc.Position(tags=tags)
+                position = position_package.Position(tags=tags)
                 indel = None
                 multi_mutations = []
                 positions = [position]
@@ -712,8 +721,8 @@ def nToAA(seq):
     for char in list(seq):
         triple += char
         if i % 3 == 0:
-            if triple in sdsc.CODONS:
-                aa = sdsc.CODONS[triple] if triple not in sdsc.STOP_CODONS else ''
+            if triple in codon_consts.CODONS:
+                aa = codon_consts.CODONS[triple] if triple not in codon_consts.STOP_CODONS else ''
             aa_seq += aa
             triple = ''
         i += 1
@@ -983,17 +992,17 @@ def autoTemplateSelection(config, proteins):
                 if resolution > option_res_thresh:
                     continue
                 oligo = raw_structure_map[u_ac][(pdb_id, chain)][2]
-                struct_anno = sdsc.StructureAnnotation(u_ac, pdb_id, chain)
+                struct_anno = structure_package.StructureAnnotation(u_ac, pdb_id, chain)
                 proteins.add_annotation(u_ac, pdb_id, chain, struct_anno)
 
                 if not (pdb_id, chain) in structure_list:
-                    struct = sdsc.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac], seq_len = raw_structure_map[u_ac][(pdb_id, chain)][4])
+                    struct = structure_package.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac], seq_len = raw_structure_map[u_ac][(pdb_id, chain)][4])
                     proteins.add_structure(pdb_id, chain, struct)
                 else:
                     proteins.add_mapping_to_structure(pdb_id, chain, u_ac)
 
                 if pdb_id not in complex_list:
-                    compl = sdsc.Complex(pdb_id, resolution, homomers=homomer_dict)
+                    compl = complex_package.Complex(pdb_id, resolution, homomers=homomer_dict)
                     proteins.add_complex(pdb_id, compl)
 
         t2 = time.time()
@@ -1576,7 +1585,7 @@ def para_classify(classification_dump, package, para=False):
     for u_ac, classification_inp in package:
         for pos, mappings, disorder_score, disorder_region in classification_inp:
 
-            mappings_obj = sdsc.Mappings()
+            mappings_obj = mappings_package.Mappings()
 
             for mapp in mappings:
 
@@ -1606,7 +1615,7 @@ def para_classify(classification_dump, package, para=False):
                  b_factor, modres,
                  lig_dists, chain_distances, homomer_distances, res_aa) = mapping
 
-                gsd_return = sdsc.get_shortest_distances(chains, lig_dists, chain_distances, homomer_distances)
+                gsd_return = sdsc_utils.get_shortest_distances(chains, lig_dists, chain_distances, homomer_distances)
 
                 if gsd_return is None:
                     continue
@@ -1622,9 +1631,9 @@ def para_classify(classification_dump, package, para=False):
                 else:
                     centralities = centralities_or_str
 
-                loc, mc_loc, sc_loc = sdsc.triple_locate(rsa, mc_rsa, sc_rsa, config)
+                loc, mc_loc, sc_loc = sdsc_utils.triple_locate(rsa, mc_rsa, sc_rsa, config)
 
-                rin_class, rin_simple_class = sdsc.rin_classify(profile, sc_loc)
+                rin_class, rin_simple_class = sdsc_utils.rin_classify(profile, sc_loc)
 
                 qual = templateFiltering.qualityScore(resolution, cov, seq_id)
 
@@ -2175,7 +2184,7 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
                         outs = unpack(outs)
                         t_integrate_1 += time.time()
                         for u_ac, pos, mapping_results in outs:
-                            proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+                            proteins.protein_map[u_ac].positions[pos].mappings = mappings_package.Mappings(raw_results=mapping_results)
 
                         total_comp_time += comp_time
                         amount_of_positions += 1
@@ -2206,7 +2215,7 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
             gc.collect()
             for outs, comp_time in classification_results:
                 for u_ac, pos, mapping_results in outs:
-                    proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+                    proteins.protein_map[u_ac].positions[pos].mappings = mappings_package.Mappings(raw_results=mapping_results)
 
     else:
         if config.verbosity >= 2:
@@ -2235,7 +2244,7 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
 
                 outs = unpack(outs)
                 for u_ac, pos, mapping_results in outs:
-                    proteins.protein_map[u_ac].positions[pos].mappings = sdsc.Mappings(raw_results=mapping_results)
+                    proteins.protein_map[u_ac].positions[pos].mappings = mappings_package.Mappings(raw_results=mapping_results)
 
 
     if not indel_analysis_follow_up:
@@ -2265,7 +2274,7 @@ def core(protein_list, indels, multi_mutation_objects, config, session, outfolde
     background_process_MS = None
 
     # transform the protein map into a Proteins object
-    proteins = sdsc.Proteins(protein_list, indels, multi_mutation_objects, lite=config.lite)
+    proteins = protein_package.Proteins(protein_list, indels, multi_mutation_objects, lite=config.lite)
 
     if config.verbosity >= 5:
         print('Proteins state after object initialization:')

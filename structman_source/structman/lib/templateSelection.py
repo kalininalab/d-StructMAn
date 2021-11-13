@@ -1,6 +1,8 @@
 import multiprocessing
 
-from structman.lib import pdbParser, sdsc
+from structman.lib import pdbParser
+from structman.lib.sdsc import structure as structure_package
+from structman.lib.sdsc import complex as complex_package
 
 
 # Called by what?
@@ -87,16 +89,16 @@ def filterRawStructureMap(raw_structure_map, pdb_ids, pdb_path, option_res_thres
             if resolution > option_res_thresh:
                 continue
             oligo = raw_structure_map[u_ac][(pdb_id, chain)]['Oligo']
-            struct_anno = sdsc.StructureAnnotation(u_ac, pdb_id, chain)
+            struct_anno = structure_package.StructureAnnotation(u_ac, pdb_id, chain)
             proteins.add_annotation(u_ac, pdb_id, chain, struct_anno)
 
             if not (pdb_id, chain) in structure_list:
-                struct = sdsc.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac])
+                struct = structure_package.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[u_ac])
                 proteins.add_structure(pdb_id, chain, struct)
             else:
                 proteins.add_mapping_to_structure(pdb_id, chain, u_ac)
 
             if pdb_id not in complex_list:
-                compl = sdsc.Complex(pdb_id, resolution, homomers=homomer_dict)
+                compl = complex_package.Complex(pdb_id, resolution, homomers=homomer_dict)
                 proteins.add_complex(pdb_id, compl)
     return

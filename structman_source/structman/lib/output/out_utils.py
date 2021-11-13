@@ -2,8 +2,8 @@ import os
 import time
 from ast import literal_eval
 
-from structman.lib import database
-from structman.lib.output.output import OutputGenerator
+from structman.lib.database import database
+from structman.lib.output import out_generator
 
 try:
     import matplotlib
@@ -288,7 +288,7 @@ def classDistributionFromFile(annotationfile, outfolder, session_name, config, b
         else:
             classification = words[rin_class_pos]
             simple_classification = words[rin_simple_class_pos]
-        if words[confidence_pos] != OutputGenerator.null_symbol:
+        if words[confidence_pos] != out_generator.OutputGenerator.null_symbol:
             confidence = float(words[confidence_pos])
         else:
             confidence = 0.

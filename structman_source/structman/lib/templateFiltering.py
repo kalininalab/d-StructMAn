@@ -9,9 +9,12 @@ import psutil
 import ray
 import pickle
 
-from structman.lib import database, pdbParser, rin, sdsc, spherecon, serializedPipeline
+from structman.lib import pdbParser, rin, spherecon, serializedPipeline
+from structman.lib.database import database
 from structman.base_utils.base_utils import median, distance, pack, unpack, decompress
-from structman.lib.sdsc.consts.residues import CORRECT_COUNT, THREE_TO_ONE
+from structman.lib.sdsc.consts.residues import CORRECT_COUNT, THREE_TO_ONE, BLOSUM62, ONE_TO_THREE, RESIDUE_MAX_ACC, HYDROPATHY, METAL_ATOMS, ION_ATOMS
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc import residue as residue_package
 try:
     from memory_profiler import profile
 except:
@@ -45,9 +48,9 @@ def candidateScore(lig_sub_dist, chain_sub_dist, lig_wf=1.0, chain_wf=1.0, useBl
             raise NameError("If useBlosum is True, an aac is needed")
 
         try:
-            blosum_value = 0.6 - float(sdsc.BLOSUM62[(aac[0], aac[-1])]) / 10
+            blosum_value = 0.6 - float(BLOSUM62[(aac[0], aac[-1])]) / 10
         except:
-            blosum_value = 0.6 - float(sdsc.BLOSUM62[(aac[-1], aac[0])]) / 10
+            blosum_value = 0.6 - float(BLOSUM62[(aac[-1], aac[0])]) / 10
         if blosum_value < 0.0:
             blosum_value = 0.0
         # print blosum_value
@@ -130,11 +133,11 @@ def calcDSSP(path, DSSP, angles=False, verbosity_level=0):
             if aa_type_one_letter == 'X':
                 macc = 220.0
             elif aa_type_one_letter.islower():  # This happens for SS-bond cysteines
-                aa = sdsc.ONE_TO_THREE['C']
-                macc = sdsc.RESIDUE_MAX_ACC['Sander'][aa]
+                aa = ONE_TO_THREE['C']
+                macc = RESIDUE_MAX_ACC['Sander'][aa]
             else:
-                aa = sdsc.ONE_TO_THREE[aa_type_one_letter]
-                macc = sdsc.RESIDUE_MAX_ACC['Sander'][aa]
+                aa = ONE_TO_THREE[aa_type_one_letter]
+                macc = RESIDUE_MAX_ACC['Sander'][aa]
             racc = acc / macc
             relative_main_chain_acc = main_chain_acc / macc
             relative_side_chain_acc = side_chain_acc / macc
@@ -213,7 +216,7 @@ def parsePDB(input_page):
                     tlc = tlc.strip()
                     if len(tlc) != 3:
                         continue
-                    if tlc not in sdsc.THREE_TO_ONE:
+                    if tlc not in THREE_TO_ONE:
                         rare_residues.add(tlc)
         # ignore short lines
         if len(line) > 20:
@@ -307,7 +310,7 @@ def parsePDB(input_page):
                         chain_type_map[chain_id] = chain_type
                         peptide_count[chain_id] = [0, 0]
                     elif record_name == 'HETATM':
-                        if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name) or (res_name in rare_residues):
+                        if res_name in THREE_TO_ONE or not sdsc_utils.boring(res_name) or (res_name in rare_residues):
                             chain_type_map[chain_id] = "Protein"
                             peptide_count[chain_id] = [0, 0]
                         elif len(res_name) == 1:
@@ -321,7 +324,7 @@ def parsePDB(input_page):
 
 
                 if record_name == 'HETATM':
-                    if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name) or (res_name in rare_residues):  # For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in THREE_TO_ONE, which are hopefully some kind of anormal amino acids
+                    if res_name in THREE_TO_ONE or not sdsc_utils.boring(res_name) or (res_name in rare_residues):  # For a hetero peptide 'boring' hetero amino acids are allowed as well as other non boring molecules not in THREE_TO_ONE, which are hopefully some kind of anormal amino acids
                         peptide_count[chain_id][1] += 1
                     elif len(res_name) < 3:
                         peptide_count[chain_id][0] += 1
@@ -386,7 +389,7 @@ def parsePDB(input_page):
                         coordinate_map[chain_id] = [{}, {}]
                         box_map[chain_id] = [x, x, y, y, z, z]
 
-                    if ((chain_id, res_nr) in modres_map) or (res_name in sdsc.THREE_TO_ONE) or (res_name in rare_residues):  # If it is a modified residue, than add it to the normal residues...
+                    if ((chain_id, res_nr) in modres_map) or (res_name in THREE_TO_ONE) or (res_name in rare_residues):  # If it is a modified residue, than add it to the normal residues...
                         if atom_name[0] in ('H', 'D'):
                             continue
                         if not (chain_id, res_nr) in modres_map:
@@ -414,10 +417,10 @@ def parsePDB(input_page):
                         if z > box_map[chain_id][1]:
                             box_map[chain_id][4] = z
 
-                        if not res_name in sdsc.THREE_TO_ONE:
+                        if not res_name in THREE_TO_ONE:
                             siss_het_res_name = 'UNK'
-                        elif sdsc.THREE_TO_ONE[res_name][0] in sdsc.ONE_TO_THREE:
-                            siss_het_res_name = sdsc.ONE_TO_THREE[sdsc.THREE_TO_ONE[res_name][0]]
+                        elif THREE_TO_ONE[res_name][0] in ONE_TO_THREE:
+                            siss_het_res_name = ONE_TO_THREE[THREE_TO_ONE[res_name][0]]
                         else:
                             siss_het_res_name = 'UNK'
                         if chain_id not in siss_map:
@@ -436,9 +439,9 @@ def parsePDB(input_page):
                         if res_nr not in coordinate_map[chain_id][1]:  # If not, then add it to the ligands
                             coordinate_map[chain_id][1][res_nr] = [res_name, {}]
                         coordinate_map[chain_id][1][res_nr][1][atom_nr] = (atom_name, x, y, z)
-                        if res_name in sdsc.METAL_ATOMS:
+                        if res_name in METAL_ATOMS:
                             metals.add((chain_id, res_nr))
-                        elif res_name in sdsc.ION_ATOMS:
+                        elif res_name in ION_ATOMS:
                             ions.add((chain_id, res_nr))
                         else:
                             ligands.add((chain_id, res_nr))
@@ -672,9 +675,9 @@ def analysis_chain(target_chain, analysis_dump):
             break
         milieu_dict[target_chain][target_res_id] = {}
         three_letter = res_contig_map[target_chain][target_res_id][1]
-        if three_letter in sdsc.THREE_TO_ONE:
-            if sdsc.THREE_TO_ONE[three_letter][0] in sdsc.ONE_TO_THREE:
-                one_letter = sdsc.THREE_TO_ONE[three_letter][0]
+        if three_letter in THREE_TO_ONE:
+            if THREE_TO_ONE[three_letter][0] in ONE_TO_THREE:
+                one_letter = THREE_TO_ONE[three_letter][0]
             else:
                 one_letter = 'X'
         else:
@@ -724,10 +727,10 @@ def analysis_chain(target_chain, analysis_dump):
                         total_inter_dist_weights += 1 / dist
                         if not inter_chain_res in res_contig_map[chain]:
                             continue
-                        if not res_contig_map[chain][inter_chain_res][1] in sdsc.THREE_TO_ONE:
+                        if not res_contig_map[chain][inter_chain_res][1] in THREE_TO_ONE:
                             continue
-                        inter_chain_res_one_letter = sdsc.THREE_TO_ONE[res_contig_map[chain][inter_chain_res][1]][0]
-                        kd = sdsc.HYDROPATHY[inter_chain_res_one_letter]
+                        inter_chain_res_one_letter = THREE_TO_ONE[res_contig_map[chain][inter_chain_res][1]][0]
+                        kd = HYDROPATHY[inter_chain_res_one_letter]
                         inter_chain_kds.append(kd)
                         inter_chain_dist_weighted_kds.append(kd / dist)
                         rsa = dssp_dict[chain][inter_chain_res][0]
@@ -764,12 +767,12 @@ def analysis_chain(target_chain, analysis_dump):
                     for intra_chain_res in inside_sphere:
                         if intra_chain_res not in dssp_dict[chain]:
                             continue
-                        if not res_contig_map[chain][intra_chain_res][1] in sdsc.THREE_TO_ONE:
+                        if not res_contig_map[chain][intra_chain_res][1] in THREE_TO_ONE:
                             continue
                         dist = inside_sphere[intra_chain_res]
                         total_dist_weights += 1 / dist
-                        intra_chain_res_one_letter = sdsc.THREE_TO_ONE[res_contig_map[chain][intra_chain_res][1]][0]
-                        kd = sdsc.HYDROPATHY[intra_chain_res_one_letter]
+                        intra_chain_res_one_letter = THREE_TO_ONE[res_contig_map[chain][intra_chain_res][1]][0]
+                        kd = HYDROPATHY[intra_chain_res_one_letter]
                         intra_chain_kds.append(kd)
                         intra_chain_dist_weighted_kds.append(kd / dist)
                         rsa = dssp_dict[chain][intra_chain_res][0]
@@ -939,7 +942,7 @@ def analysis_chain(target_chain, analysis_dump):
         else:
             cis_follower = None
 
-        residue = sdsc.Residue(target_res_id, aa=one_letter, lig_dists=lig_dists, chain_distances=min_chain_dists, RSA=rsa,
+        residue = residue_package.Residue(target_res_id, aa=one_letter, lig_dists=lig_dists, chain_distances=min_chain_dists, RSA=rsa,
                            relative_main_chain_acc=relative_main_chain_acc, relative_side_chain_acc=relative_side_chain_acc,
                            SSA=ssa, homomer_distances=homomer_map, interaction_profile=profile, centralities=centrality_scores,
                            modres=modres, b_factor=avg_b_factor, phi=phi, psi=psi, intra_ssbond=intra_ssbond, ssbond_length=ssbond_len,

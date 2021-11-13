@@ -8,8 +8,18 @@ import traceback
 
 import ray
 
-from structman.base_utils.base_utils import ray_init, calc_checksum, pack, unpack
-from structman.lib import pdbParser, rin, sdsc, serializedPipeline, templateFiltering
+from structman.base_utils.base_utils import calc_checksum, pack, unpack
+from structman.base_utils import ray_utils
+from structman.lib import pdbParser, rin, serializedPipeline, templateFiltering
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc import complex as complex_package
+from structman.lib.sdsc import structure as structure_package
+from structman.lib.sdsc import residue as residue_package
+from structman.lib.sdsc import protein as protein_package
+from structman.lib.sdsc import position as position_package
+from structman.lib.sdsc import mutations as mutation_package
+from structman.lib.sdsc import snv as snv_package
+from structman.lib.sdsc.consts import residues as residue_consts
 
 
 def binningSelect(keys, rows, table, config, binning_function='median_focus', density=0.5):
@@ -132,10 +142,10 @@ def size_estimation(config, values):
     n_of_r_values = 100
     if len(values) <= n_of_r_values:
         #size_of_values = sys.getsizeof(str(values))
-        size_of_values = sdsc.total_size(values)
+        size_of_values = sdsc_utils.total_size(values)
     else:
         #size_of_values = (sys.getsizeof(str(random.sample(values,n_of_r_values)))*len(values))/n_of_r_values
-        size_of_values = (sdsc.total_size(random.sample(values, n_of_r_values)) * len(values)) / n_of_r_values
+        size_of_values = (sdsc_utils.total_size(random.sample(values, n_of_r_values)) * len(values)) / n_of_r_values
 
     # Add X% too the size estimation, just to be sure
     size_of_values = size_of_values * 2.5
@@ -342,7 +352,7 @@ def protCheck(proteins, session_id, config):
         proteins.set_protein_sequence(prot_id, row[2])
 
         prot_id_list.add(database_id)
-        if not sdsc.is_mutant_ac:
+        if not sdsc_utils.is_mutant_ac:
             prot_ids_mutants_excluded.add(database_id)
 
         if database_id > max_database_id:
@@ -630,7 +640,7 @@ def positionCheck(proteins, database_session, config):
             pos_map[position_database_id] = (prot_id, pos)
             if row[3] is not None:
                 recommended_structure_tuple = unpack(row[3])
-                recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_tuple[0])
+                recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(recommended_structure_tuple[0])
                 proteins.getByDbId(prot_id).positions[pos].recommended_structure = recommended_structure
 
     # search for stored SNVs
@@ -1234,7 +1244,7 @@ def draw_complexes(config, proteins, stored_complexes=[], draw_all=False):
         if pdb_id not in stored_complexes and not draw_all:
             continue
 
-        compl = sdsc.Complex(pdb_id, resolution=float(row[2]), chains_str=row[3], lig_profile_str=row[4], metal_profile_str=row[5], ion_profile_str=row[6], chain_chain_profile_str=row[7], stored=True, database_id=row[0], homomers_str=row[8])
+        compl = complex_package.Complex(pdb_id, resolution=float(row[2]), chains_str=row[3], lig_profile_str=row[4], metal_profile_str=row[5], ion_profile_str=row[6], chain_chain_profile_str=row[7], stored=True, database_id=row[0], homomers_str=row[8])
 
         proteins.add_complex(pdb_id, compl)
 
@@ -1562,7 +1572,7 @@ def getAlignments(proteins, config, get_all_alignments=False):
 
         structure_ids.add(structure_id)
 
-        target_seq, template_seq = sdsc.process_alignment_data(alignment)
+        target_seq, template_seq = sdsc_utils.process_alignment_data(alignment)
 
         if prot_db_id not in prot_structure_alignment_map:
             prot_structure_alignment_map[prot_db_id] = {}
@@ -1587,19 +1597,19 @@ def getAlignments(proteins, config, get_all_alignments=False):
 
             (target_seq, template_seq, coverage, seq_id) = prot_structure_alignment_map[prot_db_id][structure_id]
 
-            struct_anno = sdsc.StructureAnnotation(prot_id, pdb_id, chain, alignment=(target_seq, template_seq), stored=True)
+            struct_anno = structure_package.StructureAnnotation(prot_id, pdb_id, chain, alignment=(target_seq, template_seq), stored=True)
             proteins.add_annotation(prot_id, pdb_id, chain, struct_anno)
 
             if not proteins.contains_structure(pdb_id, chain):
                 oligo = structure_map[(pdb_id, chain)][1]
-                struct = sdsc.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[prot_id], database_id=structure_id)
+                struct = structure_package.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[prot_id], database_id=structure_id)
                 proteins.add_structure(pdb_id, chain, struct)
             else:
                 proteins.add_mapping_to_structure(pdb_id, chain, prot_id)
 
             if not proteins.contains_complex(pdb_id) and (pdb_id in complex_map):
                 (comp_id, resolution, chains_str, homooligomers, lig_profile, metal_profile, ion_profile, cc_profile) = complex_map[pdb_id]
-                compl = sdsc.Complex(pdb_id, resolution=resolution, chains_str=chains_str, lig_profile=lig_profile,
+                compl = complex_package.Complex(pdb_id, resolution=resolution, chains_str=chains_str, lig_profile=lig_profile,
                                      metal_profile=metal_profile, ion_profile=ion_profile,
                                      chain_chain_profile=cc_profile, stored=True, database_id=comp_id, homomers_str=homooligomers)
                 proteins.add_complex(pdb_id, compl)
@@ -1719,7 +1729,7 @@ def para_residue_init(rows):
     outs = []
     for row in rows:
         # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
-        residue = sdsc.Residue(row[2], aa=row[3], lig_dist_str=row[4], chain_dist_str=row[5], RSA=row[6],
+        residue = residue_package.Residue(row[2], aa=row[3], lig_dist_str=row[4], chain_dist_str=row[5], RSA=row[6],
                                SSA=row[7], homo_dist_str=row[8], interaction_profile_str=row[9], centrality_score_str=row[10],
                                modres=row[11], b_factor=row[12], database_id=row[1], stored=True, phi=row[13], psi=row[14],
                                intra_ssbond=row[15], ssbond_length=row[16], intra_link=row[17], link_length=row[18],
@@ -1784,7 +1794,7 @@ def getStoredResidues(proteins, config):
                 continue
 
             # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
-            residue = sdsc.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
+            residue = residue_package.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
                                    relative_main_chain_acc=relative_main_chain_acc, relative_side_chain_acc=relative_side_chain_acc,
                                    SSA=ssa, homo_dist_str=homo_str, interaction_profile_str=profile_str, centrality_score_str=centrality_score_str,
                                    modres=modres, b_factor=b_factor, database_id=row[1], stored=True, phi=phi, psi=psi,
@@ -2094,14 +2104,14 @@ def getChemicalDistance(aac):
             aa1 = aac[0]
             aa2 = aac[-1]
 
-            chemical_distance = sdsc.CHEM_DIST_MATRIX[aa1][aa2]
+            chemical_distance = residue_consts.CHEM_DIST_MATRIX[aa1][aa2]
         else:
             aa1 = aac[0]
             aa2s = aac.split(",")
             aa2s[0] = aa2s[0][-1]
             chem_dists = []
             for aa2 in aa2s:
-                chem_dists.append(sdsc.CHEM_DIST_MATRIX[aa1][aa2])
+                chem_dists.append(residue_consts.CHEM_DIST_MATRIX[aa1][aa2])
             chemical_distance = float(sum(chem_dists)) / float(len(chem_dists))
     except:
         return None
@@ -2112,9 +2122,9 @@ def getBlosumValue(aac):
     if aac.count(',') < 1:
         try:
             try:
-                blosum_value = sdsc.BLOSUM62[(aac[0], aac[-1])]
+                blosum_value = residue_consts.BLOSUM62[(aac[0], aac[-1])]
             except:
-                blosum_value = sdsc.BLOSUM62[(aac[-1], aac[0])]
+                blosum_value = residue_consts.BLOSUM62[(aac[-1], aac[0])]
         except:
             blosum_value = 0.0
     else:
@@ -2125,9 +2135,9 @@ def getBlosumValue(aac):
         for aa2 in aa2s:
             try:
                 try:
-                    blosum_value = sdsc.BLOSUM62[(aa1, aa2)]
+                    blosum_value = residue_consts.BLOSUM62[(aa1, aa2)]
                 except:
-                    blosum_value = sdsc.BLOSUM62[(aa2, aa1)]
+                    blosum_value = residue_consts.BLOSUM62[(aa2, aa1)]
             except:
                 blosum_value = 0.0
             bvs.append(blosum_value)
@@ -2475,7 +2485,7 @@ def getProtIdsFromSession(session_id, config, filter_mutant_proteins=False):
 def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=False,
                    with_snvs=False, mutate_snvs=False, with_alignments=False,
                    with_complexes=False, keep_ray_alive=False):
-    proteins = sdsc.Proteins({}, {}, {})  # create empty Proteins object
+    proteins = protein_package.Proteins({}, {}, {})  # create empty Proteins object
 
     prot_db_ids = getProtIdsFromSession(session, config, filter_mutant_proteins=filter_mutant_proteins)
 
@@ -2489,7 +2499,7 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
     for row in results:
 
         id_prot_id_map[row[0]] = row[1]
-        prot_obj = sdsc.Protein(config.errorlog, primary_protein_id=row[1], database_id=row[0], input_id=prot_db_ids[row[0]], sequence=row[2])
+        prot_obj = protein_package.Protein(config.errorlog, primary_protein_id=row[1], database_id=row[0], input_id=prot_db_ids[row[0]], sequence=row[2])
         proteins[row[1]] = prot_obj
         prot_id_list.add(row[0])
         if prot_db_ids[row[0]] is not None:
@@ -2510,8 +2520,8 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
         m_id = row[2]
         pos = row[1]
 
-        recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(unpack(row[3])[0])
-        pos_obj = sdsc.Position(pos=pos, checked=True, recommended_structure=recommended_structure, database_id=m_id)
+        recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(unpack(row[3])[0])
+        pos_obj = position_package.Position(pos=pos, checked=True, recommended_structure=recommended_structure, database_id=m_id)
         prot_id = id_prot_id_map[p_id]
         proteins[prot_id].add_positions([pos_obj])
         pos_db_map[m_id] = (prot_id, pos)
@@ -2525,11 +2535,11 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
 
         results = binningSelect(pos_db_map.keys(), cols, table, config)
         for row in results:
-            snv = sdsc.SNV(row[1])
+            snv = snv_package.SNV(row[1])
             (prot_id, pos) = pos_db_map[row[0]]
             proteins[prot_id].positions[pos].mut_aas[row[1]] = snv
 
-    ray_init(config)
+    ray_utils.ray_init(config)
 
     if mutate_snvs:
         prot_ids = list(proteins.get_protein_ids()).copy()

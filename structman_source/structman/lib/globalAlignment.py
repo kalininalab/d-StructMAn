@@ -2,20 +2,20 @@ import time
 
 from Bio import pairwise2
 
-from structman.lib import sdsc
+from structman.lib.sdsc.consts import residues as residue_consts
 
 
 def toOne(res_name, only_natural=False):
     if only_natural:
-        if res_name in sdsc.AA_TO_ONE:
-            return sdsc.AA_TO_ONE[res_name]
-        # if res_name in sdsc.NUCLEOTIDE_TO_ONE:
-        #    return sdsc.NUCLEOTIDE_TO_ONE[res_name]
+        if res_name in residue_consts.AA_TO_ONE:
+            return residue_consts.AA_TO_ONE[res_name]
+        # if res_name in residue_consts.NUCLEOTIDE_TO_ONE:
+        #    return residue_consts.NUCLEOTIDE_TO_ONE[res_name]
         return '.'
-    if res_name in sdsc.THREE_TO_ONE:
-        return sdsc.THREE_TO_ONE[res_name][0]
-    elif res_name in sdsc.NUCLEOTIDE_TO_ONE:
-        return sdsc.NUCLEOTIDE_TO_ONE[res_name]
+    if res_name in residue_consts.THREE_TO_ONE:
+        return residue_consts.THREE_TO_ONE[res_name][0]
+    elif res_name in residue_consts.NUCLEOTIDE_TO_ONE:
+        return residue_consts.NUCLEOTIDE_TO_ONE[res_name]
     else:
         return 'X'
 
@@ -68,7 +68,7 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
                     tlc = tlc.strip()
                     if len(tlc) != 3:
                         continue
-                    if tlc not in sdsc.THREE_TO_ONE:
+                    if tlc not in residue_consts.THREE_TO_ONE:
                         rare_residues.add(tlc)
 
             if chain != chain_id:
@@ -77,17 +77,17 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
             if record_name == "ATOM" or record_name == 'HETATM':
                 if record_name == 'HETATM':
                     last_residue = res_nr
-                    if (res_name not in sdsc.THREE_TO_ONE) and (res_name not in rare_residues):
+                    if (res_name not in residue_consts.THREE_TO_ONE) and (res_name not in rare_residues):
                         continue
                 if for_modeller:
                     if res_nr not in used_res:
                         if len(seq) > 0:
                             last_res = seq[-1]
                             if last_res != '-' and last_res != '.':
-                                if sdsc.CORRECT_COUNT[last_res] > res_atom_count:
+                                if residue_consts.CORRECT_COUNT[last_res] > res_atom_count:
                                     #seq = '%s-' % seq[:-1]
                                     seq += '-'
-                                elif sdsc.CORRECT_COUNT[last_res] < res_atom_count:
+                                elif residue_consts.CORRECT_COUNT[last_res] < res_atom_count:
                                     seq = '%s.' % seq[:-1]
                             res_atom_count = 0
                         if record_name == "ATOM":
@@ -111,7 +111,7 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
                 else:
                     if res_nr not in used_res:
                         aa = toOne(res_name)
-                        if aa not in sdsc.ONE_TO_THREE:
+                        if aa not in residue_consts.ONE_TO_THREE:
                             aa = 'X'
                         seq = seq + aa
                         seq_res_map.append(res_nr)
@@ -124,13 +124,13 @@ def createTemplateFasta(template_page, template_name, chain, config, onlySeqResM
         if len(seq) > 0:
             last_res = seq[-1]
             if last_res != '-' and last_res != '.':
-                if sdsc.CORRECT_COUNT[last_res] > res_atom_count:
+                if residue_consts.CORRECT_COUNT[last_res] > res_atom_count:
                     #seq = '%s-' % seq[:-1]
                     seq += '-'
-                elif sdsc.CORRECT_COUNT[last_res] < res_atom_count:
+                elif residue_consts.CORRECT_COUNT[last_res] < res_atom_count:
                     seq = '%s.' % seq[:-1]
-            elif last_res == '.' and dotted_res_name in sdsc.AA_TO_ONE:
-                if sdsc.CORRECT_COUNT[toOne(dotted_res_name, only_natural=True)] == res_atom_count: #this happens, when the last residue is declared as HETATM, but fulfills all criteria for a natural residue
+            elif last_res == '.' and dotted_res_name in residue_consts.AA_TO_ONE:
+                if residue_consts.CORRECT_COUNT[toOne(dotted_res_name, only_natural=True)] == res_atom_count: #this happens, when the last residue is declared as HETATM, but fulfills all criteria for a natural residue
                     seq = '%s?' % seq[:-1]
 
     if seq_res_map == [] and not could_be_empty:
@@ -222,7 +222,7 @@ def getCovSI(full_length, target_seq, template_seq):
     return (aln_length, seq_id)
 
 def call_biopython_alignment(target_seq, template_seq):
-    return pairwise2.align.globalds(target_seq, template_seq, sdsc.BLOSUM62, -10.0, -0.5, one_alignment_only=True, penalize_end_gaps=False)
+    return pairwise2.align.globalds(target_seq, template_seq, residue_consts.BLOSUM62, -10.0, -0.5, one_alignment_only=True, penalize_end_gaps=False)
 
 def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore_gaps=False, lock=None):
     target_seq = target_seq.replace('U', 'C').replace('O', 'K').replace('J', 'I')

@@ -1,8 +1,7 @@
-from structman.lib.output.output import OutputGenerator
-
+from structman.lib.output import out_generator
 
 def init_feature_table(feature_file, obj_only = False):
-    feature_output = OutputGenerator()
+    feature_output = out_generator.OutputGenerator()
     headers = [
         'Input Protein ID', 'Primary Protein ID', 'Uniprot-Ac', 'WT Amino Acid', 'Position', 'Mut Amino Acid', 'AA change', 'Tags',
         'Distance-based classification', 'Distance-based simple classification',

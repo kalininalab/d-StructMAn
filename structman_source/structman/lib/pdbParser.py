@@ -7,7 +7,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from structman.lib import database, sdsc
+from structman.lib.database import database
+from structman.lib.sdsc.consts import residues as residue_consts
+from structman.lib.sdsc import sdsc_utils
 
 chain_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -179,7 +181,7 @@ def parsePDBSequence(buf):
 
             res_name = line[17:20].strip().decode('ascii')
             if record_name == b'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE:
+                if res_name not in residue_consts.THREE_TO_ONE:
                     continue
 
             chain_id = line[21].decode('ascii')
@@ -190,7 +192,7 @@ def parsePDBSequence(buf):
             res_nr = line[22:27].strip().decode('ascii')  # this includes the insertion code
 
             if res_nr not in used_res:
-                aa = sdsc.THREE_TO_ONE[res_name][0]
+                aa = residue_consts.THREE_TO_ONE[res_name][0]
                 seq = seq + aa
                 used_res.add(res_nr)
                 res_pos_map[res_nr] = i
@@ -250,11 +252,11 @@ def parseMMCIFSequence(buf):
                 break
             else:
                 res_name = splitted[5]
-                if res_name not in sdsc.THREE_TO_ONE:
+                if res_name not in residue_consts.THREE_TO_ONE:
                     continue
                 if temp == splitted[8]:
                     continue
-                aa = sdsc.THREE_TO_ONE[res_name]
+                aa = residue_consts.THREE_TO_ONE[res_name]
                 seq = seq + aa
                 temp = splitted[8]
                 res_pos_map[splitted[8]] = i
@@ -410,7 +412,7 @@ def parsePDBSequence(buf, chain):
 
             res_name = line[17:20].strip()
             if record_name == 'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE:
+                if res_name not in residue_consts.THREE_TO_ONE:
                     continue
 
             chain_id = line[21]
@@ -421,9 +423,9 @@ def parsePDBSequence(buf, chain):
             res_nr = line[22:27].strip()  # this includes the insertion code
 
             if res_nr not in used_res:
-                if res_name not in sdsc.THREE_TO_ONE:
+                if res_name not in residue_consts.THREE_TO_ONE:
                     continue
-                aa = sdsc.THREE_TO_ONE[res_name][0]
+                aa = residue_consts.THREE_TO_ONE[res_name][0]
                 seq = seq + aa
                 used_res.add(res_nr)
                 res_pos_map[res_nr] = i
@@ -484,11 +486,11 @@ def parseMMCIFSequence(buf, chain):
                 break
             else:
                 res_name = splitted[5]
-                if res_name not in sdsc.THREE_TO_ONE:
+                if res_name not in residue_consts.THREE_TO_ONE:
                     continue
                 if temp == splitted[8]:
                     continue
-                aa = sdsc.THREE_TO_ONE[res_name]
+                aa = residue_consts.THREE_TO_ONE[res_name]
                 seq = seq + aa
                 temp = splitted[8]
                 res_pos_map[splitted[8]] = i
@@ -591,7 +593,7 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
                 tlc = tlc.strip().decode('ascii')
                 if len(tlc) != 3:
                     continue
-                if tlc not in sdsc.THREE_TO_ONE:
+                if tlc not in residue_consts.THREE_TO_ONE:
                     rare_residues.add(tlc)
         elif record_name == b'SSBOND':
             newlines.append(line)
@@ -623,7 +625,7 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
             res_nr = line[22:27].strip().decode('ascii')
 
             if record_name == b'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name) and (len(res_name) == 3) and (res_name not in rare_residues):
+                if res_name not in residue_consts.THREE_TO_ONE and sdsc_utils.boring(res_name) and (len(res_name) == 3) and (res_name not in rare_residues):
                     continue
 
             if chain_id not in chain_ids:
@@ -696,7 +698,7 @@ def relocate_hetatm(page, filter_chains=None, filter_het=None):
                 tlc = tlc.strip()
                 if len(tlc) != 3:
                     continue
-                if tlc not in sdsc.THREE_TO_ONE:
+                if tlc not in residue_consts.THREE_TO_ONE:
                     rare_residues.add(tlc)
 
         elif record_name == 'ATOM' or record_name == 'HETATM':
@@ -724,7 +726,7 @@ def relocate_hetatm(page, filter_chains=None, filter_het=None):
             res_name = line[17:20].strip()
 
             if record_name == 'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name) and (res_name not in rare_residues):
+                if res_name not in residue_consts.THREE_TO_ONE and sdsc_utils.boring(res_name) and (res_name not in rare_residues):
                     continue
 
             if chain_id not in chain_lines:
@@ -785,7 +787,7 @@ def standardParseMMCIF(pdb_id, pdb_path, obsolete_check=False):
             res_nr = splitted[8]
 
             if record_name == b'HETATM':
-                if res_name not in sdsc.THREE_TO_ONE and sdsc.boring(res_name):
+                if res_name not in residue_consts.THREE_TO_ONE and sdsc_utils.boring(res_name):
                     continue
 
             if chain_id not in chain_ids:
@@ -901,7 +903,7 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
                 tlc = tlc.strip()
                 if len(tlc) != 3:
                     continue
-                if tlc not in sdsc.THREE_TO_ONE:
+                if tlc not in residue_consts.THREE_TO_ONE:
                     rare_residues.add(tlc)
 
         elif record_name == 'TER':
@@ -958,7 +960,7 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
                     # allowed [as well as other non boring molecules not in
                     # threeToOne, which are hopefully some kind of abnormal amino
                     # acids] did not work
-                    if res_name in sdsc.THREE_TO_ONE or res_name in rare_residues:  # or not sdsc.boring(res_name):
+                    if res_name in residue_consts.THREE_TO_ONE or res_name in rare_residues:  # or not sdsc_utils.boring(res_name):
                         chain_type = 'Peptide'
                         chain_type_map[chain_id] = chain_type
                         chain_list.append(chain_id)
@@ -973,8 +975,8 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
 
             if record_name == 'HETATM':
                 # modified residue are not parsed as ligands
-                if (res_name not in sdsc.THREE_TO_ONE) and (res_name not in rare_residues):
-                    if not sdsc.boring(res_name):
+                if (res_name not in residue_consts.THREE_TO_ONE) and (res_name not in rare_residues):
+                    if not sdsc_utils.boring(res_name):
                         if chain_id not in lig_set:
                             lig_set[chain_id] = set()
                         if res_nr not in lig_set[chain_id]:
@@ -1118,9 +1120,9 @@ def getStandardizedMMCIFFile(pdb_id, chain, structure, pdb_path):
                 elif record_name == 'HETATM':
                     # For a hetero peptide 'boring' hetero amino acids are
                     # allowed as well as other non boring molecules not in
-                    # sdsc.THREE_TO_ONE, which are hopefully some kind of anormal amino
+                    # residue_consts.THREE_TO_ONE, which are hopefully some kind of anormal amino
                     # acids
-                    if res_name in sdsc.THREE_TO_ONE or not sdsc.boring(res_name):
+                    if res_name in residue_consts.THREE_TO_ONE or not sdsc_utils.boring(res_name):
                         chain_type = 'Peptide'
                         chain_type_map[chain_id] = chain_type
             elif record_name == 'ATOM' and chain_type_map[chain_id] == 'Peptide':
@@ -1134,7 +1136,7 @@ def getStandardizedMMCIFFile(pdb_id, chain, structure, pdb_path):
 
             if record_name == 'HETATM':
                 # modified residue are not parsed as ligands
-                if res_name not in sdsc.THREE_TO_ONE and not sdsc.boring(res_name):
+                if res_name not in residue_consts.THREE_TO_ONE and not sdsc_utils.boring(res_name):
                     if chain_id not in lig_set:
                         lig_set[chain_id] = set()
                     if res_nr not in lig_set[chain_id]:

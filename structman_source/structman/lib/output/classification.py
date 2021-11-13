@@ -3,30 +3,17 @@ import sys
 import time
 from ast import literal_eval
 import ray
-import structman
 from structman import settings
-from structman.lib import database, rin, sdsc
+from structman.lib import rin
+from structman.lib.sdsc import sdsc_utils
+from structman.lib.sdsc.consts import residues as residue_consts
+from structman.lib.database import database
 from structman.lib.output.feature import init_feature_table
-from structman.lib.output.output import OutputGenerator
 from structman.lib.output.out_utils import makeViolins
+from structman.lib.output import out_generator
 from filelock import FileLock
-
-def ray_init(config):
-    if ray.is_initialized():
-        if config.verbosity >= 2:
-            print('Ray_init was called, but ray was already initialised')
-        return
-    os.environ["PYTHONPATH"] = f'{settings.ROOT_DIR}:{os.environ.get("PYTHONPATH", "")}'
-    os.environ["PYTHONPATH"] = f'{settings.LIB_DIR}:{os.environ.get("PYTHONPATH", "")}'
-    os.environ["PYTHONPATH"] = f'{settings.RINERATOR_DIR}:{os.environ.get("PYTHONPATH", "")}'
-    os.environ["PYTHONPATH"] = f'{settings.OUTPUT_DIR}:{os.environ.get("PYTHONPATH", "")}'
-    if config.iupred_path != '':
-        os.environ["PYTHONPATH"] = f'{os.path.abspath(os.path.realpath(config.iupred_path))}:{os.environ.get("PYTHONPATH", "")}'
-
-    logging_level = 20
-    if config.verbosity <= 1:
-        logging_level = 0
-    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level)
+from structman.base_utils import base_utils
+from structman.base_utils import ray_utils
 
 def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
     seq_id_threshold = 0.99
@@ -118,7 +105,7 @@ def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
 
 
 def init_classification_table(class_file, obj_only = False):
-    classification_output = OutputGenerator()
+    classification_output = out_generator.OutputGenerator()
     headers = [
         'Input Protein ID', 'Primary Protein ID', 'Uniprot-Ac', 'Uniprot ID', 'Refseq', 'Residue ID', 'Amino Acid', 'Position', 'Tags',
         'Weighted Location', 'Weighted Mainchain Location', 'Weighted Sidechain Location',
@@ -140,7 +127,7 @@ def init_classification_table(class_file, obj_only = False):
 
 @ray.remote(max_calls = 1)
 def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict):
-    from structman.utils import unpack
+
     config, input_res_id_dict, classification_file_path, feature_file_path = store_data
 
     classification_output = init_classification_table(None, obj_only = True)
@@ -161,13 +148,13 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
         iupred = row[4]
         disorder_state = row[5]
         if row[6] is not None:
-            (recommended_structure_str, max_seq_structure_str) = unpack(row[6])
+            (recommended_structure_str, max_seq_structure_str) = base_utils.unpack(row[6])
         else:
             recommended_structure_str = None
             max_seq_structure_str = None
 
-        recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_str)
-        max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc.process_recommend_structure_str(max_seq_structure_str)
+        recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(recommended_structure_str)
+        max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc_utils.process_recommend_structure_str(max_seq_structure_str)
 
         if row[7] is None:
             (weighted_sc, mainchain_location, sidechain_location, rsa, mainchain_rsa, sidechain_rsa, Class, rin_class, simple_class, rin_simple_class,
@@ -189,7 +176,7 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
                 inter_chain_median_kd, inter_chain_dist_weighted_kd, inter_chain_median_rsa, inter_chain_dist_weighted_rsa,
                 intra_chain_median_kd, intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
                 weighted_inter_chain_interactions_median, weighted_inter_chain_interactions_dist_weighted,
-                weighted_intra_chain_interactions_median, weighted_intra_chain_interactions_dist_weighted) = unpack(row[7])
+                weighted_intra_chain_interactions_median, weighted_intra_chain_interactions_dist_weighted) = base_utils.unpack(row[7])
 
                 centrality_scores = rin.Centrality_scores(code_str=weighted_centrality_scores)
                 rin_profile = rin.Interaction_profile(profile_str=rin_profile_str)
@@ -283,10 +270,10 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
             feature_output.add_value('Phi', weighted_phi)
             feature_output.add_value('Psi', weighted_psi)
 
-            KDmean = abs(sdsc.HYDROPATHY[wt_aa] - sdsc.HYDROPATHY[new_aa])
+            KDmean = abs(residue_consts.HYDROPATHY[wt_aa] - residue_consts.HYDROPATHY[new_aa])
             feature_output.add_value('KD mean', KDmean)
 
-            d_vol = abs(sdsc.VOLUME[wt_aa] - sdsc.VOLUME[new_aa])
+            d_vol = abs(residue_consts.VOLUME[wt_aa] - residue_consts.VOLUME[new_aa])
             feature_output.add_value('Volume mean', d_vol)
 
             chemical_distance = database.getChemicalDistance(aac)
@@ -295,15 +282,15 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
             blosum_value = database.getBlosumValue(aac)
             feature_output.add_value('Blosum62', aac)
 
-            aliphatic_change = int((wt_aa in sdsc.AA_MAP_ALIPHATIC) != (new_aa in sdsc.AA_MAP_ALIPHATIC))
-            hydrophobic_change = int((wt_aa in sdsc.AA_MAP_HYDROPHOBIC) != (new_aa in sdsc.AA_MAP_HYDROPHOBIC))
-            aromatic_change = int((wt_aa in sdsc.AA_MAP_AROMATIC) != (new_aa in sdsc.AA_MAP_AROMATIC))
-            positive_change = int((wt_aa in sdsc.AA_MAP_POSITIVE) != (new_aa in sdsc.AA_MAP_POSITIVE))
-            polar_change = int((wt_aa in sdsc.AA_MAP_POLAR) != (new_aa in sdsc.AA_MAP_POLAR))
-            negative_change = int((wt_aa in sdsc.AA_MAP_NEGATIVE) != (new_aa in sdsc.AA_MAP_NEGATIVE))
-            charged_change = int((wt_aa in sdsc.AA_MAP_CHARGED) != (new_aa in sdsc.AA_MAP_NEGATIVE))
-            small_change = int((wt_aa in sdsc.AA_MAP_SMALL) != (new_aa in sdsc.AA_MAP_SMALL))
-            tiny_change = int((wt_aa in sdsc.AA_MAP_TINY) != (new_aa in sdsc.AA_MAP_TINY))
+            aliphatic_change = int((wt_aa in residue_consts.AA_MAP_ALIPHATIC) != (new_aa in residue_consts.AA_MAP_ALIPHATIC))
+            hydrophobic_change = int((wt_aa in residue_consts.AA_MAP_HYDROPHOBIC) != (new_aa in residue_consts.AA_MAP_HYDROPHOBIC))
+            aromatic_change = int((wt_aa in residue_consts.AA_MAP_AROMATIC) != (new_aa in residue_consts.AA_MAP_AROMATIC))
+            positive_change = int((wt_aa in residue_consts.AA_MAP_POSITIVE) != (new_aa in residue_consts.AA_MAP_POSITIVE))
+            polar_change = int((wt_aa in residue_consts.AA_MAP_POLAR) != (new_aa in residue_consts.AA_MAP_POLAR))
+            negative_change = int((wt_aa in residue_consts.AA_MAP_NEGATIVE) != (new_aa in residue_consts.AA_MAP_NEGATIVE))
+            charged_change = int((wt_aa in residue_consts.AA_MAP_CHARGED) != (new_aa in residue_consts.AA_MAP_NEGATIVE))
+            small_change = int((wt_aa in residue_consts.AA_MAP_SMALL) != (new_aa in residue_consts.AA_MAP_SMALL))
+            tiny_change = int((wt_aa in residue_consts.AA_MAP_TINY) != (new_aa in residue_consts.AA_MAP_TINY))
             total_change = aliphatic_change + hydrophobic_change + aromatic_change + positive_change + polar_change + negative_change + charged_change + small_change + tiny_change
             feature_output.add_value('Aliphatic change', aliphatic_change)
             feature_output.add_value('Hydrophobic change', hydrophobic_change)
@@ -491,8 +478,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
     use_ray = len(all_results) > config.proc_n
 
     if use_ray:
-        #print('Store sizes:', sdsc.total_size(tag_map), sdsc.total_size(mutation_dict), sdsc.total_size(protein_dict))
-        ray_init(config)
+        ray_utils.ray_init(config)
         data_store = ray.put((config, input_res_id_dict, class_file, feature_file))
 
     already_unpacked = False
@@ -512,7 +498,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             f.close()
             feat_f.close()
 
-            small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = structman.utils.calculate_chunksizes(config.proc_n, len(results))
+            small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = base_utils.calculate_chunksizes(config.proc_n, len(results))
             if config.verbosity >= 3:
                 print('calculate_chunksizes output:', small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks)
 
@@ -604,7 +590,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                 disorder_state = row[5]
 
                 if row[6] is not None:
-                    (recommended_structure_str, max_seq_structure_str) = unpack(row[6])
+                    (recommended_structure_str, max_seq_structure_str) = base_utils.unpack(row[6])
                 else:
                     recommended_structure_str = None
                     max_seq_structure_str = None
@@ -613,7 +599,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                     row[7] = [None]*38
                 else:
                     try:
-                        row[7] = unpack(row[7])
+                        row[7] = base_utils.unpack(row[7])
                     except:
                         print('Error in retrieving position data, couldnt unpack:', m)
                         continue
@@ -629,8 +615,8 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                 centrality_scores = rin.Centrality_scores(code_str=weighted_centrality_scores)
                 rin_profile = rin.Interaction_profile(profile_str=rin_profile_str)
 
-                recommended_structure, seq_id, cov, resolution = sdsc.process_recommend_structure_str(recommended_structure_str)
-                max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc.process_recommend_structure_str(max_seq_structure_str)
+                recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(recommended_structure_str)
+                max_seq_structure, max_seq_seq_id, max_seq_cov, max_seq_resolution = sdsc_utils.process_recommend_structure_str(max_seq_structure_str)
 
                 input_res_id = mutation_dict[m][4]
                 if input_res_id is None:
@@ -718,10 +704,10 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                     feature_output.add_value('Phi', weighted_phi)
                     feature_output.add_value('Psi', weighted_psi)
 
-                    KDmean = abs(sdsc.HYDROPATHY[wt_aa] - sdsc.HYDROPATHY[new_aa])
+                    KDmean = abs(residue_consts.HYDROPATHY[wt_aa] - residue_consts.HYDROPATHY[new_aa])
                     feature_output.add_value('KD mean', KDmean)
 
-                    d_vol = abs(sdsc.VOLUME[wt_aa] - sdsc.VOLUME[new_aa])
+                    d_vol = abs(residue_consts.VOLUME[wt_aa] - residue_consts.VOLUME[new_aa])
                     feature_output.add_value('Volume mean', d_vol)
 
                     chemical_distance = database.getChemicalDistance(aac)
@@ -730,15 +716,15 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                     blosum_value = database.getBlosumValue(aac)
                     feature_output.add_value('Blosum62', aac)
 
-                    aliphatic_change = int((wt_aa in sdsc.AA_MAP_ALIPHATIC) != (new_aa in sdsc.AA_MAP_ALIPHATIC))
-                    hydrophobic_change = int((wt_aa in sdsc.AA_MAP_HYDROPHOBIC) != (new_aa in sdsc.AA_MAP_HYDROPHOBIC))
-                    aromatic_change = int((wt_aa in sdsc.AA_MAP_AROMATIC) != (new_aa in sdsc.AA_MAP_AROMATIC))
-                    positive_change = int((wt_aa in sdsc.AA_MAP_POSITIVE) != (new_aa in sdsc.AA_MAP_POSITIVE))
-                    polar_change = int((wt_aa in sdsc.AA_MAP_POLAR) != (new_aa in sdsc.AA_MAP_POLAR))
-                    negative_change = int((wt_aa in sdsc.AA_MAP_NEGATIVE) != (new_aa in sdsc.AA_MAP_NEGATIVE))
-                    charged_change = int((wt_aa in sdsc.AA_MAP_CHARGED) != (new_aa in sdsc.AA_MAP_NEGATIVE))
-                    small_change = int((wt_aa in sdsc.AA_MAP_SMALL) != (new_aa in sdsc.AA_MAP_SMALL))
-                    tiny_change = int((wt_aa in sdsc.AA_MAP_TINY) != (new_aa in sdsc.AA_MAP_TINY))
+                    aliphatic_change = int((wt_aa in residue_consts.AA_MAP_ALIPHATIC) != (new_aa in residue_consts.AA_MAP_ALIPHATIC))
+                    hydrophobic_change = int((wt_aa in residue_consts.AA_MAP_HYDROPHOBIC) != (new_aa in residue_consts.AA_MAP_HYDROPHOBIC))
+                    aromatic_change = int((wt_aa in residue_consts.AA_MAP_AROMATIC) != (new_aa in residue_consts.AA_MAP_AROMATIC))
+                    positive_change = int((wt_aa in residue_consts.AA_MAP_POSITIVE) != (new_aa in residue_consts.AA_MAP_POSITIVE))
+                    polar_change = int((wt_aa in residue_consts.AA_MAP_POLAR) != (new_aa in residue_consts.AA_MAP_POLAR))
+                    negative_change = int((wt_aa in residue_consts.AA_MAP_NEGATIVE) != (new_aa in residue_consts.AA_MAP_NEGATIVE))
+                    charged_change = int((wt_aa in residue_consts.AA_MAP_CHARGED) != (new_aa in residue_consts.AA_MAP_NEGATIVE))
+                    small_change = int((wt_aa in residue_consts.AA_MAP_SMALL) != (new_aa in residue_consts.AA_MAP_SMALL))
+                    tiny_change = int((wt_aa in residue_consts.AA_MAP_TINY) != (new_aa in residue_consts.AA_MAP_TINY))
                     total_change = aliphatic_change + hydrophobic_change + aromatic_change + positive_change + polar_change + negative_change + charged_change + small_change + tiny_change
                     feature_output.add_value('Aliphatic change', aliphatic_change)
                     feature_output.add_value('Hydrophobic change', hydrophobic_change)
