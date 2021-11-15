@@ -323,6 +323,10 @@ class Config:
             self.main_db_is_set = False
 
         # Check for mapping DB instance
+        self.check_mapping_db()
+
+    def check_mapping_db(self):
+        # Check for mapping DB instance
         try:
             db, cursor = self.getDB(mapping_db = True)
             db.close()
@@ -900,6 +904,8 @@ def structman_cli():
         config.rin_db_path = ''
 
     config.ignore_local_mapping_db = ignore_local_mapping_db
+    if ignore_local_mapping_db:
+        config.mapping_db_is_set = False
 
     if mem_limit is not None:
         mem = virtual_memory()
@@ -1024,7 +1030,8 @@ def structman_cli():
 
             if update_mapping_db:
                 config.mapping_db = 'struct_man_db_mapping'
-                config.mapping_db_is_set = True
+                config.config_parser_obj.set('user', 'mapping_db', 'struct_man_db_mapping')
+                config.check_mapping_db()
 
             f = open(config_path, 'w')
             config.config_parser_obj.write(f)

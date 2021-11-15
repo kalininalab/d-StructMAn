@@ -17,7 +17,7 @@ def ray_init(config):
     logging_level = 20
     if config.verbosity <= 1:
         logging_level = 0
-    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level)
+    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level, log_to_driver = False)
 
 def ray_hack():
     # hack proposed by the devs of ray to prevent too many processes being spawned

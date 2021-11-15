@@ -1273,8 +1273,12 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     while True:
 
         if started_processes >= config.proc_n or len(prots_todo) == 0:
+            if config.verbosity >= 4:
+                print('Ray wait without timeout')
             ready, not_ready = ray.wait(alignment_results)
         else:
+            if config.verbosity >= 4:
+                print('Ray wait with timeout')
             ready, not_ready = ray.wait(alignment_results, timeout = 0.01)
 
         if len(ready) > 0:
@@ -1506,7 +1510,7 @@ def paraMap(mapping_dump, tasks):
 
 
 #called (also) by indel_analysis.py
-@ray.remote(max_calls = 1)
+@ray.remote(max_calls = 2)
 def align(align_dump, package, model_path=None):
     ray_hack()
 
@@ -1814,7 +1818,7 @@ def pack_packages(package_size, package, send_packages, classification_results, 
                 res_nr = sub_info[0]
 
                 if res_nr is None:
-                    if config.verbosity >= 4:
+                    if config.verbosity >= 5:
                         print('Skipped classification of', u_ac, pos, 'due to res_nr is None in ', pdb_id, chain)
                     continue
 

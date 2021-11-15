@@ -423,6 +423,10 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
 
 def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60):
     # print query_ids
+    if query_ids is None:
+        config.errorlog.add_error(f'Query_ids is None, {querytype} {target_type}')
+        return {}
+
     if len(query_ids) == 0:
         return {}
 
@@ -475,13 +479,16 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
 
             if len(query_ids) == 1:
                 quer = query_ids.pop()
-                if querytype == 'ACC' and quer.count('-'):
+                if querytype == 'ACC' and quer.count('-') == 1:
                     int_quer = set([quer.split('-')[0]])
                     intermediate_map = getUniprotIds(config, int_quer, querytype, target_type=target_type)
                     return {quer: intermediate_map[quer.split('-')[0]]}
+                elif target_type == 'ACC' and querytype == 'ID':
+                    config.errorlog.add_error(f'Couldnt map Uniprot ID to AC: {quer}\nUniprot answer page:\n{page}')
+                    return {}
                 else:
                     return {quer: None}
-            # try a divide and conqer solution
+            # try a divide and conqer solution to isolate the problematic query
             set_A = set()
             set_B = set()
             while len(query_ids) > 0:
@@ -783,11 +790,18 @@ def get_obsolete_sequence(u_ac, config, return_id=False, tries = 0):
     uniparc_id = uniparc_id_map[u_ac]
     if config.verbosity >= 3:
         print('Uniparc ID of potential obsolete uniprot entry (', u_ac, ') is:', uniparc_id)
+    if uniparc_id is None:
+        config.errorlog.add_warning(f'Uniparc id was None for: {u_ac}, {uniparc_id_map}')
+        return None
     return getSequence(uniparc_id, config, return_id=return_id, obsolete_try = True)
 
 def getSequence(uniprot_ac, config, tries=0, return_id=False, obsolete_try = False):
     if config.verbosity >= 3:
         print('uniprot.getSequence for ', uniprot_ac)
+
+    if uniprot_ac is None:
+        config.errorlog.add_error(f'Uniprot Ac is None')
+        return None
 
     if sdsc_utils.is_mutant_ac(uniprot_ac):
         config.errorlog.add_error('Cannot call getSequence with a mutant protein: %s' % uniprot_ac)
