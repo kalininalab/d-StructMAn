@@ -15,6 +15,15 @@ if __name__ == "__main__":
     target_folder = sys.argv[1]
     config_path = sys.argv[2]
 
+    build_mmseqs_db = True
+    skip_database_structure = False
+    if len(sys.argv) > 3:
+        additional_flags = set(sys.argv[3:])
+        if 'skip_mmseqs_db' in additional_flags:
+            build_mmseqs_db = False
+        if 'skip_database_structure' in additional_flags:
+            skip_database_structure = True
+
     if not os.path.isfile(config_path):
         print('ERROR: Need path to config file as second argument.')
         sys.exit(1)
@@ -22,28 +31,30 @@ if __name__ == "__main__":
     structman_target_folder = f'{target_folder}/structman'
     lib_target_folder = f'{structman_target_folder}/lib'
     rinerator_target_folder = f'{lib_target_folder}/rinerator'
-    database_target_file = f'{target_folder}/StructMAn_db/struct_man_db.sql.gz'
 
-    f = open(settings.STRUCTMAN_DB_SQL, 'r')
+    if not skip_database_structure:
+        database_target_file = f'{target_folder}/StructMAn_db/struct_man_db.sql.gz'
 
-    lines = f.readlines()
-    f.close()
-    new_lines = []
-    for pos, line in enumerate(lines):
-        #line = line.decode('ascii')
-        if line[:13] == '-- Datenbank:' or line[:4] == 'USE ':
+        f = open(settings.STRUCTMAN_DB_SQL, 'r')
 
-            new_lines.append(b'--\n')
-            new_lines.append(b'-- Database: `struct_man_db_1`\n')
-            new_lines.append(b'--\n')
-            new_lines.append(b'CREATE DATABASE IF NOT EXISTS `struct_man_db_1` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;\n')
-            new_lines.append(b'USE `struct_man_db_1`;\n')
-        else:
-            new_lines.append(line.encode())
+        lines = f.readlines()
+        f.close()
+        new_lines = []
+        for pos, line in enumerate(lines):
+            #line = line.decode('ascii')
+            if line[:13] == '-- Datenbank:' or line[:4] == 'USE ':
 
-    f = gzip.open(database_target_file, 'wb')
-    f.write(b''.join(new_lines))
-    f.close()
+                new_lines.append(b'--\n')
+                new_lines.append(b'-- Database: `struct_man_db_1`\n')
+                new_lines.append(b'--\n')
+                new_lines.append(b'CREATE DATABASE IF NOT EXISTS `struct_man_db_1` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;\n')
+                new_lines.append(b'USE `struct_man_db_1`;\n')
+            else:
+                new_lines.append(line.encode())
+
+        f = gzip.open(database_target_file, 'wb')
+        f.write(b''.join(new_lines))
+        f.close()
 
     #p = subprocess.Popen(['split', '-b', '45M', 'struct_man_db.sql.gz', 'db_split'], cwd='%s/StructMAn_db/' % target_folder)
     #p.wait()
@@ -130,11 +141,6 @@ if __name__ == "__main__":
 
     with open(setup_target_path, 'w') as f:
         f.write(''.join(new_lines))
-
-    build_mmseqs_db = True
-    if len(sys.argv) > 3:
-        if sys.argv[3] == 'skip_mmseqs_db':
-            build_mmseqs_db = False
 
     if build_mmseqs_db:
         config = Config(config_path, external_call=True)

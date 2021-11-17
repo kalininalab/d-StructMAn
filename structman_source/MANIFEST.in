@@ -2,3 +2,5 @@ include structman/lib/rinerator/reduce
 include structman/lib/rinerator/probe
 include structman/lib/rinerator/reduce_wwPDB_het_dict.txt
 include structman/scripts/pdb-rsync.sh
+include structman/scripts/struct_man_db_uniprot.sql
+include structman/scripts/database_structure.sql

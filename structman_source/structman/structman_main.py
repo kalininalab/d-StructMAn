@@ -575,6 +575,7 @@ def structman_cli():
     update_rindb_from_scratch = False
     update_mapping_db = False
     update_mapping_db_from_scratch = False
+    update_mapping_db_keep_raw_files = False
 
     if len(argv) > 0:
         if argv[0] == 'update':
@@ -596,6 +597,9 @@ def structman_cli():
             if 'mapping_db_from_scratch' in argv:
                 update_mapping_db = True
                 update_mapping_db_from_scratch = True
+            if 'update_mapping_db_keep_raw_files' in argv:
+                update_mapping_db = True
+                update_mapping_db_keep_raw_files = True
             if not (update_pdb or update_rindb or update_mapping_db):
                 print(update_util_disclaimer)
                 sys.exit(1)
@@ -1036,7 +1040,13 @@ def structman_cli():
             f = open(config_path, 'w')
             config.config_parser_obj.write(f)
             f.close()
-        update.main(config, skipUpdatePDB=not update_pdb, skip_rindb=not update_rindb, rin_fromScratch=update_rindb_from_scratch, update_mapping_db = update_mapping_db, mapping_db_from_scratch = update_mapping_db_from_scratch)
+        update.main(config, skipUpdatePDB=not update_pdb,
+                            skip_rindb=not update_rindb,
+                            rin_fromScratch=update_rindb_from_scratch,
+                            update_mapping_db = update_mapping_db,
+                            mapping_db_from_scratch = update_mapping_db_from_scratch,
+                            update_mapping_db_keep_raw_files = update_mapping_db_keep_raw_files
+                    )
 
     elif configure_mode:
         if conf_update_pdb_path is not None:

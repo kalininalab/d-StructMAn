@@ -2425,6 +2425,15 @@ def main(filename, config):
 
     t0 = time.time()
 
+    if config.iupred_path != '':
+        sys.path.append(f'{os.path.abspath(os.path.realpath(config.iupred_path))}')
+        #os.environ["PYTHONPATH"] = f'{os.path.abspath(os.path.realpath(config.iupred_path))}:{os.environ.get("PYTHONPATH", "")}'
+        try:
+            import iupred3_lib
+        except:
+            config.errorlog.add_error(f'IUpred path was given, but import failed: {config.iupred_path}')
+            config.iupred_path = ''
+
     # need structman package path for ray
     ray_init(config)
 

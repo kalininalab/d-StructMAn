@@ -3,6 +3,7 @@ import os
 from structman.lib import rin
 from structman.lib.database import database
 from structman.lib.output import out_generator
+from structman.base_utils import base_utils
 
 def add_aggregate_results(aggregates, indel_output, aggregate_type, raw_aggregate_header_base_names):
     if aggregates is None:
@@ -124,14 +125,13 @@ def create_indel_results_table(config, output_path, session_name, session_id):
 
     protein_dict = database.getProteinDict(prot_id_list, session_id, config)
 
-    from structman.utils import unpack
     for row in results:
         indel_id = row[0]
         indel_output.add_value('Indel', row[1])
         indel_output.add_value('Tags', tag_map[indel_id])
 
         if row[2] is not None:
-            (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = unpack(row[2])
+            (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = base_utils.unpack(row[2])
         else:
             (size, ddC, wt_aggregates, mut_aggregates, left_flank_wt_aggregates, left_flank_mut_aggregates, right_flank_wt_aggregates, right_flank_mut_aggregates) = [None] * 8
 

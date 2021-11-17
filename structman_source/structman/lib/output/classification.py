@@ -580,7 +580,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             print("Time for classificationOutput part 5: ", t5 - t4, main_loop_counter)
 
         if not already_unpacked:
-            from structman.utils import unpack
+
             for row in results:
                 m = row[0]
                 position_number = row[1]

@@ -11,7 +11,7 @@ import structman
 from structman.scripts import createPdbBaDb, updateMappingDB
 
 
-def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, update_mapping_db = False, mapping_db_from_scratch = False):
+def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, update_mapping_db = False, mapping_db_from_scratch = False, update_mapping_db_keep_raw_files = False):
     mmseqs_fromScratch = False
     skipStructureDBs = False
 
@@ -107,7 +107,7 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, u
 
     # update the mapping database
     if update_mapping_db:
-        updateMappingDB.main(config, fromScratch = mapping_db_from_scratch)
+        updateMappingDB.main(config, fromScratch = mapping_db_from_scratch, update_mapping_db_keep_raw_files = update_mapping_db_keep_raw_files)
 
     # update the human proteome mmseqs db, TODO if we want a simple mutation-calling for fasta inputs.
 
