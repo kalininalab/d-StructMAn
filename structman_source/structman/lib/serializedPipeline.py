@@ -2034,7 +2034,10 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
 
                 for (pdb_id, chain) in annotation_list:
                     if not pdb_id in complex_store:
-                        complex_store[pdb_id] = (proteins.complexes[pdb_id].chains, proteins.complexes[pdb_id].resolution)
+                        try:
+                            complex_store[pdb_id] = (proteins.complexes[pdb_id].chains, proteins.complexes[pdb_id].resolution)
+                        except:
+                            config.errorlog.add_warning(f'{pdb_id} not proteins.complexes')
 
             t_init_1 = time.time()
             if config.verbosity >= 2:

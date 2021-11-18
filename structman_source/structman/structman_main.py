@@ -597,7 +597,7 @@ def structman_cli():
             if 'mapping_db_from_scratch' in argv:
                 update_mapping_db = True
                 update_mapping_db_from_scratch = True
-            if 'update_mapping_db_keep_raw_files' in argv:
+            if 'mapping_db_keep_raw_files' in argv:
                 update_mapping_db = True
                 update_mapping_db_keep_raw_files = True
             if not (update_pdb or update_rindb or update_mapping_db):

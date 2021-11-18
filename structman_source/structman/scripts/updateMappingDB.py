@@ -86,6 +86,69 @@ def put_seqs_to_database(seq_map, config):
 
     database.update(config, 'UNIPROT', ['Uniprot_Ac','Sequence'], values, mapping_db = True)
 
+def insert_sequence_data(config, seq_file_paths, mapping_file_path, update_mapping_db_keep_raw_files):
+    max_seqs_at_a_time = int(70000 * config.gigs_of_ram)
+
+    for seq_file_number, seq_file in enumerate(seq_file_paths):
+        if seq_file_number == 0: #The first sequence file contains the minor isoforms
+            isoform_file = True
+            iso_map = {}
+        else:
+            isoform_file = False
+        with gzip.open(seq_file, 'rb') as f:
+            seq_map = {}
+            for line in f:
+                line = line.decode('ascii')
+                if len(line) == 0:
+                    continue
+                line = line[:-1]
+                if line[0] == '>':
+
+                    if len(seq_map) == max_seqs_at_a_time:
+                        put_seqs_to_database(seq_map, config)
+                        seq_map = {}
+
+                    u_ac = line.split('|')[1]
+                    seq_map[u_ac] = ''
+                    if isoform_file: #save all isoform numbers
+                        stem, iso_number = u_ac.split('-')
+                        if not stem in iso_map:
+                            iso_map[stem] = set()
+                        iso_map[stem].add(iso_number)
+                else:
+                    seq_map[u_ac] += (line)
+            if len(seq_map) > 0:
+                put_seqs_to_database(seq_map, config)
+                seq_map = {}
+            if isoform_file:
+                #Find all occasions of unusual major isoforms (major isoform number is not 1)
+                unusual_major_isoforms = {}
+                for stem in iso_map:
+                    iso_numbers = iso_map[stem]
+                    if '1' in  iso_numbers:
+                        continue
+                    major_iso_number = None
+                    for i in range(len(iso_numbers)):
+                        if str(i+1) in iso_numbers:
+                            continue
+                        else:
+                            major_iso_number = i+1
+                    if major_iso_number is None:
+                        print(f'Unexpected isoform numbering for {stem} {iso_map[stem]}')
+                    else:
+                        unusual_major_isoforms[stem] = major_iso_number
+            print('\nDatabase update of sequences done.\n')
+
+    if not update_mapping_db_keep_raw_files:
+        #Step 4: Remove the raw files
+        os.remove(mapping_file_path)
+        for seq_file in seq_file_paths:
+            os.remove(seq_file)
+
+        print('\nRemoving raw data files done.\n')
+
+    return unusual_major_isoforms
+
 def main(config, fromScratch = False, update_mapping_db_keep_raw_files = False):
     #Step 1: Check if mapping SQL DB instance is there, create if not. Recreate for fromScratch mode
     fresh_instance = check_instance(config, fromScratch = fromScratch)
@@ -110,6 +173,8 @@ def main(config, fromScratch = False, update_mapping_db_keep_raw_files = False):
 
     #Step 3: Update the database
 
+    unusual_major_isoforms = insert_sequence_data(config, seq_file_paths, mapping_file_path, update_mapping_db_keep_raw_files)
+
     ac_id_values = []
     ac_ref_values = []
     ac_ref_nt_values = []
@@ -125,8 +190,13 @@ def main(config, fromScratch = False, update_mapping_db_keep_raw_files = False):
             id_name = words[1]
             id_value = words[2]
 
-            if u_ac[-2:] == '-1':
-                u_ac = u_ac[:-2]
+            if u_ac.count('-') == 1:
+                stem, iso_number = u_ac.split('-')
+                if stem in unusual_major_isoforms:
+                    if int(iso_number) == unusual_major_isoforms[stem]:
+                        u_ac = stem
+                elif iso_number == '1':
+                    u_ac = stem
 
             if id_name == 'UniProtKB-ID':
                 ac_id_values.append((u_ac, id_value))
@@ -163,35 +233,4 @@ def main(config, fromScratch = False, update_mapping_db_keep_raw_files = False):
         database.update(config, 'UNIPROT', ['Uniprot_Ac', 'RefSeq_NT'], ac_ref_nt_values, mapping_db = True)
     print('\nDatabase update of RefSeq NTs done.\n')
 
-    max_seqs_at_a_time = int(70000 * config.gigs_of_ram)
 
-    for seq_file in seq_file_paths:
-        with gzip.open(seq_file, 'rb') as f:
-            seq_map = {}
-            for line in f:
-                line = line.decode('ascii')
-                if len(line) == 0:
-                    continue
-                line = line[:-1]
-                if line[0] == '>':
-
-                    if len(seq_map) == max_seqs_at_a_time:
-                        put_seqs_to_database(seq_map, config)
-                        seq_map = {}
-
-                    u_ac = line.split('|')[1]
-                    seq_map[u_ac] = ''
-                else:
-                    seq_map[u_ac] += (line)
-            if len(seq_map) > 0:
-                put_seqs_to_database(seq_map, config)
-                seq_map = {}
-            print('\nDatabase update of sequences done.\n')
-
-    if not update_mapping_db_keep_raw_files:
-        #Step 4: Remove the raw files
-        os.remove(mapping_file_path)
-        for seq_file in seq_file_paths:
-            os.remove(seq_file)
-
-        print('\nRemoving raw data files done.\n')

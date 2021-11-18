@@ -312,14 +312,12 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                 integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
 
     if len(nm_map) > 0:
-        iso_unspec_nm_keys = [x.split('.')[0] for x in nm_map.keys()]
-        nm_ac_map = getUniprotIds(config, iso_unspec_nm_keys, 'REFSEQ_NT_ID', target_type="ACC")
+        nm_ac_map = getUniprotIds(config, list(nm_map.keys()), 'REFSEQ_NT_ID', target_type="ACC")
         for ref in nm_map:
-            iso_unspec_nm = ref.split('.')[0]
-            if iso_unspec_nm in nm_ac_map:
-                u_ac = nm_ac_map[iso_unspec_nm]
-                integrate_protein(config, proteins, indel_map, ref, ref, nm_map, u_ac=u_ac)
 
+            if ref in nm_ac_map:
+                u_ac = nm_ac_map[ref]
+                integrate_protein(config, proteins, indel_map, ref, ref, nm_map, u_ac=u_ac)
             else:
                 integrate_protein(config, proteins, indel_map, ref, ref, nm_map)
 

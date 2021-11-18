@@ -111,13 +111,13 @@ class Indel:
         mut_mappings, mut_disorder_score, mut_disorder_region = aggregate_positions(mut_pos_objs, config)
         self.mut_aggregates = mut_mappings.get_database_result_for_indel_aggregation(), mut_disorder_score, mut_disorder_region
 
-    def get_flank_positions(self, proteins):
-        left_flank_wt_position_objs, left_flank_mut_position_objs = self.get_left_flank_positions(proteins)
-        right_flank_wt_position_objs, right_flank_mut_position_objs = self.get_right_flank_positions(proteins)
+    def get_flank_positions(self, proteins, config):
+        left_flank_wt_position_objs, left_flank_mut_position_objs = self.get_left_flank_positions(proteins, config)
+        right_flank_wt_position_objs, right_flank_mut_position_objs = self.get_right_flank_positions(proteins, config)
         return left_flank_wt_position_objs, left_flank_mut_position_objs, right_flank_wt_position_objs, right_flank_mut_position_objs
 
     def flank_aggregates(self, proteins, config):
-        left_flank_wt_position_objs, left_flank_mut_position_objs, right_flank_wt_position_objs, right_flank_mut_position_objs = self.get_flank_positions(proteins)
+        left_flank_wt_position_objs, left_flank_mut_position_objs, right_flank_wt_position_objs, right_flank_mut_position_objs = self.get_flank_positions(proteins, config)
 
         left_flank_wt_mappings, left_flank_wt_disorder_score, left_flank_wt_disorder_region = aggregate_positions(left_flank_wt_position_objs, config)
         self.left_flank_wt_aggregates = left_flank_wt_mappings.get_database_result_for_indel_aggregation(), left_flank_wt_disorder_score, left_flank_wt_disorder_region
@@ -204,11 +204,17 @@ class Insertion(Indel):
     def get_positions(self, proteins, config):
         mut_pos_objects = []
         for pos in range(self.left_flank_pos + 1, self.left_flank_pos + len(self.inserted_sequence)):
-            mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            try:
+                mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.mut_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.mut_prot}')
+                continue
 
         return ([], mut_pos_objects)
 
-    def get_left_flank_positions(self, proteins):
+    def get_left_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'left':
                 return None, None
@@ -223,7 +229,7 @@ class Insertion(Indel):
             mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
         return wt_pos_objects, mut_pos_objects
 
-    def get_right_flank_positions(self, proteins):
+    def get_right_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'right':
                 return None, None
@@ -381,7 +387,7 @@ class Deletion(Indel):
                 continue
         return (pos_objects, [])
 
-    def get_left_flank_positions(self, proteins):
+    def get_left_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'left':
                 return None, None
@@ -392,11 +398,17 @@ class Deletion(Indel):
         for pos in range((self.left_flank_pos - flank_size), self.left_flank_pos):
             if pos <= 0:
                 continue
-            wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
+            try:
+                wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.wt_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.wt_prot}')
+                continue
             mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
         return wt_pos_objects, mut_pos_objects
 
-    def get_right_flank_positions(self, proteins):
+    def get_right_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'right':
                 return None, None
@@ -545,11 +557,22 @@ class Substitution(Indel):
     def get_positions(self, proteins, config):
         wt_pos_objects = []
         for pos in range(self.left_flank_pos, self.right_flank_pos + 1):
-            wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
-
+            try:
+                wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.wt_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.wt_prot}')
+                continue
         mut_pos_objects = []
         for pos in range(self.left_flank_pos + 1, self.left_flank_pos + len(self.inserted_sequence)):
-            mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            try:
+                mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.mut_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.mut_prot}')
+                continue
 
         return (wt_pos_objects, mut_pos_objects)
 
@@ -568,7 +591,7 @@ class Substitution(Indel):
             mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
         return wt_pos_objects, mut_pos_objects
 
-    def get_right_flank_positions(self, proteins):
+    def get_right_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'right':
                 return None, None
