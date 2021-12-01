@@ -156,6 +156,11 @@ configure_database() {
 }
 
 build_mmseqs_index() {
+    # Uncompress
+    if [[ -f /usr/structman_library/sources/structman/lib/base/blast_db/pdbba_search_db_mmseqs2.gz ]]; then
+        gunzip /usr/structman_library/sources/structman/lib/base/blast_db/pdbba_search_db_mmseqs2.gz
+    fi
+
     (cd /usr/structman_library/sources/structman/lib/base/blast_db/; mmseqs createindex /usr/structman_library/sources/structman/lib/base/blast_db/pdbba_search_db_mmseqs2 /usr/structman_library/sources/structman/lib/base/blast_db/tmp/)
     
     if [[ $?==0 ]]; then
