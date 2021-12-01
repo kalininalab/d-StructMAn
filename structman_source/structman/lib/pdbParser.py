@@ -51,7 +51,9 @@ def getCurrentPDBID(pdb_id, pdb_path, debug=False):
 
 def test_for_AU(pdb_id, pdb_path):
     path = '%s/data/biounit/PDB/divided/%s/%s.pdb1.gz' % (pdb_path, pdb_id[1:-1].lower(), pdb_id.lower())
-    return (not os.path.isfile(path))
+    au_path = '%s/data/structures/divided/pdb/%s/pdb%s.ent.gz' % (pdb_path, pdb_id[1:-1].lower(), pdb_id.lower())
+    AU = os.path.isfile(au_path) and not os.path.isfile(path)
+    return AU
 
 def getPDBBuffer(pdb_id, pdb_path, AU=False, obsolete_check=False, get_is_local=False, verbosity=0):
     if obsolete_check:
@@ -106,11 +108,9 @@ def getPDBBuffer(pdb_id, pdb_path, AU=False, obsolete_check=False, get_is_local=
                         return urllib.request.urlopen(request, timeout=60), None
                     return urllib.request.urlopen(request, timeout=60)
                 except:
-                    if verbosity >= 2:
-                        print("Did not find the PDB-file: %s" % pdb_id)
-                    if get_is_local:
-                        return None, None
-                    return None
+                    if verbosity >= 3:
+                        print("Did not find the PDB-file: %s, trying AU" % pdb_id)
+                    return getPDBBuffer(pdb_id, pdb_path, AU=True, obsolete_check=obsolete_check, get_is_local=get_is_local, verbosity=verbosity)
             else:
                 if get_is_local:
                     return gzip.open(path, 'rb'), path

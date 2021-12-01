@@ -985,7 +985,10 @@ class Proteins:
                 continue
             mapped_proteins = self.structures[(pdb_id, chain)].get_mapped_proteins()
             for u_ac in mapped_proteins:
-                sub_infos = self.get_sub_infos(u_ac, pdb_id, chain)
+                try:
+                    sub_infos = self.get_sub_infos(u_ac, pdb_id, chain)
+                except:
+                    continue
                 for pos in sub_infos:
                     res_nr = sub_infos[pos][0]
                     if res_nr is None:
@@ -993,6 +996,8 @@ class Proteins:
                     if res_nr not in target_dict[chain]:
                         target_dict[chain][res_nr] = []
                     target_dict[chain][res_nr].append((u_ac, pos))
+            if len(target_dict[chain]) == 0:
+                del target_dict[chain]
         return target_dict
 
     def add_pos_res_mapping(self, u_ac, pos, pdb_id, chain, res_nr, mapping):

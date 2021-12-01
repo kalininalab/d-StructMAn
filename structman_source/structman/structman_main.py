@@ -446,7 +446,7 @@ def main(infiles, out_folder, config, intertable=False):
         if not config.lite:
             # run the main pipeline
             if session_id is None:
-                session_id = serializedPipeline.main(infile, config)
+                session_id, config = serializedPipeline.main(infile, config)
 
             # run the output scripts
             session_name = infilename.rsplit('.', 1)[0]
@@ -714,7 +714,8 @@ def structman_cli():
             'help', 'profile', 'skipref', 'rlimit=', 'verbosity=',
             'printerrors', 'printwarnings', 'chunksize=', 'norin',
             'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit=',
-            'model_indel_structures', 'ignore_local_pdb', 'ignore_local_mapping_db'
+            'model_indel_structures', 'ignore_local_pdb', 'ignore_local_rindb', 'ignore_local_mapping_db',
+            'skip_main_output_generation'
         ]
         opts, args = getopt.getopt(argv, "c:i:n:o:h:lvdp:", long_paras)
 
@@ -743,6 +744,7 @@ def structman_cli():
     ignore_local_pdb = False
     ignore_local_rindb = False
     ignore_local_mapping_db = False
+    skip_main_output_generation = False
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -831,6 +833,9 @@ def structman_cli():
         if opt == '--ignore_local_mapping_db':
             ignore_local_mapping_db = True
 
+        if opt == '--skip_main_output_generation':
+            skip_main_output_generation = True
+
     if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
@@ -910,6 +915,8 @@ def structman_cli():
     config.ignore_local_mapping_db = ignore_local_mapping_db
     if ignore_local_mapping_db:
         config.mapping_db_is_set = False
+
+    config.skip_main_output_generation = skip_main_output_generation
 
     if mem_limit is not None:
         mem = virtual_memory()

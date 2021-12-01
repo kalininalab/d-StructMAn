@@ -225,8 +225,20 @@ class Insertion(Indel):
         for pos in range((self.left_flank_pos - flank_size) + 1, self.left_flank_pos + 1):
             if pos <= 0:
                 continue
-            wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
-            mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            try:
+                wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.wt_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.wt_prot}')
+                continue
+            try:
+                mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.mut_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.mut_prot}')
+                continue
         return wt_pos_objects, mut_pos_objects
 
     def get_right_flank_positions(self, proteins, config):
@@ -576,7 +588,7 @@ class Substitution(Indel):
 
         return (wt_pos_objects, mut_pos_objects)
 
-    def get_left_flank_positions(self, proteins):
+    def get_left_flank_positions(self, proteins, config):
         if self.terminal:
             if self.terminal_end == 'left':
                 return None, None
@@ -587,8 +599,20 @@ class Substitution(Indel):
         for pos in range((self.left_flank_pos - flank_size), self.left_flank_pos):
             if pos <= 0:
                 continue
-            wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
-            mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            try:
+                wt_pos_objects.append(proteins.protein_map[self.wt_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.wt_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.wt_prot}')
+                continue
+            try:
+                mut_pos_objects.append(proteins.protein_map[self.mut_prot].positions[pos])
+            except:
+                if config is not None:
+                    if pos not in proteins.protein_map[self.mut_prot].positions:
+                        config.errorlog.add_warning(f'Position {pos} not in {self.mut_prot}')
+                continue
         return wt_pos_objects, mut_pos_objects
 
     def get_right_flank_positions(self, proteins, config):

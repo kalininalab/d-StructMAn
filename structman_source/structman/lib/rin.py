@@ -6,6 +6,9 @@ import traceback
 from structman.lib import createRINdb
 from structman.lib.sdsc.consts import residues, ligands
 
+def encode_float(fl_num, precision = 5):
+    return f'{fl_num:.{precision}f}'
+
 
 class Ligand_types:
     __slots__ = ['ligand', 'ion', 'metal']
@@ -38,7 +41,7 @@ class Ligand_types:
             return 'Unknown interactiontype: %s' % interaction_type
 
     def encode(self):
-        return str(self.ligand[0]) + '(' + str(self.ligand[1])[:6] + '(' + str(self.ion[0]) + '(' + str(self.ion[1])[:6] + '(' + str(self.metal[0]) + '(' + str(self.metal[1])[:6]
+        return str(self.ligand[0]) + '(' + encode_float(self.ligand[1]) + '(' + str(self.ion[0]) + '(' + encode_float(self.ion[1]) + '(' + str(self.metal[0]) + '(' + encode_float(self.metal[1])
 
     def getScore(self, interaction_type):
         if interaction_type == 'ligand':
@@ -121,7 +124,7 @@ class Intrachain_types:
             return 'Unknown interactiontype: %s' % interaction_type
 
     def encode(self):
-        return str(self.neighbor[0]) + '(' + str(self.neighbor[1])[:6] + '(' + str(self.short[0]) + '(' + str(self.short[1])[:6] + '(' + str(self.long[0]) + '(' + str(self.long[1])[:6]
+        return str(self.neighbor[0]) + '(' + encode_float(self.neighbor[1]) + '(' + str(self.short[0]) + '(' + encode_float(self.short[1]) + '(' + str(self.long[0]) + '(' + encode_float(self.long[1])
 
     def getScore(self, interaction_type):
         if interaction_type == 'neighbor':
@@ -210,7 +213,7 @@ class Interchain_types:
             return 'Unknown interactiontype: %s' % interaction_type
 
     def encode(self):
-        return str(self.Protein[0]) + '(' + str(self.Protein[1])[:6] + '(' + str(self.DNA[0]) + '(' + str(self.DNA[1])[:6] + '(' + str(self.RNA[0]) + '(' + str(self.RNA[1])[:6] + '(' + str(self.Peptide[0]) + '(' + str(self.Peptide[1])[:6]
+        return str(self.Protein[0]) + '(' + encode_float(self.Protein[1]) + '(' + str(self.DNA[0]) + '(' + encode_float(self.DNA[1]) + '(' + str(self.RNA[0]) + '(' + encode_float(self.RNA[1]) + '(' + str(self.Peptide[0]) + '(' + encode_float(self.Peptide[1])
 
     def getScore(self, interaction_type):
         if interaction_type == 'Protein':

@@ -22,7 +22,11 @@ def add_aggregate_results(aggregates, indel_output, aggregate_type, raw_aggregat
      intra_chain_interactions_median, intra_chain_interactions_dist_weighted, rin_class, rin_simple_class) = aggregate
 
     centrality_scores = rin.Centrality_scores(code_str=centrality_str)
-    rin_profile = rin.Interaction_profile(profile_str=profile_str)
+    try:
+        rin_profile = rin.Interaction_profile(profile_str=profile_str)
+    except:
+        rin_profile = rin.Interaction_profile()
+        print('Warning: problem happened rin profile str decode')
 
     aggregate_values = [surface_value, mainchain_surface_value, sidechain_surface_value, b_factor, modres, ssa, phi, psi, intra_ssbond, intra_link,
      cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd, inter_chain_median_rsa, inter_chain_dist_weighted_rsa,

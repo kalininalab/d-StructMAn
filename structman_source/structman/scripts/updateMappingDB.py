@@ -87,7 +87,7 @@ def put_seqs_to_database(seq_map, config):
     database.update(config, 'UNIPROT', ['Uniprot_Ac','Sequence'], values, mapping_db = True)
 
 def insert_sequence_data(config, seq_file_paths, mapping_file_path, update_mapping_db_keep_raw_files):
-    max_seqs_at_a_time = int(70000 * config.gigs_of_ram)
+    max_seqs_at_a_time = int(30000 * config.gigs_of_ram)
 
     for seq_file_number, seq_file in enumerate(seq_file_paths):
         if seq_file_number == 0: #The first sequence file contains the minor isoforms
@@ -125,7 +125,7 @@ def insert_sequence_data(config, seq_file_paths, mapping_file_path, update_mappi
                 unusual_major_isoforms = {}
                 for stem in iso_map:
                     iso_numbers = iso_map[stem]
-                    if '1' in  iso_numbers:
+                    if not '1' in  iso_numbers:
                         continue
                     major_iso_number = None
                     for i in range(len(iso_numbers)):
@@ -134,7 +134,7 @@ def insert_sequence_data(config, seq_file_paths, mapping_file_path, update_mappi
                         else:
                             major_iso_number = i+1
                     if major_iso_number is None:
-                        print(f'Unexpected isoform numbering for {stem} {iso_map[stem]}')
+                        unusual_major_isoforms[stem] = i+1
                     else:
                         unusual_major_isoforms[stem] = major_iso_number
             print('\nDatabase update of sequences done.\n')

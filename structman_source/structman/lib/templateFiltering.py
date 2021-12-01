@@ -671,6 +671,8 @@ def analysis_chain(target_chain, analysis_dump):
     sub_loop_broken = False
 
     for target_res_id in target_residues[target_chain]:
+        if not target_res_id in res_contig_map[target_chain]:
+            continue
         if sub_loop_broken:
             break
         milieu_dict[target_chain][target_res_id] = {}
@@ -1098,6 +1100,9 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
 
     number_protein_chains = 0
     for target_chain in target_residues:
+        if not target_chain in chain_type_map:
+            config.errorlog.add_warning(f'{target_chain} not in chain_type_map for: {pdb_id}, known Bug for lite-pipeline with multimodel structures')
+            continue
         if chain_type_map[target_chain] != 'Protein':
             continue
         number_protein_chains += 1
@@ -1119,6 +1124,8 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         if number_protein_chains < nested_cores:
             packaged = False
             for target_chain in target_residues:
+                if target_chain not in chain_type_map:
+                    continue
                 if chain_type_map[target_chain] != 'Protein':
                     continue
 
@@ -1134,6 +1141,8 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
 
             package = []
             for target_chain in target_residues:
+                if target_chain not in chain_type_map:
+                    continue
                 if chain_type_map[target_chain] != 'Protein':
                     continue
                 package.append(target_chain)
@@ -1155,6 +1164,8 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
                          b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map,
                          profiles, milieu_dict, dssp, dssp_dict, page_altered)
         for target_chain in target_residues:
+            if target_chain not in chain_type_map:
+                continue
             if chain_type_map[target_chain] != 'Protein':
                 continue
 
@@ -1595,7 +1606,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                             package_cost += cost
                             nested_packages.add(pdb_id)
                             if config.verbosity >= 3:
-                                print('started nested package:', pdb_id, cost)
+                                print('started nested package B:', pdb_id, cost)
                         n_started += 1
 
                         del_list.append(pdb_id)
@@ -1614,7 +1625,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                         temporarily_freed[pdb_id] = 0
 
                         if config.verbosity >= 3:
-                            print('started nested package:', pdb_id, cost)
+                            print('started nested package (free resource):', pdb_id, cost)
                     else:
                         break
 

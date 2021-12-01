@@ -381,7 +381,7 @@ def main(sess_id, output_path, config, intertable=False):
 
     t0 = time.time()
 
-    if classification:
+    if classification and not config.skip_main_output_generation:
         t00 = time.time()
         classfiles, interfiles = classification_package.classificationOutput(config, output_path, session_name, session_id)
         t01 = time.time()
@@ -405,6 +405,8 @@ def main(sess_id, output_path, config, intertable=False):
         print("Time for producing classification file: ", t1 - t0)
 
     if config.indels_given_by_input:
+        if config.verbosity >= 2:
+            print('Starting indel analysis output generation')
         indel_package.create_indel_results_table(config, output_path, session_name, session_id)
 
     db, cursor = config.getDB()

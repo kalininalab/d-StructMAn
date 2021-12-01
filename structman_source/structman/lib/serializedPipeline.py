@@ -1598,8 +1598,11 @@ def para_classify(classification_dump, package, para=False):
 
                     (pdb_id, chain, res_nr) = id_triple
                     (seq_id, cov, identical_aa) = quality_measures
-
-                    (chains, resolution) = complexes[pdb_id]
+                    try:
+                        (chains, resolution) = complexes[pdb_id]
+                    except:
+                        (chains, resolution) = (None, None)
+                        
                 else:
                     id_triple, quality_measures, structure_infos = mapp
 
@@ -1938,8 +1941,10 @@ def nested_classification_main_process(queue, config, size_sorted, max_package_s
 
         for (pdb_id, chain) in annotation_list:
             if not pdb_id in complex_store:
-                complex_store[pdb_id] = (complexes[pdb_id].chains, complexes[pdb_id].resolution)
-
+                try:
+                    complex_store[pdb_id] = (complexes[pdb_id].chains, complexes[pdb_id].resolution)
+                except:
+                    config.errorlog.add_warning(f'{pdb_id} not in complexes')
     classification_dump = ray.put((config, complex_store))
 
     package_size = 0
@@ -2095,7 +2100,10 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
                     nested_structures[(pdb, chain)] = proteins.structures[(pdb, chain)]
                     if pdb in nested_complexes:
                         continue
-                    nested_complexes[pdb] = proteins.complexes[pdb]
+                    try:
+                        nested_complexes[pdb] = proteins.complexes[pdb]
+                    except:
+                        config.errorlog.add_warning(f'{pdb} not in proteins.complexes')
 
                 t_nest_1 += time.time()
 
@@ -2583,4 +2591,4 @@ def main(filename, config):
     print('Accumulated memory peak',total_memory_peak,'Gb')
     '''
 
-    return session
+    return session, config
