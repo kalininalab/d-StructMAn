@@ -60,7 +60,7 @@ RUN sysctl -w net.core.somaxconn=1024
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/ && rm /opt/mmseqs-linux-sse41.tar.gz
 
 # Custom XSSP
-ADD ./tools/xssp /opt/
+ADD ./tools/ /opt/
 RUN cd /opt/xssp/ && ./autogen.sh && ./configure && make mkdssp && make install
 
 # Add the StructMAn source
