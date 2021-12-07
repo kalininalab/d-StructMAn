@@ -59,9 +59,27 @@ RUN sysctl -w net.core.somaxconn=1024
 # Install and setup MMseqs2
 RUN wget -O /opt/mmseqs-linux-sse41.tar.gz https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz && tar xvfz /opt/mmseqs-linux-sse41.tar.gz -C /opt/ && ln -s /opt/mmseqs/bin/mmseqs /usr/local/bin/ && rm /opt/mmseqs-linux-sse41.tar.gz
 
+# Set up custom builds
+RUN mkdir /build
+RUN mkdir /patches
+ADD ./patches /patches
+
 # Custom XSSP
-ADD ./tools/ /opt/
-RUN cd /opt/xssp/ && ./autogen.sh && ./configure && make mkdssp && make install
+ENV XSSP_VERSION=3.0.10
+RUN mkdir /build/xssp
+RUN cd /build/xssp && \
+    wget https://github.com/cmbi/hssp/releases/download/${XSSP_VERSION}/xssp-${XSSP_VERSION}.tar.gz && \
+    tar xzf xssp-${XSSP_VERSION}.tar.gz && \
+    cd xssp-${XSSP_VERSION} && \
+    patch -p1 < /patches/xssp-mc-sc-acc.patch && \
+    ./autogen.sh && \
+    ./configure && \
+    make mkdssp && \
+    make install
+
+# Clean up custom builds
+RUN rm -rf /patches
+RUN rm -rf /build
 
 # Add the StructMAn source
 ADD ./structman_source /usr/structman_library/sources/
