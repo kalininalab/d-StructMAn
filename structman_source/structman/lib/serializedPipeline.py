@@ -1126,6 +1126,9 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     sus_complexes = set()
     sus_structures = set()
 
+    safe_structures = set()
+    safe_complexes = set()
+
     task_list = []
 
     for prot_id in prot_ids:
@@ -1155,6 +1158,8 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
             prot_db_id = proteins.get_protein_db_id(prot_id)
 
             task_list.append((prot_id, pdb_id, chain, structure_id, target_seq, template_seq, aaclist, prot_db_id))
+            safe_structures.add((pdb_id, chain))
+            safe_complexes.add(pdb_id)
 
     if len(task_list) <= config.proc_n:
         for task in task_list:
@@ -1256,8 +1261,6 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     structure_insertion_list = set()
     warn_map = set()
 
-    safe_complexes = set()
-    safe_structures = set()
     database_structure_list = None
 
     package_runtimes = []
@@ -1468,7 +1471,8 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
             print("Alignment Part 8: %s" % (str(t8 - t7)))
 
     # Due the removal of annotations in the previous loop, we might to remove some structures and complexes
-    proteins.remove_structures(sus_structures - safe_structures)
+    structures_to_remove = sus_structures - safe_structures
+    proteins.remove_structures(structures_to_remove)
     complexes_to_remove = sus_complexes - safe_complexes
     if config.verbosity >= 3:
         print('Len of sus_complexes:', len(sus_complexes), 'Len of safe complexes:', len(safe_complexes), 'Len of complexes_to_remove:', len(complexes_to_remove))
@@ -1479,7 +1483,7 @@ def paraAlignment(config, proteins, skip_db=False, skip_inserts=False, indel_ana
     if skip_db:
         # even lite mode checks for stored structures
         database.structureCheck(proteins, config)
-
+    config.removed_structures = structures_to_remove
 
 @ray.remote(max_calls = 1)
 def paraMap(mapping_dump, tasks):
@@ -1944,7 +1948,7 @@ def nested_classification_main_process(queue, config, size_sorted, max_package_s
                 try:
                     complex_store[pdb_id] = (complexes[pdb_id].chains, complexes[pdb_id].resolution)
                 except:
-                    config.errorlog.add_warning(f'{pdb_id} not in complexes')
+                    config.errorlog.add_warning(f'{pdb_id} not in complexes, additional info: {chain} {u_ac}')
     classification_dump = ray.put((config, complex_store))
 
     package_size = 0
@@ -2095,7 +2099,10 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
                     if (pdb, chain) in nested_structures:
                         continue
                     if (pdb, chain) not in proteins.structures:
-                        config.errorlog.add_warning(f'Structure {pdb}, {chain} not in structure dict')
+                        if (pdb, chain) in config.removed_structures:
+                            config.errorlog.add_warning(f'Structure {pdb}, {chain} not in structure dict and got removed in alignment, additional info: {u_ac}')
+                        else:
+                            config.errorlog.add_warning(f'Structure {pdb}, {chain} not in structure dict, additional info: {u_ac}')
                         continue
                     nested_structures[(pdb, chain)] = proteins.structures[(pdb, chain)]
                     if pdb in nested_complexes:
@@ -2103,7 +2110,7 @@ def classification(proteins, config, indel_analysis_follow_up=False, custom_stru
                     try:
                         nested_complexes[pdb] = proteins.complexes[pdb]
                     except:
-                        config.errorlog.add_warning(f'{pdb} not in proteins.complexes')
+                        config.errorlog.add_warning(f'{pdb} not in proteins.complexes, additional_info: {chain} {u_ac}')
 
                 t_nest_1 += time.time()
 
