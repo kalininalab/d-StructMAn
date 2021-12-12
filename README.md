@@ -113,13 +113,13 @@ Where:
 Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data. **Note:** the path in the command is the path *in the container*, not the path on the host.
 
  ```bash
- # docker exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
+ # docker exec -it <container_name> structman -i /structman/input_data/<input_file_name>
 ```
 For ease of use, lets setup an alias for the `docker exec` command either in the current terminal or by adding it to the end of the `.bashrc` file like below,
  ```bash
- # alias structman='docker exec -it <container_name> structman.py'
+ # alias structman='docker exec -it <container_name> structman'
 ```
-Once an alias is set, you can easily access the structman.py from your current terminal simply by,
+Once an alias is set, you can easily access structman from your current terminal simply by,
  ```bash
  # structman -i /structman/input_data/<input_file_name>
 ```
@@ -159,7 +159,7 @@ Once an alias is set, you can easily access the structman.py from your current t
 
 ## To reset StructMAn database/ To have a clean StructMAn container 
 
-* If you encounter some issues with the database/container while executing structman.py with some input or you simply want a clean setup of the container, you can do the following
+* If you encounter some issues with the database/container while executing structman with some input or you simply want a clean setup of the container, you can do the following
 
 ```bash
  - Stop the current running container by providing the path of the docker-compose.yml to the docker-compose client
@@ -237,13 +237,13 @@ Now Wait for a while (minimum 5 minutes) before you start running the commands. 
 Use the following command to run StructMAn, make sure you have some input file located under <container_directory>/structman/input_data. **Note:** the path in the command is the path *in the container*, not the path on the host.
 
  ```bash
- $ podman exec -it <container_name> structman.py -i /structman/input_data/<input_file_name>
+ $ podman exec -it <container_name> structman -i /structman/input_data/<input_file_name>
 ```
 For ease of use, lets setup an alias for the `podman exec` command either in the current terminal or by adding it to the end of the `.bashrc` file like below,
  ```bash
- # alias structman='podman exec -it <container_name> structman.py'
+ # alias structman='podman exec -it <container_name> structman'
 ```
-Once an alias is set, you can easily access the structman.py from your current terminal simply by,
+Once an alias is set, you can easily access structman from your current terminal simply by,
  ```bash
  # structman -i /structman/input_data/<input_file_name>
 ```
