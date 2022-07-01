@@ -50,7 +50,8 @@ setup(
         "zstd>=1.5.2.5",
         "pandas>=1.3.3",
         "autopep8>=1.5.7",
-        "scipy==1.8.0"
+        "scipy==1.8.0",
+        "requests==2.28.1"
     ],
 
     package_data = {

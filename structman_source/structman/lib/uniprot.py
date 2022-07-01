@@ -5,6 +5,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import requests
+import json
 
 from Bio import Entrez
 import pymysql as MySQLdb
@@ -13,6 +15,8 @@ from structman.lib.database import database
 from structman.lib.sdsc import sdsc_utils
 from structman.lib.sdsc import protein as protein_package
 from structman.base_utils import base_utils
+
+POLLING_INTERVAL = 3
 
 def is_connected():
     try:
@@ -33,7 +37,7 @@ def connection_sleep_cycle(verbosity):
 
 
 def getUniprotId(query, querytype, verbosity=0):
-    url = 'https://www.uniprot.org/uploadlists/'
+    url = 'https://rest.uniprot.org/idmapping/run'
     params = {
         'from': '%s' % (querytype),
         'to': 'ID',
@@ -242,7 +246,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
             if len(unstored_ids) > 0:  # whenever ids are left in the dict, go to uniprot and download all unmapped entries (this happens for newer uniprot entries, which are not yet in the local mapping database)
 
                 # This part is identical to the part, when no local database is used
-                id_ac_map = getUniprotIds(config, unstored_ids, 'ID', target_type="ACC")
+                id_ac_map = getUniprotIds(config, unstored_ids, 'UniProtKB_AC-ID', target_sub_type = 'primaryAccession')
                 if not id_ac_map is None:
                     for u_id in id_ac_map:
                         u_ac = id_ac_map[u_id]
@@ -254,7 +258,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                     # updateMappingDatabase(update_acs,db,config)
 
         else:
-            id_ac_map = getUniprotIds(config, list(id_map.keys()), 'ID', target_type="ACC")
+            id_ac_map = getUniprotIds(config, list(id_map.keys()), 'UniProtKB_AC-ID', target_sub_type = 'primaryAccession')
             for u_id in id_ac_map:
                 u_ac = id_ac_map[u_id]
                 integrate_protein(config, proteins, indel_map, u_ac, u_id, id_map, u_ac=u_ac, u_id=u_id)
@@ -295,7 +299,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                     unstored_refs.append(ref)
             update_acs = []
             if len(unstored_refs) > 0:
-                np_ac_map = getUniprotIds(config, unstored_refs, 'P_REFSEQ_AC', target_type="ACC")
+                np_ac_map = getUniprotIds(config, unstored_refs, 'RefSeq_Protein', target_sub_type = 'primaryAccession')
                 for ref in np_ac_map:
                     u_ac = np_ac_map[ref]
                     integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
@@ -304,13 +308,13 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                 # updateMappingDatabase(update_acs,db,config)
 
         else:
-            np_ac_map = getUniprotIds(config, list(np_map.keys()), 'P_REFSEQ_AC', target_type="ACC")
+            np_ac_map = getUniprotIds(config, list(np_map.keys()), 'RefSeq_Protein', target_sub_type = 'primaryAccession')
             for ref in np_ac_map:
                 u_ac = np_ac_map[ref]
                 integrate_protein(config, proteins, indel_map, ref, ref, np_map, u_ac=u_ac)
 
     if len(nm_map) > 0:
-        nm_ac_map = getUniprotIds(config, list(nm_map.keys()), 'REFSEQ_NT_ID', target_type="ACC")
+        nm_ac_map = getUniprotIds(config, list(nm_map.keys()), 'RefSeq_Nucleotide', target_sub_type = 'primaryAccession')
         for ref in nm_map:
 
             if ref in nm_ac_map:
@@ -320,7 +324,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                 integrate_protein(config, proteins, indel_map, ref, ref, nm_map)
 
     if len(hgnc_map) > 0:  # No support for mapping DB yet
-        hgnc_ac_map = getUniprotIds(config, list(hgnc_map.keys()), 'HGNC_ID', target_type="ACC")
+        hgnc_ac_map = getUniprotIds(config, list(hgnc_map.keys()), 'HGNC', target_sub_type = 'primaryAccession')
         for hgnc in hgnc_ac_map:
             u_ac = hgnc_ac_map[hgnc]
             integrate_protein(config, proteins, indel_map, u_ac, hgnc, hgnc_map, u_ac=u_ac, other_ids={'HGNC_ID': hgnc})
@@ -387,7 +391,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
                             proteins['%s-%s' % (u_ac, iso)].u_id = u_id
 
         else:
-            ac_id_map = getUniprotIds(config, id_search, 'ACC', target_type="ID")
+            ac_id_map = getUniprotIds(config, id_search, 'UniProtKB_AC-ID', target_sub_type = 'uniProtkbId')
             if ac_id_map is not None:
                 for u_ac in ac_id_map:
                     u_id = ac_id_map[u_ac]
@@ -406,7 +410,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
             ref = row[1]
             proteins[u_ac].ref_id = ref
     else:
-        ac_np_map = getUniprotIds(config, list(proteins.keys()), 'ACC', target_type="P_REFSEQ_AC")
+        ac_np_map = getUniprotIds(config, list(proteins.keys()), 'UniProtKB_AC-ID', target_type="RefSeq_Protein")
         for u_ac in ac_np_map:
             ref = ac_np_map[u_ac]
             proteins[u_ac].ref_id = ref
@@ -417,7 +421,7 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
     return proteins, indel_map
 
 
-def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60):
+def getUniprotIds(config, query_ids, querytype, target_type = "UniProtKB", target_sub_type = 'uniProtkbId', timeout = 60):
     if query_ids is None:
         config.errorlog.add_error(f'Query_ids is None, {querytype} {target_type}')
         return {}
@@ -425,60 +429,76 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
     if len(query_ids) == 0:
         return {}
 
+    if target_type != "UniProtKB":
+        target_sub_type = None
+
     if config.verbosity >= 4:
         print('Call of getUniprotIds:', query_ids, querytype, target_type)
 
     query = ' '.join(query_ids)
-    url = 'https://www.uniprot.org/uploadlists/'
+    url = 'https://rest.uniprot.org/idmapping/run'
     connection_sleep_cycle(config.verbosity)
     params = {
         'from': '%s' % (querytype),
         'to': '%s' % (target_type),
-        'format': 'tab',
-        'query': '%s' % (query)
+        'ids': '%s' % (query)
     }
-    data = urllib.parse.urlencode(params).encode('utf-8')
-    request = urllib.request.Request(url, data)
-    contact = config.user_mail  # Please set your email address here to help us debug in case of problems.
-    request.add_header('User-Agent', 'Python %s' % contact)
+    request = requests.post(url, params)
+
     try:
-        response = urllib.request.urlopen(request, timeout = timeout)
+        request.raise_for_status()
+        job_id = request.json()['jobId']
+        while True:
+            request = requests.get(f"https://rest.uniprot.org/idmapping/status/{job_id}")
+            request.raise_for_status()
+            job = request.json()
+            if "jobStatus" in job:
+                if job["jobStatus"] == "RUNNING":
+                    print(f"Retrying in {POLLING_INTERVAL}s")
+                    time.sleep(POLLING_INTERVAL)
+                else:
+                    raise Exception(job["jobStatus"])
+            else:
+                results = job
+                break
     except:
         e, f, g = sys.exc_info()
-        config.errorlog.add_warning("Uniprot did not answer: %s\n%s" % (str(e), str(f)))
+        config.errorlog.add_warning(f"Uniprot did not answer for {url}:\n{params}\n{e}\n{f}\n{g}")
         return {}
 
-    page = response.read(2000000).decode('utf-8')
-
     if config.verbosity >= 4:
-        print('Uniprot answer:\n',page)
+        print('Uniprot answer:\n',results)
+
+    results_list = results['results']
 
     uniprot_ids = {}
     try:
         error = True
-        lines = page.split("\n")
-        for line in lines[1:]:
-            words = line.split()
-            if len(words) > 1:
-                error = False
-                quer = words[0]
-                target = words[1]
-                if quer not in query_ids:
-                    error = True
-                    break
-                if quer == target:
-                    target = words[3].split(';')[0]
-                uniprot_ids[quer] = target
+        for uniprot_entry_dict in results_list:
+            error = False
+            quer = uniprot_entry_dict['from']
+            if quer in uniprot_ids:
+                continue
+            if target_sub_type is not None:
+                target = uniprot_entry_dict['to'][target_sub_type]
+            else:
+                target = uniprot_entry_dict['to']
+
+            if quer not in query_ids:
+                error = True
+                break
+            uniprot_ids[quer] = target
+
         if error:
 
             if len(query_ids) == 1:
                 quer = query_ids.pop()
-                if querytype == 'ACC' and quer.count('-') == 1:
+                if querytype == 'UniProtKB_AC-ID' and quer.count('-') == 1:
                     int_quer = set([quer.split('-')[0]])
                     intermediate_map = getUniprotIds(config, int_quer, querytype, target_type=target_type)
                     return {quer: intermediate_map[quer.split('-')[0]]}
-                elif target_type == 'ACC' and querytype == 'ID':
-                    config.errorlog.add_error(f'Couldnt map Uniprot ID to AC: {quer}\nUniprot answer page:\n{page}')
+                elif target_sub_type == 'primaryAccession' and querytype == 'UniProtKB_AC-ID':
+                    config.errorlog.add_error(f'Couldnt map Uniprot ID to AC: {quer}\nUniprot answer:\n{results}')
                     return {}
                 else:
                     return {quer: None}
@@ -509,7 +529,7 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
             else:
                 return {}
         '''
-        config.errorlog.add_warning(f'Parse error of uniprot ID-mapping webservice\n{page}')
+        config.errorlog.add_warning(f'Parse error of uniprot ID-mapping webservice\n{results}')
         return {}
     return uniprot_ids
 
@@ -774,7 +794,7 @@ def get_last_version(u_ac):
     print(page)
 
 def get_obsolete_sequence(u_ac, config, return_id=False, tries = 0):
-    uniparc_id_map = getUniprotIds(config, [u_ac], 'ACC', target_type="UPARC", timeout = 60 * (tries + 1))
+    uniparc_id_map = getUniprotIds(config, [u_ac], 'UniProtKB_AC', target_type="UniParc", timeout = 60 * (tries + 1))
     if not u_ac in uniparc_id_map:
         if tries < 3:
              return get_obsolete_sequence(u_ac, config, return_id=return_id, tries = (tries + 1))
