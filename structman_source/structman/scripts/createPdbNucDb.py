@@ -72,7 +72,6 @@ def parse_seq_file(seq_file):
                 chains = []
             parts = line[1:].split(',')
             for part in parts:
-                # print line
                 if part.count('-') < 1:
                     continue
                 pdb_id, chain = part.split('-')
@@ -104,7 +103,6 @@ def main(seq_file, fromScratch=False):
 
         print(sub_folder)
         for filename in files:
-            # print filename
             if filename.count('.pdb1.gz') > 0:
                 pdb_id = filename[:4].upper()
                 if pdb_id in safe_list:
@@ -119,7 +117,6 @@ def main(seq_file, fromScratch=False):
         files = os.listdir("%s%s" % (AU_folder, sub_folder))
         print(sub_folder, ' AU')
         for filename in files:
-            # print filename
             if filename.count('.ent.gz') > 0:
                 pdb_id = filename[3:7].upper()
                 if pdb_id in bio_entries or pdb_id in safe_list:

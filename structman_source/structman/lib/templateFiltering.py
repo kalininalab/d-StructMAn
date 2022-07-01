@@ -11,10 +11,11 @@ import pickle
 
 from structman.lib import pdbParser, rin, spherecon, serializedPipeline
 from structman.lib.database import database
-from structman.base_utils.base_utils import median, distance, pack, unpack, decompress
+from structman.base_utils.base_utils import median, distance, pack, unpack, decompress, is_alphafold_model, alphafold_model_id_to_file_path
 from structman.lib.sdsc.consts.residues import CORRECT_COUNT, THREE_TO_ONE, BLOSUM62, ONE_TO_THREE, RESIDUE_MAX_ACC, HYDROPATHY, METAL_ATOMS, ION_ATOMS
 from structman.lib.sdsc import sdsc_utils
 from structman.lib.sdsc import residue as residue_package
+from structman.lib.sdsc import interface as interface_package
 try:
     from memory_profiler import profile
 except:
@@ -36,7 +37,6 @@ def qualityScore(resolution, coverage, seq_id, resolution_wf=0.25, coverage_wf=0
     seq_value = (1 + math.exp(10 * (0.4 - seq_id)))**(-1)
 
     ws = sum((resolution_wf, coverage_wf, seq_id_wf))
-    # print resolution_value,coverage,seq_id,r_value
     quality = sum((resolution_value * resolution_wf, coverage * coverage_wf, seq_value * seq_id_wf)) / ws
     return quality
 
@@ -53,7 +53,6 @@ def candidateScore(lig_sub_dist, chain_sub_dist, lig_wf=1.0, chain_wf=1.0, useBl
             blosum_value = 0.6 - float(BLOSUM62[(aac[-1], aac[0])]) / 10
         if blosum_value < 0.0:
             blosum_value = 0.0
-        # print blosum_value
     else:
         blosum_value = 1.0
         blosum_wf = 0.0
@@ -78,7 +77,6 @@ def calcDSSP(path, DSSP, angles=False, verbosity_level=0):
     dssp_dict = {}
     errorlist = []
 
-    # print([DSSP,path])
     try:
         p = subprocess.Popen([DSSP, path], universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
@@ -209,7 +207,6 @@ def parsePDB(input_page):
         if len(line) > 5:
             record_name = line[0:6].replace(" ", "")
             if record_name == "ENDMDL":
-                # print len(coordinate_map)
                 break
             elif record_name == 'SEQRES':
                 for tlc in line[19:].split():
@@ -463,7 +460,10 @@ def get_atomic_coverage(coordinate_map, chain):
     resolved_number_of_atoms = 0
     for res_nr in coordinate_map[chain][0]:
         res_name, atoms = coordinate_map[chain][0][res_nr]
-        one_letter = THREE_TO_ONE[res_name]
+        try:
+            one_letter = THREE_TO_ONE[res_name]
+        except:
+            return f'{res_name} not in THREE_TO_ONE'
         if one_letter == 'X':
             expected_number_of_atoms += 1
             continue
@@ -557,7 +557,6 @@ def calcFuzzyDM(coordinate_map, box_map, config, calc_exact_distances=False, tar
             if not neighbors:
                 #fuzzy_dm[(chain,chain_2)] = center_dist
                 #fuzzy_dm[(chain_2,chain)] = center_dist
-                # print chain,chain_2
                 continue
 
             for res in coordinate_map[chain][0]:
@@ -600,7 +599,55 @@ def getMinDist(c_map, res, chain, res2, chain2, het=0, het2=0):
 
     return min_d, min_atom, min_atom2
 
-@ray.remote(max_retries = -1, max_calls = 1)
+def calculate_interfaces(IAmap, dssp_dict, chain_type_map, config):
+    interfaces = {}
+    if len(IAmap) == 1:
+        return interfaces
+    for chain in IAmap:
+        if chain not in chain_type_map:
+            continue
+        if chain_type_map[chain] != 'Protein':
+            continue
+        for res in IAmap[chain]:
+            for (chain_b, res_b) in IAmap[chain][res]['combi']['all']:
+                if chain_b not in chain_type_map:
+                    continue
+                if chain_type_map[chain_b] != 'Protein': #At the moment, we are only interested in PPIs
+                    continue
+                if chain == chain_b:
+                    continue
+                if not (chain, chain_b) in interfaces:
+                    interfaces[(chain, chain_b)] = interface_package.Interface(chain, chain_b)
+                interfaces[(chain, chain_b)].add_interaction(res, res_b)
+                #print('Add interaction:', chain, chain_b, res, res_b)
+
+    #find interface edge triangles
+    for chain, chain_b in interfaces:
+        for res in interfaces[(chain ,chain_b)].interactions:
+            for (chain_c, res_c) in IAmap[chain][res]['combi']['all']:
+                if chain_c != chain:
+                    continue
+                if res_c in interfaces[(chain, chain_b)].interactions:
+                    continue
+                if not chain_c in dssp_dict:
+                    continue
+                if not res_c in dssp_dict[chain_c]:
+                    continue
+                sc_rsa = dssp_dict[chain_c][res_c][2]
+                if sdsc_utils.locate(sc_rsa, config, binary_decision=True) != 'Surface':
+                    continue
+                edge_count = 0
+                for (chain_d, res_d) in IAmap[chain_c][res_c]['combi']['all']:
+                    if chain_d != chain:
+                        continue
+                    if res_d in interfaces[(chain, chain_b)].interactions:
+                        edge_count += 1
+                if edge_count >= 2:
+                    interfaces[(chain, chain_b)].add_support(res_c)
+
+    return interfaces
+
+@ray.remote(max_calls = 1)
 def analysis_chain_remote_wrapper(target_chain, analysis_dump):
     serializedPipeline.ray_hack()
 
@@ -614,7 +661,7 @@ def analysis_chain_remote_wrapper(target_chain, analysis_dump):
 
     return result
 
-@ray.remote(max_retries = -1, max_calls = 1)
+@ray.remote(max_calls = 1)
 def analysis_chain_package_wrapper(package, analysis_dump):
     serializedPipeline.ray_hack()
     results = []
@@ -622,24 +669,31 @@ def analysis_chain_package_wrapper(package, analysis_dump):
         results.append(analysis_chain(target_chain, analysis_dump))
     return pack(results)
 
-@ray.remote(max_retries = -1, max_calls = 1)
-def annotate(config, chunk):
+@ray.remote(max_calls = 1)
+def annotate_wrapper(config, chunk):
     serializedPipeline.ray_hack()
+    return annotate(config, chunk)
+
+def annotate(config, chunk):
 
     outputs = []
     nested_outputs = []
     for pdb_id, target_dict, nested_cores_limiter, nested_call in chunk:
         t0 = time.time()
-        (structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, nested_processes) = structuralAnalysis(pdb_id, config, target_dict=target_dict, nested_cores_limiter = nested_cores_limiter, nested_call = nested_call)
+        model_path = None
+        if config.model_db_active:
+            if is_alphafold_model(pdb_id):
+                model_path = alphafold_model_id_to_file_path(pdb_id, config)
+        (structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, nested_processes, IAmap, interfaces, analysis_dump) = structuralAnalysis(pdb_id, config, target_dict=target_dict, nested_cores_limiter = nested_cores_limiter, nested_call = nested_call, model_path = model_path)
         t1 = time.time()
 
-        if config.verbosity >= 4:
+        if config.verbosity >= 5:
             print('Time for structural analysis of', pdb_id, ':', t1 - t0)
 
         if nested_call:
-            nested_outputs.append((pdb_id, nested_processes, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, t1 - t0))
+            nested_outputs.append((pdb_id, nested_processes, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, IAmap, interfaces, t1 - t0, analysis_dump))
         else:
-            outputs.append((pdb_id, structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, t1 - t0))
+            outputs.append((pdb_id, structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, IAmap, interfaces, t1 - t0, analysis_dump))
 
     outputs = pack(outputs)
 
@@ -651,6 +705,12 @@ def analysis_chain(target_chain, analysis_dump):
      b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map,
      profiles, milieu_dict, dssp, dssp_dict, page_altered) = analysis_dump
     errorlist = []
+
+    if config.verbosity >= 5:
+        if len(target_residues[target_chain]) <= 1:
+            print(f'Call of analysis_chain: {pdb_id} {target_chain} {target_residues[target_chain]}')
+        else:
+            print(f'Call of analysis_chain: {pdb_id} {target_chain} {len(target_residues[target_chain])}')
 
     siss_map = {}
     try:
@@ -763,7 +823,7 @@ def analysis_chain(target_chain, analysis_dump):
                     total_dist_weights = 0.
 
 
-                    if config.verbosity >= 5:
+                    if config.verbosity >= 6:
                         print('Residue-Residue calc:', pdb_id, chain, target_res_id, 'inside the sphere:', len(inside_sphere))
 
                     for intra_chain_res in inside_sphere:
@@ -853,8 +913,6 @@ def analysis_chain(target_chain, analysis_dump):
                 if target_res_id in dssp_dict[target_chain]:
                     (rsa, relative_main_chain_acc, relative_side_chain_acc, ssa, phi, psi) = dssp_dict[target_chain][target_res_id]
                 else:
-                    # print(target_res_id)
-                    # print(siss_map)
                     siss_value = None
                     if target_res_id in siss_map:
                         siss_value = siss_map[target_chain][target_res_id]
@@ -867,7 +925,9 @@ def analysis_chain(target_chain, analysis_dump):
                     psi = None
             else:
                 atomic_coverage = get_atomic_coverage(coordinate_map, chain)
-                if atomic_coverage > 0.5 and not page_altered: #DSSP does not work for chains with missing atomic coordinates or chains over the 10K atoms mark, no need for a warning here
+                if isinstance(atomic_coverage, str):
+                    errorlist.append(f'Error in get_atomic_coverage: {pdb_id}, {target_chain}\n{atomic_coverage}')
+                elif atomic_coverage > 0.5 and not page_altered: #DSSP does not work for chains with missing atomic coordinates or chains over the 10K atoms mark, no need for a warning here
                     errorlist.append(("dssp error: chain not in dssp_dict; %s; %s" % (pdb_id, target_chain)))
                 dssp = False
                 if target_res_id in siss_map:
@@ -963,11 +1023,15 @@ def analysis_chain(target_chain, analysis_dump):
         residue.generate_interacting_ligands_str()
         structural_analysis_dict[target_res_id] = residue
 
+    if config.verbosity >= 5:
+        if len(structural_analysis_dict) <= 10:
+            print(f'Results of analysis_chain: {pdb_id} {target_chain} {structural_analysis_dict}')
+        else:
+            print(f'Results of analysis_chain: {pdb_id} {target_chain} {len(structural_analysis_dict)}')
+
     return target_chain, structural_analysis_dict, errorlist
 
 
-# called by serializedPipeline
-# @profile
 def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_rin_files=True, nested_cores_limiter = None, nested_call = False):
 
     dssp = config.dssp
@@ -976,29 +1040,29 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
     rin_db_path = config.rin_db_path
     verbosity = config.verbosity
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t0 = time.time()
         print('Start structuralAnalysis of:', pdb_id)
 
     page, page_altered, path, atom_count = pdbParser.standardParsePDB(pdb_id, pdb_path, return_10k_bool=True, get_is_local=True, model_path=model_path)
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t1 = time.time()
         print('Time for structuralAnalysis Part 1:', t1 - t0)
 
-    if verbosity >= 5:
+    if verbosity >= 7:
         print('\n',pdb_id,'\n\n',page)
 
     errorlist = []
 
     if page == '':
         errorlist.append("Error while parsing: %s" % pdb_id)
-        return {}, errorlist, {}, {}, {}, {}, {}, []
+        return {}, errorlist, {}, {}, {}, {}, {}, {}, [], {}, None
 
     (coordinate_map, siss_coord_map, res_contig_map, ligands, metals, ions, box_map, chain_type_map, chainlist,
         b_factors, modres_map, ssbond_map, link_map, cis_conformation_map, cis_follower_map) = parsePDB(page)
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t2 = time.time()
         print('Time for structuralAnalysis Part 2:', t2 - t1)
 
@@ -1015,13 +1079,13 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
 
     centroid_map = spherecon.calcCentroidMap(siss_coord_map, target_residues, False)
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t3 = time.time()
         print('Time for structuralAnalysis Part 3:', t3 - t2)
 
     fuzzy_dist_matrix = calcFuzzyDM(coordinate_map, box_map, config, target_chains=set(target_residues.keys()))
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t4 = time.time()
         print('Time for structuralAnalysis Part 4:', t4 - t3)
 
@@ -1051,7 +1115,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         if dssp_dict == {}:
             dssp = False
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t5 = time.time()
         print('Time for structuralAnalysis Part 5:', t5 - t4)
 
@@ -1060,6 +1124,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
     metal_profiles = {}
     ion_profiles = {}
     chain_chain_profiles = {}
+    IAmap = {}
 
     try:
         lookup_out = rin.lookup(pdb_id, page, config, None, None, ligands,
@@ -1068,10 +1133,10 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         if isinstance(lookup_out, str):
             errorlist.append(lookup_out)
         else:
-            (profiles, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles) = lookup_out
+            (profiles, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, IAmap) = lookup_out
             if len(profiles) == 0:
                 errorlist.append('Empty profiles %s %s %s' % (pdb_id, str(len(page)), str(len(res_contig_map))))
-            elif verbosity >= 4:
+            elif verbosity >= 5:
                 print('Chains in profiles:', list(profiles.keys()))
     except:
         [e, f, g] = sys.exc_info()
@@ -1079,7 +1144,12 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
         errortext = 'RIN lookup Error:%s\nRIN_db_path:%s\n' % (pdb_id, rin_db_path) + '\n'.join([str(e), str(f), str(g)])
         errorlist.append(errortext)
 
-    if verbosity >= 4:
+    if config.compute_ppi:
+        interfaces = calculate_interfaces(IAmap, dssp_dict, chain_type_map, config)
+    else:
+        interfaces = {}
+
+    if verbosity >= 5:
         t6 = time.time()
         print('Time for structuralAnalysis Part 6:', t6 - t5)
 
@@ -1132,7 +1202,7 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
                 core_results.append(analysis_chain_remote_wrapper.remote(target_chain, analysis_dump))
 
         else:
-            if verbosity >= 2:
+            if verbosity >= 5:
                 print('Packaging a big structure:',pdb_id,'with',number_protein_chains,'chains')
             packaged = True
             max_package_size = number_protein_chains // nested_cores
@@ -1153,10 +1223,28 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
             if len(package) != 0:
                 core_results.append(analysis_chain_package_wrapper.remote(package, analysis_dump))
 
-        if verbosity >= 3:
+        if verbosity >= 5:
             print('Reached nested remotes:', pdb_id, number_protein_chains)
 
-        return {}, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, core_results
+        del target_residues
+        del siss_coord_map
+        del centroid_map
+        del res_contig_map
+        del coordinate_map
+        del fuzzy_dist_matrix
+        del b_factors
+        del modres_map
+        del ssbond_map
+        del link_map
+        del cis_conformation_map
+        del cis_follower_map
+        del profiles
+        del milieu_dict
+        del dssp
+        del dssp_dict
+        del page_altered
+
+        return {}, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, core_results, IAmap, interfaces, analysis_dump
 
     else:
         analysis_dump = (pdb_id, config, target_residues, siss_coord_map, centroid_map,
@@ -1172,12 +1260,14 @@ def structuralAnalysis(pdb_id, config, target_dict=None, model_path=None, keep_r
             target_chain, chain_structural_analysis_dict, chain_errorlist = analysis_chain(target_chain, analysis_dump)
             structural_analysis_dict[target_chain] = chain_structural_analysis_dict
             errorlist += ['%s - %s' % (x, pdb_id) for x in chain_errorlist[:5]]
+            if config.verbosity >= 5:
+                print(f'Received structural analysis results (1) from: {pdb_id} {target_chain} {len(chain_structural_analysis_dict)} {chain_errorlist}')
 
-    if verbosity >= 4:
+    if verbosity >= 5:
         t7 = time.time()
         print('Time for structuralAnalysis Part 7:', t7 - t6)
 
-    return structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, []
+    return structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, [], IAmap, interfaces, None
 
 def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
 
@@ -1234,7 +1324,10 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
     package_cost = 0
     assigned_costs = {}
     temporarily_freed = {}
-    conf_dump = ray.put(config)
+    if config.proc_n > 1:
+        conf_dump = ray.put(config)
+    else:
+        conf_dump = None
     cost_function_constant = 1280000000
 
     n_started = 0
@@ -1259,6 +1352,9 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
             if config.low_mem_system:
                 cost = max([1, min([config.proc_n, (((ac**2) / cost_function_constant) * config.proc_n) // config.gigs_of_ram])])
 
+            if config.proc_n == 1:
+                cost = 0
+
             #if (cost + package_cost) <= config.proc_n:
             if (1 + package_cost) <= config.proc_n:
                 if not lite:
@@ -1269,14 +1365,20 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                 if s < config.n_of_chain_thresh:
                     current_chunk.append((pdb_id, target_dict, None, False))
                     if len(current_chunk) >= chunksize:
-                        anno_result_ids.append(annotate.remote(conf_dump, current_chunk))
+                        if config.proc_n > 1:
+                            anno_result_ids.append(annotate_wrapper.remote(conf_dump, current_chunk))
+                        else:
+                            anno_result_ids.append(annotate(config, current_chunk))
                         current_chunk = []
                         package_cost += 1  # chunks cost 1
                 else:
-                    anno_result_ids.append(annotate.remote(conf_dump, [(pdb_id, target_dict, None, True)]))
+                    if config.proc_n > 1:
+                        anno_result_ids.append(annotate_wrapper.remote(conf_dump, [(pdb_id, target_dict, None, True)]))
+                    else:
+                        anno_result_ids.append(annotate(config, [(pdb_id, target_dict, None, True)]))
                     package_cost += cost  # big structures with nested remotes cost the amount of nested calls
                     nested_packages.add(pdb_id)
-                    if config.verbosity >= 3:
+                    if config.verbosity >= 4:
                         print('started nested package:', pdb_id, cost)
                 n_started += 1
                 del_list.append(pdb_id)
@@ -1296,8 +1398,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
         t11 = time.time()
         print("Annotation Part 1.1: %s" % (str(t11 - t0)))
 
-    database.getStoredResidues(proteins, config)  # has to be called after insertStructures
-    #anno_results = ray.get(anno_result_ids)
+    database.getStoredResidues(proteins, config, exclude_interacting_chains = True)  # has to be called after insertStructures
 
     if config.verbosity >= 2:
         t1 = time.time()
@@ -1330,7 +1431,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
         for ret_pdb_id in core_not_ready_dict:
             while True:
                 core_ready, core_not_ready = ray.wait(core_not_ready_dict[ret_pdb_id], timeout=0.1)
-                if config.verbosity >= 3:
+                if config.verbosity >= 5:
                     print('Nested wait:', ret_pdb_id, len(core_ready), len(core_not_ready))
                 if len(core_ready) > 0:
                     errorlist = []
@@ -1344,6 +1445,8 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                             errorlist += chain_errorlist
                             package_cost -= 1  # relieve cost for each finished nested remote (individual chains)
                             temporarily_freed[ret_pdb_id] += 1
+                            if config.verbosity >= 5:
+                                print(f'Received structural analysis results (2) from: {ret_pdb_id} {target_chain} {len(chain_structural_analysis_dict)} {chain_errorlist}')
                     if len(errorlist) > 0:
                         for error_text in errorlist:
                             config.errorlog.add_warning(error_text)
@@ -1377,7 +1480,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
         
         not_ready = []
         if len(anno_result_ids) > 0:
-            if config.verbosity >= 3:
+            if config.verbosity >= 5:
                 print('Before wait, loop counter:', loop_counter)
 
             '''
@@ -1386,26 +1489,29 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                 t_gc_0 = time.time()
                 gc.collect()
                 t_gc_1 = time.time()
-                if config.verbosity >= 3:
+                if config.verbosity >= 5:
                     print('Manual gc happend:', (t_gc_1 - t_gc_0))
             '''
-            ready, not_ready = ray.wait(anno_result_ids)
+            if config.proc_n > 1:
+                ready, not_ready = ray.wait(anno_result_ids)
 
-            if config.verbosity >= 3:
-                print('Wait happened:', no_result_run)
+                if config.verbosity >= 5:
+                    print('Wait happened:', no_result_run)
 
-            t_0 = time.time()
+                t_0 = time.time()
 
-            if len(ready) > 0:
-                chunk_struct_outs = ray.get(ready)
-                no_result_run = 1
+                if len(ready) > 0:
+                    chunk_struct_outs = ray.get(ready)
+                    no_result_run = 1
+                else:
+                    chunk_struct_outs = []
+                    no_result_run = min([10, no_result_run + 1])
+
+                t_1 = time.time()
+                if config.verbosity >= 5:
+                    print('Time for loop part 1:', (t_1-t_0))
             else:
-                chunk_struct_outs = []
-                no_result_run = min([10, no_result_run + 1])
-
-            t_1 = time.time()
-            if config.verbosity >= 3:
-                print('Time for loop part 1:', (t_1-t_0))
+               chunk_struct_outs = anno_result_ids
 
             t_integrate_0 = 0.
             t_integrate_1 = 0.
@@ -1426,7 +1532,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                 for struct_out in chunk_struct_out:
                     t_integrate_0 += time.time()
                     (ret_pdb_id, structural_analysis_dict, errorlist, ligand_profiles, metal_profiles,
-                        ion_profiles, chain_chain_profiles, chain_type_map, chainlist, comp_time) = struct_out
+                        ion_profiles, chain_chain_profiles, chain_type_map, chainlist, IAmap, interfaces, comp_time, analysis_dump) = struct_out
 
                     returned_pdbs.append(ret_pdb_id)
 
@@ -1445,6 +1551,8 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                             config.errorlog.add_warning(error_text)
 
                     for chain in structural_analysis_dict:
+                        if config.verbosity >= 5:
+                            print(f'Received structural analysis results (3) from: {ret_pdb_id} {chain} {len(structural_analysis_dict[chain])}')
                         if lite:
                             for res_id in structural_analysis_dict[chain]:
                                 residue = structural_analysis_dict[chain][res_id]
@@ -1462,10 +1570,15 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                     proteins.set_ion_profile(ret_pdb_id, ion_profiles)
                     proteins.set_metal_profile(ret_pdb_id, metal_profiles)
                     proteins.set_chain_chain_profile(ret_pdb_id, chain_chain_profiles)
+                    proteins.set_IAmap(ret_pdb_id, IAmap)
+                    proteins.set_interfaces(ret_pdb_id, interfaces)
+
+                    del analysis_dump
 
                     t_integrate_3 += time.time()
 
                     proteins.set_chain_type_map(ret_pdb_id, chain_type_map, chainlist)
+                    del chain_type_map
 
                     if config.low_mem_system:
                         if amount_of_chains_in_analysis_dict > 2 * (config.chunksize):
@@ -1484,7 +1597,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                     package_cost += 1 #repay one cost, since this a nested out
                     t_integrate_0 += time.time()
                     (ret_pdb_id, nested_processes, errorlist, ligand_profiles, metal_profiles,
-                        ion_profiles, chain_chain_profiles, chain_type_map, chainlist, comp_time) = struct_out
+                        ion_profiles, chain_chain_profiles, chain_type_map, chainlist, IAmap, interfaces, comp_time, analysis_dump) = struct_out
 
                     returned_pdbs.append(ret_pdb_id)
 
@@ -1500,6 +1613,8 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                                 errorlist += chain_errorlist
                                 package_cost -= 1  # relieve cost for each finished nested remote (individual chains)
                                 temporarily_freed[ret_pdb_id] += 1
+                                if config.verbosity >= 5:
+                                    print(f'Received structural analysis results (4) from: {ret_pdb_id} {target_chain} {len(chain_structural_analysis_dict)} {chain_errorlist}')
 
                     if len(core_not_ready) > 0:
                         core_not_ready_dict[ret_pdb_id] = core_not_ready
@@ -1540,10 +1655,15 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                     proteins.set_ion_profile(ret_pdb_id, ion_profiles)
                     proteins.set_metal_profile(ret_pdb_id, metal_profiles)
                     proteins.set_chain_chain_profile(ret_pdb_id, chain_chain_profiles)
+                    proteins.set_IAmap(ret_pdb_id, IAmap)
+                    proteins.set_interfaces(ret_pdb_id, interfaces)
+
+                    del analysis_dump
 
                     t_integrate_3 += time.time()
 
                     proteins.set_chain_type_map(ret_pdb_id, chain_type_map, chainlist)
+                    del chain_type_map
 
                     if config.low_mem_system:
                         if amount_of_chains_in_analysis_dict > 2 * (config.chunksize):
@@ -1559,7 +1679,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                     t_integrate_4 += time.time()
             t_2 = time.time()
 
-            if config.verbosity >= 3:
+            if config.verbosity >= 5:
                 print('Time for result integration:', (t_integrate_4 - t_integrate_0), 'for amount of analyzed chunks:', len(chunk_struct_outs),
                       'individual times:', (t_integrate_1 - t_integrate_0),
                                            (t_integrate_2 - t_integrate_1),
@@ -1570,7 +1690,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                 if (t_pickle_2 - t_pickle_1) > 60:
                     print('Long depickling:', returned_pdbs)
 
-            if config.verbosity >= 3:
+            if config.verbosity >= 5:
                 print('Time for loop part 2:', (t_2-t_1))
 
         new_anno_result_ids = []
@@ -1598,14 +1718,14 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                         if s < config.n_of_chain_thresh:
                             current_chunk.append((pdb_id, target_dict, None, False))
                             if len(current_chunk) >= chunksize:
-                                new_anno_result_ids.append(annotate.remote(conf_dump, current_chunk))
+                                new_anno_result_ids.append(annotate_wrapper.remote(conf_dump, current_chunk))
                                 current_chunk = []
                                 package_cost += 1
                         else:
-                            new_anno_result_ids.append(annotate.remote(conf_dump, [(pdb_id, target_dict, None, True)]))
+                            new_anno_result_ids.append(annotate_wrapper.remote(conf_dump, [(pdb_id, target_dict, None, True)]))
                             package_cost += cost
                             nested_packages.add(pdb_id)
-                            if config.verbosity >= 3:
+                            if config.verbosity >= 5:
                                 print('started nested package B:', pdb_id, cost)
                         n_started += 1
 
@@ -1614,7 +1734,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                         temporarily_freed[pdb_id] = 0
                     elif s >= config.n_of_chain_thresh and package_cost <= ((3*config.proc_n)//4): #if there are some free resource, use them
                         cost = min([s, config.proc_n - package_cost])
-                        new_anno_result_ids.append(annotate.remote(conf_dump, [(pdb_id, target_dict, cost, True)]))
+                        new_anno_result_ids.append(annotate_wrapper.remote(conf_dump, [(pdb_id, target_dict, cost, True)]))
                         package_cost += cost
                         nested_packages.add(pdb_id)
 
@@ -1624,7 +1744,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                         assigned_costs[pdb_id] = cost
                         temporarily_freed[pdb_id] = 0
 
-                        if config.verbosity >= 3:
+                        if config.verbosity >= 5:
                             print('started nested package (free resource):', pdb_id, cost)
                     else:
                         break
@@ -1635,12 +1755,12 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
                     del size_map[s]
             sorted_sizes = sorted(size_map.keys(), reverse=True)
         elif len(current_chunk) > 0:  # starting the last chunk
-            new_anno_result_ids.append(annotate.remote(conf_dump, current_chunk))
+            new_anno_result_ids.append(annotate_wrapper.remote(conf_dump, current_chunk))
             current_chunk = []
             package_cost += 1
             n_started += 1
 
-        if len(anno_result_ids) > 0 and config.verbosity >= 3:
+        if len(anno_result_ids) > 0 and config.verbosity >= 5:
             t_3 = time.time()
             print('Time for loop part 3:', (t_3-t_2))
 
@@ -1651,11 +1771,13 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
 
         if finished > 0:
             total_computed += finished
-            if config.verbosity >= 3:
+            if config.verbosity >= 5:
                 print('Newly finished structural analysis of', finished, '. Total:', total_computed, 'len of size map:', len(size_map), 'Current package:', len(anno_result_ids), 'with cost:', package_cost, 'and nested packages:', str(nested_packages), ', number of pending nested packaged chains:', len(core_not_ready_dict), 'Amount of new started processes:', len(new_anno_result_ids), 'Amount of pending processes:', len(not_ready))
         if len(anno_result_ids) == 0 and len(size_map) == 0 and len(core_not_ready_dict) == 0:
             break
 
+
+    del conf_dump
     t_1_5 = time.time()
     #gc.enable()
 
@@ -1694,7 +1816,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
         t3 = time.time()
         print("Annotation Part 3: %s" % (str(t3 - t2)))
 
-    serializedPipeline.classification(proteins, config, indel_analysis_follow_up=indel_analysis_follow_up)
+    serializedPipeline.classification(proteins, config, background_insert_residues_process, indel_analysis_follow_up=indel_analysis_follow_up)
 
     if config.verbosity >= 2:
         t4 = time.time()
@@ -1713,7 +1835,7 @@ def paraAnnotate(config, proteins, lite=False, indel_analysis_follow_up=False):
         t6 = time.time()
         print("Time for garbage collection: %s" % (str(t6 - t5)))
 
-    return background_insert_residues_process, amount_of_structures
+    return amount_of_structures
 
 
 # Return True, if the template is not good
@@ -1743,7 +1865,6 @@ def good(structure, seq_threshold, resolution_threshold, cov_threshold):
 
 # called by serializedPipeline
 def filterTemplates(structures, seq_threshold, resolution_threshold, cov_threshold):
-    # print structures
     filtered_structures = {}
     for (pdb_id, chain) in structures:
         if good(structures[(pdb_id, chain)], seq_threshold, resolution_threshold, cov_threshold):

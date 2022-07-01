@@ -8,10 +8,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__))))))
 import structman
 
-from structman.scripts import createPdbBaDb, updateMappingDB
+from structman.scripts import createPdbBaDb, updateMappingDB, updateAlphafoldModelDB
 
 
-def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, update_mapping_db = False, mapping_db_from_scratch = False, update_mapping_db_keep_raw_files = False):
+def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, update_mapping_db = False, mapping_db_from_scratch = False, update_mapping_db_keep_raw_files = False, update_alphafold_db = False):
     mmseqs_fromScratch = False
     skipStructureDBs = False
 
@@ -58,9 +58,13 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, u
             p.wait()
 
             print('Update PDB done')
+
+        if update_alphafold_db:
+            updateAlphafoldModelDB.main(config)
+
         if not skip_rindb:
             # update rin db
-            recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path)
+            recently_modified_structures = structman.lib.createRINdb.main(fromScratch=rin_fromScratch, pdb_p=pdb_path, rin_db_path=rin_db_path, n_proc=config.proc_n, rinerator_base_path=rinerator_base_path, process_model_db = config.model_db_active, config = config)
 
             p = subprocess.Popen(['chmod', '777', '-R', '.'], cwd=rin_db_path)
             p.wait()
@@ -72,7 +76,9 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, u
 
     if not skipUpdatePDB:
         pdb_fasta_name = 'pdbba_mmseqs2'
-        config.pdb_fasta_path = '%s/%s' % (search_db_base_path, pdb_fasta_name)
+        config.pdb_fasta_path = f'{search_db_base_path}/{pdb_fasta_name}'
+        model_db_fasta_name = 'model_db_mmseqs2'
+        config.model_db_fasta_path = f'{search_db_base_path}/{model_db_fasta_name}'
 
         # update pdbba for mmseqs2
         createPdbBaDb.main(config)
@@ -104,6 +110,25 @@ def main(config, skipUpdatePDB=False, skip_rindb=False, rin_fromScratch=False, u
         p.wait()
 
         print("Search database for MMseqs2 created!")
+
+        if config.model_db_fasta_created:
+            p = subprocess.Popen(['mmseqs', 'createdb', model_db_fasta_name, 'model_db_search_db_mmseqs2'], cwd=search_db_base_path)
+            p.wait()
+
+            p = subprocess.Popen(['rm', '-R', mmseqs2_tmp], cwd=search_db_base_path)
+            p.wait()
+
+            if not os.path.isdir(mmseqs2_tmp):
+                os.mkdir(mmseqs2_tmp)
+
+            p = subprocess.Popen(['chmod', '777', '-R', mmseqs2_tmp], cwd=search_db_base_path)
+            p.wait()
+
+            p = subprocess.Popen(['mmseqs', 'createindex', 'model_db_search_db_mmseqs2', mmseqs2_tmp, '-s', '7.5'], cwd=search_db_base_path)
+            p.wait()
+
+            print("Model search database for MMseqs2 created!")
+
 
     # update the mapping database
     if update_mapping_db:

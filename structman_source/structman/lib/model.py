@@ -30,7 +30,7 @@ class Model:
         if self.path[-12:] != '_refined.pdb':
             self.refine_model()
 
-        (structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, nested_processes) = templateFiltering.structuralAnalysis(self.model_id, config, model_path=self.path, target_dict=[model_target_chain], keep_rin_files=True)
+        (structural_analysis_dict, errorlist, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, chain_type_map, chainlist, nested_processes, IAmap, interfaces) = templateFiltering.structuralAnalysis(self.model_id, config, model_path=self.path, target_dict=[model_target_chain], keep_rin_files=True)
 
         self.structural_analysis_dict = structural_analysis_dict
         self.ligand_profiles = ligand_profiles

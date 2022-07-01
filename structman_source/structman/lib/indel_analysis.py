@@ -215,6 +215,11 @@ def para_indel_analysis(proteins, config):
         print('Starting indel analysis with', len(proteins.indels), 'indels')
         t0 = time.time()
 
+    complex_store_references = []
+    structures_store_references = []
+
+    conf_dump = None
+
     if config.model_indel_structures:
         conf_dump = ray.put(config)
 
@@ -222,6 +227,8 @@ def para_indel_analysis(proteins, config):
             seq = proteins.get_sequence(prot_id)
             aaclist = proteins.getAACList(prot_id)
             prot_specific_mapping_dumps[prot_id] = ray.put((prot_id, seq, aaclist))
+            del seq
+            del aaclist
             wt_structure_annotations = proteins.get_protein_structure_annotations(prot_id)
             if len(wt_structure_annotations) == 0:
                 if config.verbosity >= 3:
@@ -250,7 +257,9 @@ def para_indel_analysis(proteins, config):
                         continue
                     # modelling the WT for all recommended structures
                     compl_obj = ray.put(proteins.complexes[pdb_id])
+                    complex_store_references.append(compl_obj)
                     structures = ray.put(proteins.get_complex_structures(pdb_id))
+                    structures_store_references.append(structures)
 
                     if not (pdb_id, tchain, indel_obj.wt_prot) in model_stack:
                         alignment_tuple = proteins.get_alignment(indel_obj.wt_prot, pdb_id, tchain)
@@ -276,6 +285,14 @@ def para_indel_analysis(proteins, config):
     #indel_analysis_outs = ray.get(indel_result_ids)
     if config.model_indel_structures:
         models = ray.get(modelling_result_ids)
+
+    del conf_dump
+    for i in reversed(range(len(structures_store_references))):
+        del structures_store_references[i]
+    del structures_store_references
+    for i in reversed(range(len(complex_store_references))):
+        del complex_store_references[i]
+    del complex_store_references
 
     if config.verbosity >= 2:
         t2 = time.time()
@@ -304,7 +321,7 @@ def para_indel_analysis(proteins, config):
 
                 chunk =  [(prot_specific_mapping_dumps[align_prot], structure_infos)]
 
-                alignment_results.append(serializedPipeline.align.remote(conf_dump, chunk, model_path=model.path))
+                alignment_results.append(serializedPipeline.align_remote_wrapper.remote(conf_dump, chunk, model_path=model.path))
 
     if config.verbosity >= 2:
         t3 = time.time()
@@ -312,6 +329,10 @@ def para_indel_analysis(proteins, config):
 
     if config.model_indel_structures:
         result_chunks = ray.get(alignment_results)
+
+    for prot_id in list(prot_specific_mapping_dumps.keys()):
+        del prot_specific_mapping_dumps[prot_id]
+    del prot_specific_mapping_dumps
 
     if config.verbosity >= 2:
         t4 = time.time()

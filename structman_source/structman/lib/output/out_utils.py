@@ -2,133 +2,9 @@ import os
 import time
 from ast import literal_eval
 
-from structman.lib.database import database
+import structman.lib.database.database as database
 from structman.lib.output import out_generator
-
-try:
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-except ImportError:
-    import warnings
-    warnings.warn('Plotting not available, matplotlib not installed')
-
-
-def makeViolins(violins, outfile, session_name, add=''):
-    fs = 10  # fontsize
-    plt.clf()
-
-    for violin_tag in violins:
-        fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(12, 12))
-        classes = list(violins[violin_tag].keys())
-        pos = list(range(len(classes)))
-        data = [violins[violin_tag][cl] for cl in classes]
-        # print classes
-        axes.violinplot(data, pos, widths=0.5,
-                        showmeans=True, showextrema=True, showmedians=True,
-                        bw_method='silverman')
-
-        axes.set_xticks(pos)
-        axes.set_xticklabels(classes, rotation='vertical')
-        # axes[n].set_xlabel(classes, rotation='vertical')
-
-    # for ax in axes.flatten():
-    #    ax.set_yticklabels([])
-
-        fig.suptitle("Violin Plots %s - %s value" % (session_name, violin_tag))
-        # fig.subplots_adjust(hspace=0.0)
-        plt.tight_layout()
-        # plt.show()
-        violin_file = '%s.violin_plots_%s%s.png' % (outfile, violin_tag, add)
-        plt.savefig(violin_file)
-
-
-def plotScatter(scatter_plots, outfile, session_name):
-    """
-    x_values = []
-    y_values = []
-
-    for pdb in dssp_map:
-        for (chain,res) in dssp_map[pdb]:
-            (acc,aa) = dssp_map[pdb][(chain,res)]
-            measure = measure_map[pdb][chain][res]
-            x_values.append(acc)
-            if not anti_corr:
-                y_values.append(measure)
-            else:
-                y_values.append(-measure)
-
-    fig, ax = plt.subplots()
-    ax.scatter(x_values,y_values,alpha=0.01)
-    ax.set_xlabel('RSA', fontsize=15)
-    ax.set_ylabel(y_axis_name, fontsize=15)
-
-    plt.savefig(outfile,dpi=300)
-    """
-    fs = 10  # fontsize
-    plt.clf()
-    scores = ['LI score', 'CI score', 'SI score', 'MI score', 'LoI score']
-    degrees = ['LI degree', 'CI degree', 'SI degree', 'MI degree', 'LoI degree']
-    labels = ['Ligand Interaction Score', 'Chain Interaction Score', 'Short Interaction Score', 'Medium Interaction Score', 'Long Interaction Score']
-    for scatter_tag in scatter_plots:
-        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 12))
-
-        n = 0
-        for score in scores:
-            b = n
-            a = 0
-            if n > 1:
-                b = n - 2
-                a = 1
-            for Class in scatter_plots[scatter_tag][score]:
-                if Class == 'Core':
-                    axes[a, b].scatter(scatter_plots[scatter_tag][score][Class][0], scatter_plots[scatter_tag][score][Class][1], alpha=0.05, color='red')
-                    axes[a, b].set_xlabel(labels[n], fontsize=fs)
-                    axes[a, b].set_ylabel(scatter_tag, fontsize=fs)
-                """else:
-                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='blue')
-                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
-                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)"""
-            n += 1
-
-        fig.suptitle("Scatter Plots Interaction Scores %s - %s value" % (session_name, scatter_tag))
-        # fig.subplots_adjust(hspace=0.0)
-        plt.tight_layout()
-        # plt.show()
-        scatter_file = '%s.scatter_plots_Iscore_%s.png' % (outfile, scatter_tag)
-        # print scatter_file
-        plt.savefig(scatter_file)
-        # print scatter_file
-        plt.clf()
-        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 12))
-        n = 0
-        for score in degrees:
-
-            b = n
-            a = 0
-            if n > 1:
-                b = n - 2
-                a = 1
-            for Class in scatter_plots[scatter_tag][score]:
-                if Class == 'Core':
-                    axes[a, b].scatter(scatter_plots[scatter_tag][score][Class][0], scatter_plots[scatter_tag][score][Class][1], alpha=0.05, color='red')
-                    axes[a, b].set_xlabel(labels[n], fontsize=fs)
-                    axes[a, b].set_ylabel(scatter_tag, fontsize=fs)
-                """else:
-                    axes[a,b].scatter(scatter_plots[scatter_tag][score][Class][0],scatter_plots[scatter_tag][score][Class][1],alpha = 0.05,color='blue')
-                    axes[a,b].set_xlabel(labels[n], fontsize=fs)
-                    axes[a,b].set_ylabel(scatter_tag, fontsize=fs)"""
-            n += 1
-
-        fig.suptitle("Scatter Plots Interaction Degrees %s - %s value" % (session_name, scatter_tag))
-        # fig.subplots_adjust(hspace=0.0)
-        plt.tight_layout()
-        # plt.show()
-        scatter_file = '%s.scatter_plots_Idegrees_%s.png' % (outfile, scatter_tag)
-        # print scatter_file
-        plt.savefig(scatter_file)
-        # print scatter_file
-
+from structman.lib.output import plots
 
 def create_ppi_network(session, config, outfile):
 
@@ -231,13 +107,66 @@ def create_ppi_network(session, config, outfile):
                         f.write('\t'.join([u_ac_1, aacbase_1, pdb_id, chain_1, res_nr_1, u_ac_2, aacbase_2, pdb_id, chain_2, res_nr_2]) + '\n')
     f.close()
 
+def parse_indel_analysis_file(filename, query_tags = []):
+    f = open(filename, 'r')
+    lines = f.readlines()
+    f.close()
 
-def classDistributionFromFile(annotationfile, outfolder, session_name, config, by_conf=False, rin_classes=False):
-    #"Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
-    outfile = '%s/%s' % (outfolder, session_name)
+    indel_map = {'sub':{}, 'del':{}, 'ins':{}}
 
-    t0 = time.time()
+    indel_tag_map = {'sub':{}, 'del':{}, 'ins':{}}
 
+    for indel_type in indel_tag_map:
+        for tag in query_tags:
+            indel_tag_map[indel_type][tag] = {}
+
+    for pos, column_name in enumerate(lines[0].split('\t')):
+        if column_name == 'Tags':
+            tag_pos = pos
+        if column_name == 'Indel':
+            indel_pos = pos
+        if column_name == 'Wildtype RIN-based simple classification':
+            wt_class_pos = pos
+        if column_name == 'Mutant RIN-based simple classification':
+            mut_class_pos = pos
+
+    for line in lines[1:]:
+        words = line.replace('\n', '').split('\t')
+
+        indel_notation = words[indel_pos]
+        if indel_notation.count('delins') == 1:
+            indel_type = 'sub'
+        elif indel_notation.count('del') == 1:
+            indel_type = 'del'
+        elif indel_notation.count('ins') == 1:
+            indel_type = 'ins'
+        else:
+            print(f'Unknown indel type for: {indel_notation}')
+            continue
+        tags = words[tag_pos].split(',')
+        wt_class = words[wt_class_pos]
+        mut_class = words[mut_class_pos]
+
+        
+
+        if indel_type == 'ins':
+            important_class = mut_class
+        else:
+            important_class = wt_class
+
+        if not important_class in indel_map[indel_type]:
+            indel_map[indel_type][important_class] = 0
+        indel_map[indel_type][important_class] += 1
+
+        for tag in tags:
+            if not tag in indel_tag_map[indel_type]:
+                continue
+            if not important_class in indel_tag_map[indel_type][tag]:
+                indel_tag_map[indel_type][tag][important_class] = 0
+            indel_tag_map[indel_type][tag][important_class] += 1
+    return indel_map, indel_tag_map
+
+def parse_annotation_file(annotationfile, by_conf=False, rin_classes=False):
     f = open(annotationfile, 'r')
     lines = f.readlines()
     f.close()
@@ -281,7 +210,7 @@ def classDistributionFromFile(annotationfile, outfolder, session_name, config, b
     for line in lines[1:]:
         words = line.replace('\n', '').split('\t')
 
-        tag = words[tag_pos]
+        tags = words[tag_pos].split(',')
         if not rin_classes:
             classification = words[class_pos]
             simple_classification = words[simple_class_pos]
@@ -305,51 +234,50 @@ def classDistributionFromFile(annotationfile, outfolder, session_name, config, b
         else:
             simple_class_map[simple_classification] += 1
 
-        try:
-            tag_dict = literal_eval(tag)
-        except:
-            tag_dict = {}
-        for aa2 in tag_dict:
-            tags = tag_dict[aa2]
-            for tag in tags.split(','):
-                if tag == '':
-                    continue
-                if tag[0] == '#':
-                    if tag.count(':') == 1:
-                        violin_tag, violin_value = tag[1:].split(':')
-                    else:
-                        violin_tag, violin_value = tag[1:].split('=')
+
+
+        for tag in tags:
+            if tag == '':
+                continue
+            if tag[0] == '#':
+                if tag.count(':') == 1:
+                    violin_tag, violin_value = tag[1:].split(':')
+                else:
+                    violin_tag, violin_value = tag[1:].split('=')
+                try:
                     violin_value = float(violin_value)
-
-                    if violin_tag not in violins:
-                        violins[violin_tag] = {}
-
-                    if simple_classification not in violins[violin_tag]:
-                        violins[violin_tag][simple_classification] = []
-                    violins[violin_tag][simple_classification].append(violin_value)
-
-                    if violin_tag not in comp_violins:
-                        comp_violins[violin_tag] = {}
-
-                    if classification not in comp_violins[violin_tag]:
-                        comp_violins[violin_tag][classification] = []
-                    comp_violins[violin_tag][classification].append(violin_value)
-
+                except:
                     continue
 
-                if tag not in tag_map:
-                    tag_map[tag] = {}
-                    simple_tag_map[tag] = {}
-                    tag_sizes[tag] = 0
-                if classification not in tag_map[tag]:
-                    tag_map[tag][classification] = 1
-                else:
-                    tag_map[tag][classification] += 1
-                if simple_classification not in simple_tag_map[tag]:
-                    simple_tag_map[tag][simple_classification] = 1
-                else:
-                    simple_tag_map[tag][simple_classification] += 1
-                tag_sizes[tag] += 1
+                if violin_tag not in violins:
+                    violins[violin_tag] = {}
+
+                if simple_classification not in violins[violin_tag]:
+                    violins[violin_tag][simple_classification] = []
+                violins[violin_tag][simple_classification].append(violin_value)
+
+                if violin_tag not in comp_violins:
+                    comp_violins[violin_tag] = {}
+
+                if classification not in comp_violins[violin_tag]:
+                    comp_violins[violin_tag][classification] = []
+                comp_violins[violin_tag][classification].append(violin_value)
+
+                continue
+
+            if tag not in tag_map:
+                tag_map[tag] = {}
+                simple_tag_map[tag] = {}
+                tag_sizes[tag] = 0
+            if classification not in tag_map[tag]:
+                tag_map[tag][classification] = 1
+            else:
+                tag_map[tag][classification] += 1
+            if simple_classification not in simple_tag_map[tag]:
+                simple_tag_map[tag][simple_classification] = 1
+            else:
+                simple_tag_map[tag][simple_classification] += 1
+            tag_sizes[tag] += 1
 
         if by_conf:  # TODO
             for hc_thresh in hc_threshs:
@@ -360,12 +288,22 @@ def classDistributionFromFile(annotationfile, outfolder, session_name, config, b
                         simple_high_confidence_map[simple_classification] += 1
                     hc_size += 1
 
+    return tag_map, simple_tag_map, tag_sizes, class_map, simple_class_map, simple_high_confidence_map, violins, comp_violins, size
+
+def classDistributionFromFile(annotationfile, outfolder, session_name, config, by_conf=False, rin_classes=False):
+    #"Uniprot-Ac\tUniprot Id\tRefseq\tPDB-ID (Input)\tResidue-Id\tAmino Acid\tPosition\tSpecies\tTag\tWeighted Surface/Core\tClass\tSimple Class\tConfidence Value\tSecondary Structure\tRecommended Structure\tSequence-ID\tCoverage\tResolution\tMax Seq Id Structure\tMax Sequence-ID\tMax Seq Id Coverage\tMax Seq Id Resolution\tAmount of mapped structures"
+    outfile = '%s/%s' % (outfolder, session_name)
+
+    t0 = time.time()
+
+    tag_map, simple_tag_map, tag_sizes, class_map, simple_class_map, simple_high_confidence_map, violins, comp_violins, size = parse_annotation_file(annotationfile, by_conf=by_conf, rin_classes=rin_classes)
+
     t1 = time.time()
     if config.verbosity >= 2:
         print(('Time for classDistribution Part1: %s' % str(t1 - t0)))
 
-    makeViolins(violins, outfile, session_name)
-    makeViolins(comp_violins, outfile, session_name, add='_complex_classes')
+    plots.makeViolins(violins, outfile, session_name)
+    plots.makeViolins(comp_violins, outfile, session_name, add='_complex_classes')
 
     t2 = time.time()
     if config.verbosity >= 2:
@@ -440,7 +378,6 @@ def classDistributionFromFile(annotationfile, outfolder, session_name, config, b
     t3 = time.time()
     if config.verbosity >= 2:
         print(('Time for c lassDistribution Part3: %s' % str(t3 - t2)))
-
 
 def InteractionScoreAveragesFromFile(InteractionProfilesfile, outfile, session_name, by_tag=False):
     outfile = "%s/%s" % (outfile, session_name)
@@ -577,7 +514,6 @@ def InteractionScoreAveragesFromFile(InteractionProfilesfile, outfile, session_n
 
     plotScatter(scatter_plots, outfile, session_name)
 
-    # print tag_sizes
     startline_words = ['']
     for i in range(0, bins):
         startline_words.append('>%s' % str(min_degree + i * degree_bin_size))

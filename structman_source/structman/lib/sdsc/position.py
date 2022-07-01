@@ -1,13 +1,13 @@
 from structman.lib.sdsc.mappings import Mappings
-from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str
+from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str, doomsday_protocol
 from structman.lib.sdsc import snv as snv_package
 
 class Position:
     __slots__ = ['pos', 'wt_aa', 'mut_aas', 'pos_tags', 'stored', 'database_id', 'pdb_res_nr', 'checked', 'mappings',
-                 'disorder_score', 'disorder_region', 'recommended_structure']
+                 'disorder_score', 'disorder_region', 'recommended_structure', 'session_less']
 
     def __init__(self, pos=None, wt_aa='X', mut_aas=set(), tags=set(), mut_tags_map={}, pdb_res_nr=None,
-                 checked=False, database_id=None, recommended_structure=None):
+                 checked=False, database_id=None, recommended_structure=None, session_less = False):
         self.pos = pos  # the position in a protein sequence, int or None
         self.pdb_res_nr = pdb_res_nr  # this is a string, due to insertion-codes
         self.wt_aa = wt_aa  # wildtype amino acid type in one letter code
@@ -27,6 +27,14 @@ class Position:
         self.disorder_score = None
         self.disorder_region = None
         self.recommended_structure = recommended_structure
+        self.session_less = session_less
+
+    def deconstruct(self):
+        for mut_aa in self.mut_aas:
+            self.mut_aas[mut_aa].deconstruct()
+        del self.mut_aas
+        self.mappings.deconstruct()
+        doomsday_protocol(self)
 
     def print_state(self):
         print(self.wt_aa, self.pos, self.mut_aas, self.pos_tags)
@@ -62,10 +70,11 @@ class Position:
         self.pos_tags = self.pos_tags | position.pos_tags
         for aa in position.mut_aas:
             if aa not in self.mut_aas:
-                self.mut_aas[aa] = position.mut_aas[aa]
+                self.mut_aas[aa] = position.mut_aas[aa].copy()
             else:
                 self.mut_aas[aa].fuse(position.mut_aas[aa])
-
+        position.deconstruct()
+        del position
         return warn
 
     def add_tags(self, tags):

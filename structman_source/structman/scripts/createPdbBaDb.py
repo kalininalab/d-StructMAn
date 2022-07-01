@@ -14,26 +14,32 @@ from structman.base_utils.ray_utils import ray_init, ray_hack
 
 
 @ray.remote(num_cpus=1)
-def parseByAtom(parse_dump, sub_folder):
+def parseByAtom(parse_dump, sub_folder, model_db = False):
     ray_hack()
     chain_order = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
     divide_folder = parse_dump
 
-    files = os.listdir("%s%s" % (divide_folder, sub_folder))
+    files = os.listdir("%s/%s" % (divide_folder, sub_folder))
     great_seq_map = {}
     bio_entries = set()
 
     error_files = []
 
     for filename in files:
-        if not filename.count('.pdb1.gz') > 0:
-            continue
-        pdb_id = filename[:4].upper()
+        if not model_db:
+            if not filename.count('.pdb1.gz') > 0:
+                continue
+            pdb_id = filename[:4].upper()
 
-        bio_entries.add(pdb_id)
-        path = "%s%s/%s" % (divide_folder, sub_folder, filename)
+            bio_entries.add(pdb_id)
+            path = "%s%s/%s" % (divide_folder, sub_folder, filename)
 
-        f = gzip.open(path, 'rb')
+            f = gzip.open(path, 'rb')
+        else:
+            pdb_id = '-'.join(filename.split('-')[:2])
+            path = f'{divide_folder}/{sub_folder}/{filename}'
+
+            f = open(path,'rb')
         page = f.read()
         f.close()
 
@@ -155,7 +161,7 @@ def parseByAtomAU(sub_folder, AU_dump):
 
     AU_folder, bio_entries = AU_dump
     great_seq_map = {}
-    files = os.listdir("%s%s" % (AU_folder, sub_folder))
+    files = os.listdir("%s/%s" % (AU_folder, sub_folder))
     for filename in files:
         if not filename.count('.ent.gz') > 0:
             continue
@@ -324,9 +330,64 @@ def parse_seq_file(seq_file, recently_modified_structures):
 
     return pdb_ids, great_seq_map
 
+def create_model_db_fasta(config):
+    great_seq_map = {}
+    parse_results = []
+
+    parse_dump = ray.put(config.path_to_model_db)
+
+    for topfolder in os.listdir(config.path_to_model_db):
+        if not os.path.isdir(f'{config.path_to_model_db}/{topfolder}'):
+            continue
+        for sub_folder in os.listdir(f'{config.path_to_model_db}/{topfolder}'):
+            parse_results.append(parseByAtom.remote(parse_dump, f'{topfolder}/{sub_folder}', model_db = True))
+
+    parse_out = ray.get(parse_results)
+    for seq_map, bio_entries_part, error_files in parse_out:
+        if len(error_files) > 0:
+            for error_file in error_files:
+                config.errorlog.add_warning('Error with file: %s' % error_file)
+        for seq in seq_map:
+            if seq not in great_seq_map:
+                great_seq_map[seq] = seq_map[seq]
+            else:
+                great_seq_map[seq] += seq_map[seq]
+
+    entries = []
+
+    id_list = []
+
+    for seq in great_seq_map:
+        if seq == '':
+            continue
+
+        for pdb, chain in great_seq_map[seq]:
+            id_list.append('%s-%s' % (pdb, chain))
+            #seed_id_map_lines.append('%s\t%s' % (seed_id,','.join(id_list)))
+
+        block_seqs = []
+        while len(seq) > 0:
+            m = min((len(seq), 80))
+            block_seqs.append(seq[:m])
+            seq = seq[m:]
+
+        if id_list == []:
+            continue
+
+        entry = ">%s\n%s" % (','.join(id_list), '\n'.join(block_seqs))
+        entries.append(entry)
+        id_list = []
+
+    page = '\n'.join(entries)
+
+    f = open(config.model_db_fasta_path, 'w') # get set in scripts/update.py
+    f.write(page)
+    f.close()
+
+    return len(great_seq_map) > 0
 
 def main(config):
-    seq_file = config.pdb_fasta_path
+    seq_file = config.pdb_fasta_path # get set in scripts/update.py
 
     ray_init(config)
 
@@ -416,6 +477,11 @@ def main(config):
     f.write(page)
     f.close()
 
+    if config.path_to_model_db is not None:
+        config.model_db_fasta_created = create_model_db_fasta(config)
+    else:
+        config.model_db_fasta_created = False
+
     ray.shutdown()
 
     #f = open(id_map_file,'w')
@@ -424,6 +490,5 @@ def main(config):
 
 
 if __name__ == "__main__":
-    #seq_file = 'pdbba'
-    #seq_file = '/TL/sin/work/agress/StructMAn_git/lib/base/blast_db/pdbba_mmseqs2'
+
     main(seq_file, set(), fromScratch=True)  # BUG: undefined variable

@@ -1,16 +1,18 @@
 from structman.lib import pdbParser
-
+from structman.base_utils.base_utils import is_alphafold_model, alphafold_model_id_to_file_path
+from structman.lib.sdsc.sdsc_utils import doomsday_protocol
 
 class Complex:
     __slots__ = [
         'pdb_id', 'resolution', 'interaction_partners', 'database_id', 'chains', 'chainlist', 'stored',
         'lig_profile', 'metal_profile', 'ion_profile', 'chain_chain_profile', 'homomers',
-        'atom_count', 'page'
+        'atom_count', 'page', 'IAmap', 'interfaces'
     ]
 
     def __init__(self, pdb_id, resolution=None, chains_str=None, lig_profile=None, lig_profile_str=None, metal_profile=None,
                  metal_profile_str=None, ion_profile=None, ion_profile_str=None, chain_chain_profile=None,
-                 chain_chain_profile_str=None, stored=False, database_id=None, homomers={}, homomers_str=None, atom_count=None):
+                 chain_chain_profile_str=None, stored=False, database_id=None, homomers=None, homomers_str=None, atom_count=None,
+                 IAmap = None, interfaces = None):
         self.pdb_id = pdb_id
         self.chains = {}  # {One-letter-chain-id:chaintype} ; possible chaintypes: 'Protein','DNA','RNA,'Peptide'
         self.chainlist = None
@@ -22,9 +24,20 @@ class Complex:
         self.metal_profile = metal_profile
         self.ion_profile = ion_profile
         self.chain_chain_profile = chain_chain_profile
-        self.homomers = homomers  # Output of pdbParser.getInfo
+        if homomers is None:
+            self.homomers = {}
+        else:
+            self.homomers = homomers  # Output of pdbParser.getInfo
         self.atom_count = atom_count
         self.page = None
+        if IAmap is None:
+            self.IAmap = {}
+        else:
+            self.IAmap = IAmap
+        if interfaces is None:
+            self.interfaces = {}
+        else:
+            self.interfaces = interfaces
 
         if homomers_str is not None:
             self.parseHomomersStr(homomers_str)
@@ -43,6 +56,17 @@ class Complex:
 
         if chain_chain_profile_str is not None:
             self.chain_chain_profile = self.parseProfileStr(chain_chain_profile_str)
+
+    def deconstruct(self):
+        del self.chain_chain_profile
+        del self.ion_profile
+        del self.metal_profile
+        del self.lig_profile
+        for inter in self.interfaces:
+            self.interfaces[inter].deconstruct()
+        del self.interfaces
+        del self.chains
+        doomsday_protocol(self)
 
     def parseHomomersStr(self, homomers_str):
         homomers = {}
@@ -124,6 +148,18 @@ class Complex:
 
     def getLigProfileStr(self):
         return self.getProfileStr(self.lig_profile)
+
+    def set_IAmap(self, IAmap):
+        self.IAmap = IAmap
+
+    def get_IAmap(self):
+        return self.IAmap
+
+    def set_interfaces(self, interfaces):
+        self.interfaces = interfaces
+
+    def get_interfaces(self):
+        return self.interfaces
 
     def set_metal_profile(self, value):
         self.metal_profile = value
@@ -212,9 +248,21 @@ class Complex:
     def set_atom_count(self, atom_count):
         self.atom_count = atom_count
 
+    def print_interfaces(self):
+        for (chain_1, chain_2) in self.interfaces:
+            print(chain_1, chain_2, self.interfaces[(chain_1, chain_2)].interactions)
+            print(self.interfaces[(chain_1, chain_2)].residues)
+
     def getPage(self, config, self_update=False):
         if self_update:
-            parse_out = pdbParser.getStandardizedPdbFile(self.pdb_id, config.pdb_path, verbosity=config.verbosity)
+            if config.model_db_active:
+                if is_alphafold_model(self.pdb_id):
+                    model_path = alphafold_model_id_to_file_path(self.pdb_id, config)
+                else:
+                    model_path = None
+            else:
+                model_path = None
+            parse_out = pdbParser.getStandardizedPdbFile(self.pdb_id, config.pdb_path, verbosity=config.verbosity, model_path = model_path)
 
             if parse_out is None:
                 config.errorlog.add_error('pdbParser failed: %s %s %s' % (u_ac, pdb_id, chain))

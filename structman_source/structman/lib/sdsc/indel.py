@@ -1,7 +1,7 @@
 from structman.lib.sdsc.sdsc_utils import translate
-
 from structman.lib.sdsc.mappings import Mappings
 from structman.lib.sdsc import position as position_package
+from structman.lib.sdsc.sdsc_utils import doomsday_protocol
 
 def majority_vote(secs):
     class_dict = {}
@@ -77,6 +77,10 @@ class Indel:
         self.left_flank_mut_aggregates = None
         self.right_flank_wt_aggregates = None
         self.right_flank_mut_aggregates = None
+
+    def deconstruct(self):
+        del self.tags
+        doomsday_protocol(self)
 
     def set_proteins(self, wt_prot, mut_prot):
         self.wt_prot = wt_prot

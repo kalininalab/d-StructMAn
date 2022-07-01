@@ -2,17 +2,21 @@ import sys
 from structman.lib.sdsc.consts import codons
 from structman.lib.sdsc.indel import Indel
 from structman.lib.sdsc.mutations import MultiMutation
-from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str
+from structman.lib.sdsc.sdsc_utils import process_recommend_structure_str, doomsday_protocol
 from structman.lib.sdsc.position import Position
 
 
 class Protein:
     __slots__ = ['primary_protein_id', 'u_ac', 'u_id', 'ref_id', 'ref_nt_id', 'other_ids', 'pdb_id', 'positions', 'res_id_map',
                  'sequence', 'nucleotide_sequence', 'stored', 'completely_stored', 'wildtype_protein',
-                 'go_terms', 'pathways', 'disorder_regions', 'disorder_tool', 'database_id', 'structure_annotations', 'input_id', 'multi_mutations']
+                 'go_terms', 'pathways', 'disorder_regions', 'disorder_tool', 'database_id', 'structure_annotations', 'input_id', 'multi_mutations',
+                 'aggregated_contact_matrix', 'aggregated_interface_map'
+                ]
 
     def __init__(self, errorlog, primary_protein_id=None, u_ac=None, u_id=None, ref_id=None, ref_nt_id = None, wildtype_protein=None,
-                 pdb_id=None, positions={}, database_id=None, other_ids=[], input_id=None, sequence=None):
+                 pdb_id=None, positions={}, database_id=None, other_ids=[], input_id=None, sequence=None, aggregated_contact_matrix = {},
+                 aggregated_interface_map = {}
+                ):
         self.primary_protein_id = primary_protein_id
         self.u_ac = u_ac  # UNIPROT accession number
         self.u_id = u_id  # UNIPROT ID
@@ -35,6 +39,8 @@ class Protein:
         self.structure_annotations = {}
         self.multi_mutations = []
         self.wildtype_protein = wildtype_protein
+        self.aggregated_contact_matrix = aggregated_contact_matrix
+        self.aggregated_interface_map = aggregated_interface_map
 
         if pdb_id is None:
             warns = self.add_positions(positions)
@@ -46,6 +52,19 @@ class Protein:
         self.other_ids = {}
         for id_id, other_id in other_ids:
             self.other_ids[id_id] = other_id
+
+    def deconstruct(self):
+        for pos in self.positions:
+            self.positions[pos].deconstruct()
+        del self.positions
+        del self.sequence
+        for struct_id in self.structure_annotations:
+            self.structure_annotations[struct_id].deconstruct()
+        del self.structure_annotations
+        for interface_obj in self.aggregated_interface_map:
+            interface_obj.deconstruct()
+        del self.aggregated_interface_map        
+        doomsday_protocol(self)
 
     def print_state(self):
         print('----State of %s----' % self.u_ac)
@@ -103,21 +122,25 @@ class Protein:
         else:
             return warns
 
-    def popNone(self):
+    def popNone(self, lite_mode):
         if self.pdb_id is None:
             if None in self.positions:
                 tags = self.positions[None].pos_tags
                 del self.positions[None]
                 return True, tags
-            else:
+            elif lite_mode:
                 return False, set()
+            else:
+                return True, None
         else:
             if None in self.res_id_map:
                 tags = self.res_id_map[None].pos_tags
                 del self.res_id_map[None]
                 return True, tags
-            else:
+            elif lite_mode:
                 return False, set()
+            else:
+                return True, None
 
     def translatePositions(self, nuc_seq):
         new_positions = {}
@@ -336,7 +359,7 @@ class Protein:
         del self.structure_annotations
 
     def get_annotation_list(self):
-        return self.structure_annotations.keys()
+        return list(self.structure_annotations.keys())
 
     def get_structure_annotations(self):
         return self.structure_annotations
@@ -376,6 +399,20 @@ class Protein:
 
     def get_sub_infos(self, pdb_id, chain):
         return self.structure_annotations[(pdb_id, chain)].get_sub_infos()
+
+    def set_backmap(self, structure_id, chain, backmap):
+        self.structure_annotations[(structure_id, chain)].set_backmap(backmap)
+
+    def get_backmap(self, structure_id, chain):
+        if (structure_id, chain) not in self.structure_annotations:
+            return {}
+        return self.structure_annotations[(structure_id, chain)].get_backmap()
+
+    def set_aggregated_contact_matrix(self, aggregated_contact_matrix):
+        self.aggregated_contact_matrix = aggregated_contact_matrix
+
+    def set_aggregated_interface_map(self, aggregated_interface_map):
+        self.aggregated_interface_map = aggregated_interface_map
 
     def add_pos_res_mapping(self, pos, pdb_id, chain, res_nr, mapping):
         self.positions[pos].add_pos_res_mapping(pdb_id, chain, res_nr, mapping)
@@ -512,8 +549,28 @@ class Proteins:
         del self.stored_ids_mutant_excluded
         del self.not_stored_ids
         del self.id_map
+        for struct in self.structures:
+            self.structures[struct].deconstruct()
         del self.structures
+        for comp in self.complexes:
+            self.complexes[comp].deconstruct()
         del self.complexes
+
+    def deconstruct(self):
+        try:
+            self.semi_deconstruct()
+        except:
+            pass
+        for prot_id in self.protein_map:
+            self.protein_map[prot_id].deconstruct()
+        del self.protein_map
+        for indel in self.indels:
+            self.indels[indel].deconstruct()
+        del self.indels
+        for mm in self.multi_mutations:
+            self.multi_mutations.deconstruct()
+        del self.multi_mutations
+        doomsday_protocol(self)
 
     def remove_protein_annotations(self, u_ac):
         self.protein_map[u_ac].remove_annotations()
@@ -562,6 +619,35 @@ class Proteins:
 
     def get_lig_str(self, pdb_id):
         return self.complexes[pdb_id].getLigProfileStr()
+
+    def set_IAmap(self, structure_id, IAmap):
+        self.complexes[structure_id].set_IAmap(IAmap)
+
+    def get_IAmap(self, structure_id):
+        return self.complexes[structure_id].get_IAmap()
+
+    def set_interfaces(self, structure_id, interfaces):
+        self.complexes[structure_id].set_interfaces(interfaces)
+
+    def get_interfaces(self, structure_id):
+        return self.complexes[structure_id].get_interfaces()
+
+    def print_interfaces(self):
+        for structure_id in self.complexes:
+            print(structure_id)
+            self.complexes[structure_id].print_interfaces()
+
+    def set_backmap(self, protein_id, structure_id, chain, backmap):
+        self.protein_map[protein_id].set_backmap(structure_id, chain, backmap)
+
+    def get_backmap(self, protein_id, structure_id, chain):
+        return self.protein_map[protein_id].get_backmap(structure_id, chain)
+
+    def set_aggregated_contact_matrix(self, protein_id, aggregated_contact_matrix):
+        self.protein_map[protein_id].set_aggregated_contact_matrix(aggregated_contact_matrix)
+
+    def set_aggregated_interface_map(self, protein_id, aggregated_interface_map):
+        self.protein_map[protein_id].set_aggregated_interface_map(aggregated_interface_map)
 
     def set_ion_profile(self, pdb_id, value):
         self.complexes[pdb_id].set_ion_profile(value)
@@ -935,9 +1021,12 @@ class Proteins:
     def get_structure_list(self):
         return set(self.structures.keys())
 
-    def getStoredStructureIds(self):
+    def getStoredStructureIds(self, exclude_interacting_chains = False):
         stored_ids = {}
         for (pdb_id, chain) in self.structures:
+            if exclude_interacting_chains:
+                if self.structures[(pdb_id, chain)].interacting_structure:
+                    continue
             if self.structures[(pdb_id, chain)].get_stored():
                 stored_ids[self.structures[(pdb_id, chain)].get_database_id()] = (pdb_id, chain)
         return stored_ids
@@ -964,11 +1053,17 @@ class Proteins:
         self.protein_map[u_ac].add_annotation(pdb_id, chain, anno_obj)
 
     def remove_annotation(self, u_ac, pdb_id, chain):
-        self.protein_map[u_ac].remove_annotation(pdb_id, chain)
+        try:
+            self.protein_map[u_ac].remove_annotation(pdb_id, chain)
+        except:
+            return
 
     def remove_structures(self, structure_ids):
         for structure_id in structure_ids:
-            del self.structures[structure_id]
+            try:
+                del self.structures[structure_id]
+            except:
+                continue
 
     def remove_complexes(self, pdb_ids):
         for pdb_id in pdb_ids:

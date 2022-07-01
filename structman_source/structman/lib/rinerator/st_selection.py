@@ -44,9 +44,6 @@ def set_str_sel(sel_id, pdb_file_bname, pdb_path, selection_lst):
 
     stsel_obj.set_subid_dic()
     print("INFO: Read PDB %s for selection %s" % (pdb_file_bname, sel_id))
-    # print stsel_obj.res_id_lst
-    # print sel_id
-    # print pdb_file_bname
     return stsel_obj
 
 
@@ -275,11 +272,9 @@ class StSel:
 
     def get_atom_label_from_subid(self, chain_id, res_seq, icode, resname, atom_name, altloc):
         atom_key = self.get_atom_subid_key(chain_id, res_seq, icode, resname, atom_name, altloc)
-        # print(atom_key)
         if atom_key in self.atom_subid_dic:
             atom_label = self.atom_subid_dic[atom_key]
         else:
-            # print("ERROR: No atom with chain_id %s res_seq %s icode %s resname %s atom_name %s" % (chain_id,str(res_seq),icode,resname,atom_name))
             atom_label = None
         return atom_label
 

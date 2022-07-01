@@ -9,22 +9,36 @@ from structman.lib.sdsc import sdsc_utils
 from structman.lib.sdsc.consts import residues as residue_consts
 from structman.lib.database import database
 from structman.lib.output.feature import init_feature_table
-from structman.lib.output.out_utils import makeViolins
+from structman.lib.output.interfaces import init_aggregated_interface_table, init_protein_protein_table, init_position_position_table
 from structman.lib.output import out_generator
 from filelock import FileLock
 from structman.base_utils import base_utils
 from structman.base_utils import ray_utils
 
 def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
+    class Count_helper:
+        def __init__(self, tag_name):
+            self.tag_name = tag_name
+            self.prot_type_map = {}
+            self.total_positions = 0
+            self.mapped_positions = 0
+            self.disordered_positions = 0
+            self.unmapped_positions = 0
+            self.positions_mapped_to_corresponding_structure = 0
+            self.positions_mapped_to_homolog = 0
+            self.positions_mapped_to_model = 0
+
     seq_id_threshold = 0.99
-    startline = 'Tag\tTotal proteins\tTotal positions\tUnmapped proteins\tEntirely disordered proteins\tProteins mapped to at least one corresponding structure (seq-id > %s%%\tProteins mapped only to structure of homologs (seq-id <= %s%%)\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold), str(seq_id_threshold), str(seq_id_threshold), str(seq_id_threshold))
-    outmap = {'All': [{}, 0, 0, 0, 0, 0, 0]}
+    startline = 'Tag\tTotal proteins\tTotal positions\tUnmapped proteins\tEntirely disordered proteins\tProteins mapped to at least one corresponding structure (seq-id > %s%%\tProteins mapped only to structure of homologs (seq-id <= %s%%)\tProteins mapped only to a model\tMapped positions\tMapped into at least one corresponding structure (seq-id > %s%%)\tMapped only in homologs (seq-id <= %s%%)\tMapped only in a model\tUnmapped, Disorder\tUnmapped, Globular' % (str(seq_id_threshold), str(seq_id_threshold), str(seq_id_threshold), str(seq_id_threshold))
+    outmap = {'All': Count_helper('All')}
 
     if stat_dict is not None:
         class_dict = stat_dict
         max_seq_key = 1
+        rec_struct_key = 2
     else:
         max_seq_key = 21
+        rec_struct_key = 22
     for m in tag_map:
         if tag_map[m] is not None and tag_map[m] != '':
             raw_tags = tag_map[m].split(',')
@@ -38,54 +52,63 @@ def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
 
         for tag in tags:
             if tag not in outmap:
-                outmap[tag] = [{}, 0, 0, 0, 0, 0, 0]
-            g = mutation_dict[m][1]
-            if g not in outmap[tag][0]:
-                outmap[tag][0][g] = 1
-            outmap[tag][1] += 1
+                outmap[tag] = Count_helper(tag)
+            ct = outmap[tag]
+            prot_id = mutation_dict[m][1]
+            if prot_id not in ct.prot_type_map:
+                ct.prot_type_map[prot_id] = 1
+            ct.total_positions += 1
 
             if m in class_dict:
                 clas = class_dict[m][0]
                 max_seq_id = class_dict[m][max_seq_key]
+                recommended_structure = class_dict[m][rec_struct_key]
+                is_model = recommended_structure[:3] == 'AF-'
                 if clas != 'Disorder' and clas is not None:
-                    outmap[tag][2] += 1
+                    ct.mapped_positions += 1
                     if max_seq_id > seq_id_threshold:
-                        outmap[tag][5] += 1
-                        outmap[tag][0][g] = 2
+                        ct.positions_mapped_to_corresponding_structure += 1
+                        ct.prot_type_map[prot_id] = 2
+                    elif not is_model:
+                        ct.positions_mapped_to_homolog += 1
+                        if not ct.prot_type_map[prot_id] == 2:
+                            ct.prot_type_map[prot_id] = 3
                     else:
-                        outmap[tag][6] += 1
-                        if not outmap[tag][0][g] == 2:
-                            outmap[tag][0][g] = 3
+                        ct.positions_mapped_to_model += 1
+                        if not (ct.prot_type_map[prot_id] == 2 or ct.prot_type_map[prot_id] == 3):
+                            ct.prot_type_map[prot_id] = 4
                 elif clas == 'Disorder':
-                    outmap[tag][3] += 1
+                    ct.disordered_positions += 1
                 else:
-                    outmap[tag][4] += 1
-                    if not outmap[tag][0][g] > 1:
-                        outmap[tag][0][g] = 0
+                    ct.unmapped_positions += 1
+                    if not ct.prot_type_map[prot_id] > 1:
+                        ct.prot_type_map[prot_id] = 0
             else:
-                outmap[tag][4] += 1
-                if not outmap[tag][0][g] > 1:
-                    outmap[tag][0][g] = 0
+                ct.unmapped_positions += 1
+                if not ct.prot_type_map[prot_id] > 1:
+                    ct.prot_type_map[prot_id] = 0
     if None in outmap:
         del outmap[None]
 
     lines = [startline]
     for tag in outmap:
-        tot_prot = len(outmap[tag][0])
-        tot_pos = outmap[tag][1]
-        mapped = outmap[tag][2]
-        dis = outmap[tag][3]
-        unmapped = outmap[tag][4]
-        mapped_to_corr = outmap[tag][5]
-        mapped_to_homolog = outmap[tag][6]
+        ct = outmap[tag]
+        tot_prot = len(ct.prot_type_map)
+        tot_pos = ct.total_positions
+        mapped = ct.mapped_positions
+        dis = ct.disordered_positions
+        unmapped = ct.unmapped_positions
+        mapped_to_corr = ct.positions_mapped_to_corresponding_structure
+        mapped_to_homolog = ct.positions_mapped_to_homolog
+        mapped_to_model = ct.positions_mapped_to_model
 
-        prot_numbers = [0, 0, 0, 0]
-        for g in outmap[tag][0]:
-            prot_numbers[outmap[tag][0][g]] += 1
+        prot_numbers = [0, 0, 0, 0, 0]
+        for prot_id in ct.prot_type_map:
+            prot_numbers[ct.prot_type_map[prot_id]] += 1
 
         if float(tot_pos) == 0.0:
             continue
-        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (
+        line = '%s\t%s\t%s\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)\t%s (%s%%)' % (
             tag,
             str(tot_prot),
             str(tot_pos),
@@ -93,9 +116,11 @@ def writeStatFile(out_file, mutation_dict, class_dict, tag_map, stat_dict=None):
             str(prot_numbers[1]), str(100. * float(prot_numbers[1]) / float(tot_prot)),
             str(prot_numbers[2]), str(100. * float(prot_numbers[2]) / float(tot_prot)),
             str(prot_numbers[3]), str(100. * float(prot_numbers[3]) / float(tot_prot)),
+            str(prot_numbers[4]), str(100. * float(prot_numbers[4]) / float(tot_prot)),
             str(mapped), str(100. * float(mapped) / float(tot_pos)),
             str(mapped_to_corr), str(100. * float(mapped_to_corr) / float(tot_pos)),
             str(mapped_to_homolog), str(100. * float(mapped_to_homolog) / float(tot_pos)),
+            str(mapped_to_model), str(100. * float(mapped_to_model) / float(tot_pos)),
             str(dis), str(100. * float(dis) / float(tot_pos)),
             str(unmapped), str(100. * float(unmapped) / float(tot_pos)))
         lines.append(line)
@@ -128,15 +153,20 @@ def init_classification_table(class_file, obj_only = False):
 @ray.remote(max_calls = 1)
 def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict):
 
-    config, input_res_id_dict, classification_file_path, feature_file_path = store_data
+    config, input_res_id_dict, classification_file_path, feature_file_path, interface_file_path, interface_map, position_interface_map = store_data
 
     classification_output = init_classification_table(None, obj_only = True)
     feature_output = init_feature_table(None, obj_only = True)
+    if config.compute_ppi:
+        interface_output = init_aggregated_interface_table(None, obj_only = True)
 
     results = []
     c_lines = []
     f_lines = []
+    interface_lines = []
     stat_dict = {}
+
+    interface_numbers = {}
 
     max_lines = 10000
 
@@ -199,9 +229,9 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
         (prot_id, u_ac, refseq, u_id, error_code, error, input_id) = protein_dict[prot_db_id]
 
         if max_seq_seq_id == '-':
-            stat_dict[m] = (Class, 0.)
+            stat_dict[m] = (Class, 0., recommended_structure)
         else:
-            stat_dict[m] = (Class, float(max_seq_seq_id))
+            stat_dict[m] = (Class, float(max_seq_seq_id), recommended_structure)
 
         if config.skipref:
             refseq = ''
@@ -236,11 +266,34 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
 
         c_lines.append(classification_output.pop_line())
 
+        if config.compute_ppi:
+            if m in position_interface_map:
+                interface_db_id, recommended_interface_residue = position_interface_map[m]
+                if not prot_db_id in interface_numbers:
+                    interface_numbers[prot_db_id] = {}
+                if not interface_db_id in interface_numbers[prot_db_id]:
+                    interface_numbers[prot_db_id][interface_db_id] = len(interface_numbers[prot_db_id]) + 1
+                interface_number = interface_numbers[prot_db_id][interface_db_id]
+                interface_structure_recommendation = interface_map[interface_db_id][1]
+
+                interface_output.add_value('Input Protein ID', input_id)
+                interface_output.add_value('Primary Protein ID', prot_id)
+                interface_output.add_value('Uniprot-Ac', u_ac)
+                interface_output.add_value('WT Amino Acid', wt_aa)
+                interface_output.add_value('Position', position_number)
+                interface_output.add_value('Interface Number', interface_number)
+                interface_output.add_value('Interface Structure Recommendation', interface_structure_recommendation)
+                interface_output.add_value('Position Structure Recommendation', recommended_interface_residue)
+
+                interface_lines.append(interface_output.pop_line())
+
         if m not in snv_map:
             snv_map[m] = {0: wt_aa}
             snv_tag_map[0] = tag_map[m]
         for snv_database_id in snv_map[m]:
             new_aa = snv_map[m][snv_database_id]
+            if wt_aa not in residue_consts.HYDROPATHY or new_aa not in residue_consts.HYDROPATHY:
+                continue
             tags = snv_tag_map[snv_database_id]
             aac = "%s%s%s" % (wt_aa, str(position_number), new_aa)
             feature_output.add_value('Input Protein ID', input_id)
@@ -364,6 +417,13 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
                     f.write(''.join(c_lines))
             c_lines = []
 
+        if config.compute_ppi:
+            if len(interface_lines) > max_lines:
+                with FileLock(os.path.abspath(f'{interface_file_path}.lock')):
+                    with open(interface_file_path, 'a') as f:
+                        f.write(''.join(interface_lines))
+                interface_lines = []
+
     with FileLock(os.path.abspath('%s.lock' % feature_file_path)):
         with open(feature_file_path, 'a') as feat_f:
             feat_f.write(''.join(f_lines))
@@ -373,6 +433,12 @@ def unpack_rows(package, store_data, tag_map, snv_map, snv_tag_map, protein_dict
     with FileLock(os.path.abspath('%s.lock' % classification_file_path)):
         with open(classification_file_path, 'a') as f:
             f.write(''.join(c_lines))
+
+    if config.compute_ppi:
+        with FileLock(os.path.abspath(f'{interface_file_path}.lock')):
+            with open(interface_file_path, 'a') as f:
+                f.write(''.join(interface_lines))
+
     return stat_dict
 
 def classificationOutput(config, outfolder, session_name, session_id, ligand_filter=None):
@@ -440,6 +506,90 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
     protein_dict = database.getProteinDict(prot_id_list, session_id, config)
 
+    if config.compute_ppi:
+        table = 'Interface'
+        columns = ['Protein', 'Interface_Id', 'Structure_Recommendation']
+
+        results = database.binningSelect(prot_id_list, columns, table, config)
+
+        interface_dict = {}
+        for row in results:
+            interface_dict[row[1]] = (row[0], row[2])
+
+        table = 'Protein_Protein_Interaction'
+        columns = ['Interface_A', 'Interface_B', 'Complex', 'Chain_A', 'Chain_B']
+
+        results = database.binningSelect(list(interface_dict.keys()), columns, table, config)
+
+        prot_prot_file = f'{outfile}.protein_protein_interactions.tsv'
+        if os.path.isfile(prot_prot_file):
+            os.remove(prot_prot_file)
+        prot_prot_output, prot_prot_f = init_protein_protein_table(prot_prot_file)
+
+        ppi_map = {}
+        complex_ids = set()
+        for row in results:
+            ppi_map[row[0]] = row[1:]
+            complex_ids.add(row[2])
+
+        table = 'Complex'
+        columns = ['Complex_Id', 'PDB']
+
+        results = database.binningSelect(list(complex_ids), columns, table, config)
+
+        complex_id_map = {}
+        for row in results:
+            complex_id_map[row[0]] = row[1]
+
+        table = 'RS_Position_Interface'
+        columns = ['Interface', 'Position', 'Recommended_Residue']
+
+        results = database.binningSelect(list(interface_dict.keys()), columns, table, config)
+
+        position_interface_map = {}
+        for row in results:
+            position_interface_map[row[1]] = (row[0], row[2])
+
+        table = 'Position_Position_Interaction'
+        columns = ['Position_A', 'Position_B', 'Residue_A', 'Residue_B']
+
+        results = database.binningSelect(list(tag_map.keys()), columns, table, config)
+
+        pos_pos_map = {}
+        residue_ids = set()
+        session_less_position_ids = set()
+        for row in results:
+            pos_pos_map[row[0]] = (row[1], row[2], row[3])
+            residue_ids.add(row[2])
+            residue_ids.add(row[3])
+            if row[0] not in tag_map:
+                session_less_position_ids.add(row[0])
+            if row[1] not in tag_map:
+                session_less_position_ids.add(row[1])
+
+        table = 'Residue'
+        columns = ['Residue_Id', 'Number']
+
+        results = database.binningSelect(list(residue_ids), columns, table, config)
+
+        res_nr_map = {}
+        for row in results:
+            res_nr_map[row[0]] = row[1]
+
+        table = 'Position'
+        columns = ['Position_Id', 'Position_Number', 'Wildtype_Residue']
+
+        results = database.binningSelect(list(session_less_position_ids), columns, table, config)
+
+        pos_info_map = {}
+
+        for row in results:
+            pos_info_map[row[0]] = row[2], row[1]
+
+    else:
+        interface_dict = None
+        position_interface_map = None
+
     class_files = []
 
     class_file = "%s.classification.tsv" % (outfile)
@@ -454,6 +604,18 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
     stat_file = "%s.statistics.tsv" % (outfile)
     if os.path.isfile(stat_file):
         os.remove(stat_file)
+
+    if config.compute_ppi:
+        interface_file = f'{outfile}.interfaces.tsv'
+        if os.path.isfile(interface_file):
+            os.remove(interface_file)
+
+        pos_pos_file = f'{outfile}.position_positions_interactions.tsv'
+        if os.path.isfile(pos_pos_file):
+            os.remove(pos_pos_file)
+        pos_pos_output, pos_pos_f = init_position_position_table(pos_pos_file)
+    else:
+        interface_file = None
 
     if config.verbosity >= 2:
         t3 = time.time()
@@ -472,18 +634,27 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
     classification_output, f = init_classification_table(class_file)
     feature_output, feat_f = init_feature_table(feature_file)
+    if config.compute_ppi:
+        interface_output, interface_f = init_aggregated_interface_table(interface_file)
+    else:
+        interface_output = None
+        interface_f = None
 
     max_rows_at_a_time = 5000000
 
-    use_ray = len(all_results) > config.proc_n
+    #use_ray = len(all_results) > config.proc_n
+    use_ray = False #Currently no working with ppi output
 
     if use_ray:
         ray_utils.ray_init(config)
-        data_store = ray.put((config, input_res_id_dict, class_file, feature_file))
+        data_store = ray.put((config, input_res_id_dict, class_file, feature_file, interface_file, interface_dict, position_interface_map))
 
     already_unpacked = False
     main_loop_counter = 0
     stat_dict = {}
+    interface_numbers = {}
+
+
     while((main_loop_counter)*max_rows_at_a_time <= len(all_results)):
         if config.verbosity >= 2:
                 t4 = time.time()
@@ -497,6 +668,8 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
         if use_ray:
             f.close()
             feat_f.close()
+            if config.compute_ppi:
+                interface_f.close()
 
             small_chunksize, big_chunksize, n_of_small_chunks, n_of_big_chunks = base_utils.calculate_chunksizes(config.proc_n, len(results))
             if config.verbosity >= 3:
@@ -630,9 +803,9 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                         rin_simple_class = 'Disorder'
 
                 if max_seq_seq_id == '-':
-                    stat_dict[m] = (Class, 0.)
+                    stat_dict[m] = (Class, 0., recommended_structure)
                 else:
-                    stat_dict[m] = (Class, float(max_seq_seq_id))
+                    stat_dict[m] = (Class, float(max_seq_seq_id), recommended_structure)
 
                 (prot_id, u_ac, refseq, u_id, error_code, error, input_id) = protein_dict[prot_db_id]
 
@@ -668,6 +841,29 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                 classification_output.add_value('Amount of mapped structures', amount_of_structures)
 
                 f.write(classification_output.pop_line())
+
+                if config.compute_ppi:
+                    pos_info_map[m] = wt_aa, position_number
+
+                    if m in position_interface_map:
+                        interface_db_id, recommended_interface_residue = position_interface_map[m]
+                        if not prot_db_id in interface_numbers:
+                            interface_numbers[prot_db_id] = {}
+                        if not interface_db_id in interface_numbers[prot_db_id]:
+                            interface_numbers[prot_db_id][interface_db_id] = len(interface_numbers[prot_db_id]) + 1
+                        interface_number = interface_numbers[prot_db_id][interface_db_id]
+                        interface_structure_recommendation = interface_dict[interface_db_id][1]
+
+                        interface_output.add_value('Input Protein ID', input_id)
+                        interface_output.add_value('Primary Protein ID', prot_id)
+                        interface_output.add_value('Uniprot-Ac', u_ac)
+                        interface_output.add_value('WT Amino Acid', wt_aa)
+                        interface_output.add_value('Position', position_number)
+                        interface_output.add_value('Interface Number', interface_number)
+                        interface_output.add_value('Interface Structure Recommendation', interface_structure_recommendation)
+                        interface_output.add_value('Position Structure Recommendation', recommended_interface_residue)
+
+                        interface_f.write(interface_output.pop_line())
 
                 if m not in snv_map:
                     snv_map[m] = {0: wt_aa}
@@ -787,14 +983,116 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
 
                     feat_f.write(feature_output.pop_line())
 
-            f.close()
-            feat_f.close()
+    if not use_ray:
+        f.close()
+        feat_f.close()
+        if config.compute_ppi:
+            interface_f.close()
+
+    if config.compute_ppi:
+        for interface_a_db_id in ppi_map:
+
+            interface_b_db_id, complex_db_id, chain_a, chain_b = ppi_map[interface_a_db_id]
+
+            prot_a_db_id, structure_rec_prot_a = interface_dict[interface_a_db_id]
+            prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+
+            (prot_a_id, u_ac_a, refseq_a, u_id_a, error_code_a, error_a, input_id_a) = protein_dict[prot_a_db_id]
+            prot_prot_output.add_value('Input Protein ID A', input_id_a)
+            prot_prot_output.add_value('Primary Protein ID A', prot_a_id)
+            prot_prot_output.add_value('Uniprot-Ac A', u_ac_a)
+
+            if not prot_a_db_id in interface_numbers:
+                interface_numbers[prot_a_db_id] = {}
+            if not interface_a_db_id in interface_numbers[prot_a_db_id]:
+                interface_numbers[prot_a_db_id][interface_a_db_id] = len(interface_numbers[prot_a_db_id]) + 1
+
+            interface_a_number = interface_numbers[prot_a_db_id][interface_a_db_id]
+            prot_prot_output.add_value('Interface Number A', interface_a_number)
+
+            (prot_b_id, u_ac_b, refseq_b, u_id_b, error_code_b, error_b, input_id_b) = protein_dict[prot_b_db_id]
+            prot_prot_output.add_value('Input Protein ID B', input_id_b)
+            prot_prot_output.add_value('Primary Protein ID B', prot_b_id)
+            prot_prot_output.add_value('Uniprot-Ac B', u_ac_b)
+
+            if not prot_b_db_id in interface_numbers:
+                interface_numbers[prot_b_db_id] = {}
+            if not interface_b_db_id in interface_numbers[prot_b_db_id]:
+                interface_numbers[prot_b_db_id][interface_b_db_id] = len(interface_numbers[prot_b_db_id]) + 1
+
+            interface_b_number = interface_numbers[prot_b_db_id][interface_b_db_id]
+            prot_prot_output.add_value('Interface Number B', interface_b_number)
+
+            rec_struct_id = complex_id_map[complex_db_id]
+
+            prot_prot_output.add_value('Structure Recommendation', f'{rec_struct_id}:{chain_a}:{chain_b}')
+
+            prot_prot_f.write(prot_prot_output.pop_line())
+
+        prot_prot_f.close()
+
+        for pos_a_db_id in pos_pos_map:
+            pos_b_db_id, res_a_db_id, res_b_db_id = pos_pos_map[pos_a_db_id]
+
+            interface_db_id, recommended_interface_residue = position_interface_map[pos_a_db_id]
+
+            try:
+                interface_b_db_id, complex_db_id, chain_a, chain_b = ppi_map[interface_db_id]
+                rec_struct_id = complex_id_map[complex_db_id]
+            except:
+                if not pos_b_db_id in position_interface_map:
+                    continue
+                interface_b_db_id, recommended_interface_residue_b = position_interface_map[pos_b_db_id]
+                rec_struct_id, chain_a = recommended_interface_residue.split()[0].split(':')
+                chain_b = recommended_interface_residue_b.split()[0].split(':')[1]
+
+            prot_a_db_id, structure_rec_prot_a = interface_dict[interface_db_id]
+            prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+
+            (prot_a_id, u_ac_a, refseq_a, u_id_a, error_code_a, error_a, input_id_a) = protein_dict[prot_a_db_id]
+            pos_pos_output.add_value('Input Protein ID A', input_id_a)
+            pos_pos_output.add_value('Primary Protein ID A', prot_a_id)
+            pos_pos_output.add_value('Uniprot-Ac A', u_ac_a)
+
+            wt_aa_a, position_number_a = pos_info_map[pos_a_db_id]
+            pos_pos_output.add_value('WT Amino Acid A', wt_aa_a)
+            pos_pos_output.add_value('Position A', position_number_a)
+
+            interface_a_number = interface_numbers[prot_a_db_id][interface_db_id]
+            pos_pos_output.add_value('Interface Number A', interface_a_number)
+
+            (prot_b_id, u_ac_b, refseq_b, u_id_b, error_code_b, error_b, input_id_b) = protein_dict[prot_b_db_id]
+            pos_pos_output.add_value('Input Protein ID B', input_id_b)
+            pos_pos_output.add_value('Primary Protein ID B', prot_b_id)
+            pos_pos_output.add_value('Uniprot-Ac B', u_ac_b)
+
+            wt_aa_b, position_number_b = pos_info_map[pos_b_db_id]
+            pos_pos_output.add_value('WT Amino Acid B', wt_aa_b)
+            pos_pos_output.add_value('Position B', position_number_b)
+
+            interface_b_number = interface_numbers[prot_b_db_id][interface_b_db_id]
+            pos_pos_output.add_value('Interface Number B', interface_b_number)
+
+
+
+            res_nr_a = res_nr_map[res_a_db_id]
+            res_nr_b = res_nr_map[res_b_db_id]
+
+            pos_pos_output.add_value('Structure Recommendation', f'{rec_struct_id}:{chain_a}-{res_nr_a}:{chain_b}-{res_nr_b}')
+
+            pos_pos_f.write(pos_pos_output.pop_line())
+
+        pos_pos_f.close()
 
     if os.path.isfile('%s.lock' % feature_file):
         os.remove('%s.lock' % feature_file)
 
     if os.path.isfile('%s.lock' % class_file):
         os.remove('%s.lock' % class_file)
+
+    if config.compute_ppi:
+        if os.path.isfile(f'{interface_file}.lock'):
+            os.remove(f'{interface_file}.lock')
 
     if config.verbosity >= 2:
         t6 = time.time()

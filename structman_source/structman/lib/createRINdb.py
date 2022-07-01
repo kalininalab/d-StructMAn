@@ -200,6 +200,10 @@ def changeBackChains(changed_chains,n_sif_file,n_intsc_file,n_nrint_file,n_res_f
 
 
 def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity, structure_path=None):
+
+    if verbosity >= 4:
+        print(f'Call of calcRIN: {pdb_id}, {out_path}, {structure_path}')
+
     parse_out = parsePDB(page)
     if parse_out is None:
         return
@@ -336,7 +340,7 @@ def calcRIN(page, out_path, pdb_id, rinerator_path, remove_tmp_files, verbosity,
     os.system("gzip %s" % n_res_file)
 
 
-def createRinProc(in_queue, lock, i, remove_tmp_files, base_path, rinerator_path, errorlog):
+def createRinProc(in_queue, lock, i, remove_tmp_files, base_path, rinerator_path, errorlog, path_to_model_db):
     with lock:
         in_queue.put(None)
     while True:
@@ -347,7 +351,14 @@ def createRinProc(in_queue, lock, i, remove_tmp_files, base_path, rinerator_path
                 return
             (pdbgz_path, pdb_id) = in_t
         try:
-            out_path = "%s/%s/%s" % (base_path, pdb_id[1:-1], pdb_id)
+
+            if (pdb_id[:3] == 'AF-'): #Not a pdb structure, but an alphafold model
+                uniprot_ac = pdb_id.split('-')[1]
+                topfolder_id = uniprot_ac[-2:]
+                subfolder_id = uniprot_ac[-4:]
+                out_path = f'{path_to_model_db}/{topfolder_id}/{subfolder_id}'
+            else:
+                out_path = "%s/%s/%s" % (base_path, pdb_id[1:-1], pdb_id)
             if not os.path.exists(out_path):
                 os.mkdir(out_path)
 
@@ -447,7 +458,7 @@ def calculateRINsFromPdbList(pdbs, fromScratch=True, forceCentrality=True, remov
 
     processes = {}
     for i in range(1, num_of_proc + 1):
-        p = Process(target=createRinProc, args=(in_queue, lock, fromScratch, i, forceCentrality, remove_tmp_files, base_path, rinerator_path, errorlog))  # BUG: undefined variable
+        p = Process(target=createRinProc, args=(in_queue, lock, fromScratch, i, forceCentrality, remove_tmp_files, base_path, rinerator_path, errorlog, config.path_to_model_db))  # BUG: undefined variable
         processes[i] = p
         print('Start RINerator Process: ', i)
         p.start()
@@ -455,7 +466,7 @@ def calculateRINsFromPdbList(pdbs, fromScratch=True, forceCentrality=True, remov
         processes[i].join()
 
 
-def main(fromScratch=False, pdb_p='', rin_db_path='', n_proc=32, rinerator_base_path=''):
+def main(fromScratch=False, pdb_p='', rin_db_path='', n_proc=32, rinerator_base_path='', process_model_db = False, config = None):
     bio_assembly_path = '%s/data/biounit/PDB/divided' % pdb_p
     AU_path = "%s/data/structures/divided/pdb" % pdb_p
     status_path = "%s/data/status" % pdb_p
@@ -556,11 +567,31 @@ def main(fromScratch=False, pdb_p='', rin_db_path='', n_proc=32, rinerator_base_
                 in_queue.put((pdbgz_path, pdb_id))
                 N += 1
 
+    if process_model_db:
+        for topfolder in os.listdir(config.path_to_model_db):
+            if not os.path.isdir(f'{config.path_to_model_db}/{topfolder}'):
+                continue
+            for sub_folder in os.listdir(f'{config.path_to_model_db}/{topfolder}'):
+                for fn in os.listdir(f'{config.path_to_model_db}/{topfolder}/{sub_folder}'):
+                    if fn.count('.pdb.gz') == 1:
+                        pdbgz_path = f'{config.path_to_model_db}/{topfolder}/{sub_folder}/{fn}'
+                        if os.path.getsize(pdbgz_path) > 50 * 1024 * 1024:
+                            continue
+
+                        model_id = fn[:-7]
+                        rin_file = f'{config.path_to_model_db}/{topfolder}/{sub_folder}/{model_id}_intsc.ea.gz'
+
+                        if os.path.exists(rin_file):
+                            continue
+
+                        in_queue.put((pdbgz_path, model_id))
+                        N += 1
+
     print('Creating RINs for', N, 'structures.')
 
     processes = {}
     for i in range(1, min([num_of_proc, N]) + 1):
-        p = Process(target=createRinProc, args=(in_queue, lock, i, True, base_path, rinerator_path, errorlog))
+        p = Process(target=createRinProc, args=(in_queue, lock, i, True, base_path, rinerator_path, errorlog, config.path_to_model_db))
         processes[i] = p
         p.start()
     for i in processes:

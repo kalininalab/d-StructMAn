@@ -44,8 +44,8 @@ CREATE TABLE `Alignment` (
 --
 
 CREATE TABLE `Complex` (
-  `Complex_Id` int(11) UNSIGNED NOT NULL,
-  `PDB` varchar(8) NOT NULL,
+  `Complex_Id` int(11) UNSIGNED NOT NULL,   
+  `PDB` varchar(16) NOT NULL,
   `Resolution` float DEFAULT NULL,
   `Chains` text,
   `Homooligomers` text,
@@ -53,6 +53,47 @@ CREATE TABLE `Complex` (
   `Metal_Profile` text,
   `Ion_Profile` text,
   `Chain_Chain_Profile` text
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `Interface`
+--
+
+CREATE TABLE `Interface` (
+  `Interface_Id` int(11) UNSIGNED NOT NULL,
+  `Protein` int(10) UNSIGNED NOT NULL,
+  `Structure_Recommendation` varchar(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `Protein_Protein_Interaction`
+--
+
+CREATE TABLE `Protein_Protein_Interaction` (
+  `Protein_Protein_Interaction_Id` int(11) UNSIGNED NOT NULL,
+  `Interface_A` int(10) UNSIGNED NOT NULL,
+  `Interface_B` int(10) UNSIGNED NOT NULL,
+  `Complex` int(11) UNSIGNED NOT NULL,
+  `Chain_A` char(1) DEFAULT NULL,
+  `Chain_B` char(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `Position_Position_Interaction`
+--
+
+CREATE TABLE `Position_Position_Interaction` (
+  `Position_Position_Interaction_Id` int(11) NOT NULL,
+  `Position_A` int(11) NOT NULL,
+  `Position_B` int(11) NOT NULL,
+  `Residue_A` int(11) UNSIGNED NOT NULL,
+  `Residue_B` int(11) UNSIGNED NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -178,6 +219,7 @@ CREATE TABLE `Pathway` (
 CREATE TABLE `Residue` (
   `Residue_Id` int(11) UNSIGNED NOT NULL,
   `Structure` int(11) UNSIGNED NOT NULL,
+  `Number` varchar(32) NOT NULL,
   `Residue_Data` BLOB(65535) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -215,6 +257,28 @@ CREATE TABLE `RS_Protein_Session` (
   `Input_Id` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+--
+-- Tabellenstruktur für Tabelle `RS_Position_Interface`
+--
+
+CREATE TABLE `RS_Position_Interface` (
+  `Interface` int(10) UNSIGNED NOT NULL,
+  `Position` int(11) NOT NULL,
+  `Recommended_Residue` varchar(32) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `RS_Residue_Interface`
+--
+
+CREATE TABLE `RS_Residue_Interface` (
+  `Residue` int(11) UNSIGNED NOT NULL,
+  `Structure` int(11) UNSIGNED NOT NULL,
+  `Interacting_Residue` varchar(32) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 -- --------------------------------------------------------
 
 --
@@ -229,6 +293,16 @@ CREATE TABLE `RS_Indel_Session` (
 
 -- --------------------------------------------------------
 
+--
+-- Table structure for table `Database_Metadata`
+--
+
+CREATE TABLE `Database_Metadata` (
+  `StructMAn_Version` varchar(32) COLLATE utf8_unicode_ci NOT NULL,
+  `PPI_Feature` tinyint(1) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+-- --------------------------------------------------------
 --
 -- Tabellenstruktur für Tabelle `RS_Multi_Mutation_Session`
 --
@@ -312,7 +386,7 @@ CREATE TABLE `Session` (
 
 CREATE TABLE `Structure` (
   `Structure_Id` int(11) UNSIGNED NOT NULL,
-  `PDB` varchar(8) NOT NULL,
+  `PDB` varchar(16) NOT NULL,
   `Chain` char(1) NOT NULL,
   `Homooligomer` varchar(256) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -359,6 +433,23 @@ ALTER TABLE `Protein`
   ADD KEY `Uniprot_Ac` (`Uniprot_Ac`);
 
 --
+-- Indizes für die Tabelle `Interface`
+--
+ALTER TABLE `Interface`
+  ADD PRIMARY KEY (`Interface_Id`),
+  ADD KEY `Protein` (`Protein`);
+
+--
+-- Indizes für die Tabelle `Protein_Protein_Interaction`
+--
+ALTER TABLE `Protein_Protein_Interaction`
+  ADD PRIMARY KEY (`Protein_Protein_Interaction_Id`),
+  ADD KEY `Interface_A` (`Interface_A`),
+  ADD KEY `Interface_B` (`Interface_B`),
+  ADD KEY `Complex` (`Complex`);
+
+
+--
 -- Indizes für die Tabelle `GO_Term`
 --
 ALTER TABLE `GO_Term`
@@ -400,6 +491,16 @@ ALTER TABLE `Ligand`
 ALTER TABLE `Position`
   ADD PRIMARY KEY (`Position_Id`),
   ADD KEY `Protein` (`Protein`);
+
+--
+-- Indizes für die Tabelle `Position_Position_Interaction`
+--
+ALTER TABLE `Position_Position_Interaction`
+  ADD PRIMARY KEY (`Position_Position_Interaction_Id`),
+  ADD KEY `Position_A` (`Position_A`),
+  ADD KEY `Position_B` (`Position_B`),
+  ADD KEY `Residue_A` (`Residue_A`),
+  ADD KEY `Residue_B` (`Residue_B`);
 
 --
 -- Indizes für die Tabelle `Pathway`
@@ -465,6 +566,21 @@ ALTER TABLE `RS_Position_Session`
   ADD KEY `Session` (`Session`);
 
 --
+-- Indizes für die Tabelle `RS_Position_Interface`
+--
+ALTER TABLE `RS_Position_Interface`
+  ADD KEY `Position` (`Position`),
+  ADD KEY `Interface` (`Interface`);
+
+--
+-- Indizes für die Tabelle `RS_Residue_Interface`
+--
+ALTER TABLE `RS_Residue_Interface`
+  ADD KEY `Residue` (`Residue`),
+  ADD KEY `Structure` (`Structure`);
+
+
+--
 -- Indizes für die Tabelle `RS_SNV_Session`
 --
 ALTER TABLE `RS_SNV_Session`
@@ -490,7 +606,8 @@ ALTER TABLE `Session`
 -- Indizes für die Tabelle `Structure`
 --
 ALTER TABLE `Structure`
-  ADD PRIMARY KEY (`Structure_Id`);
+  ADD PRIMARY KEY (`Structure_Id`),
+  ADD KEY `PDB` (`PDB`);
 
 --
 -- Indizes für die Tabelle `Suggestion`
@@ -523,6 +640,18 @@ ALTER TABLE `Protein`
   MODIFY `Protein_Id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT für Tabelle `Interface`
+--
+ALTER TABLE `Interface`
+  MODIFY `Interface_Id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT für Tabelle `Protein_Protein_Interaction`
+--
+ALTER TABLE `Protein_Protein_Interaction`
+  MODIFY `Protein_Protein_Interaction_Id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT für Tabelle `GO_Term`
 --
 ALTER TABLE `GO_Term`
@@ -553,7 +682,13 @@ ALTER TABLE `Position`
   MODIFY `Position_Id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT für Tabelle `Position`
+-- AUTO_INCREMENT für Tabelle `Position_Position_Interaction`
+--
+ALTER TABLE `Position_Position_Interaction`
+  MODIFY `Position_Position_Interaction_Id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT für Tabelle `SNV`
 --
 ALTER TABLE `SNV`
   MODIFY `SNV_Id` int(11) NOT NULL AUTO_INCREMENT;
@@ -600,6 +735,14 @@ ALTER TABLE `Alignment`
   ADD CONSTRAINT `Alignment_ibfk_2` FOREIGN KEY (`Structure`) REFERENCES `Structure` (`Structure_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
+-- Constraints der Tabelle `Protein_Protein_Interaction`
+--
+ALTER TABLE `Protein_Protein_Interaction`
+  ADD CONSTRAINT `Interface_A_ibfk_1` FOREIGN KEY (`Interface_A`) REFERENCES `Interface` (`Interface_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Interface_B_ibfk_2` FOREIGN KEY (`Interface_B`) REFERENCES `Interface` (`Interface_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Complex_ibfk_3` FOREIGN KEY (`Complex`) REFERENCES `Complex` (`Complex_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
 -- Constraints der Tabelle `Indel`
 --
 ALTER TABLE `Indel`
@@ -620,13 +763,28 @@ ALTER TABLE `Position`
   ADD CONSTRAINT `Position_ibfk_1` FOREIGN KEY (`Protein`) REFERENCES `Protein` (`Protein_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
+-- Constraints der Tabelle `Interface`
+--
+ALTER TABLE `Interface`
+  ADD CONSTRAINT `Protein_ibfk_1` FOREIGN KEY (`Protein`) REFERENCES `Protein` (`Protein_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints der Tabelle `Position_Position_Interaction`
+--
+ALTER TABLE `Position_Position_Interaction`
+  ADD CONSTRAINT `Position_A_ibfk_1` FOREIGN KEY (`Position_A`) REFERENCES `Position` (`Position_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Position_B_ibfk_2` FOREIGN KEY (`Position_B`) REFERENCES `Position` (`Position_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Residue_A_ibfk_1` FOREIGN KEY (`Residue_A`) REFERENCES `Residue` (`Residue_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `Residue_B_ibfk_2` FOREIGN KEY (`Residue_B`) REFERENCES `Residue` (`Residue_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
 -- Constraints der Tabelle `SNV`
 --
 ALTER TABLE `SNV`
   ADD CONSTRAINT `SNV_ibfk_1` FOREIGN KEY (`Position`) REFERENCES `Position` (`Position_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
--- Constraints der Tabelle `SNV`
+-- Constraints der Tabelle `Suggestion`
 --
 ALTER TABLE `Suggestion`
   ADD CONSTRAINT `Suggestion_ibfk_1` FOREIGN KEY (`Protein`) REFERENCES `Protein` (`Protein_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -686,6 +844,20 @@ ALTER TABLE `RS_Ligand_Structure`
 ALTER TABLE `RS_Position_Session`
   ADD CONSTRAINT `RS_Position_Session_ibfk_1` FOREIGN KEY (`Position`) REFERENCES `Position` (`Position_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `RS_Position_Session_ibfk_2` FOREIGN KEY (`Session`) REFERENCES `Session` (`Session_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints der Tabelle `RS_Position_Interface`
+--
+ALTER TABLE `RS_Position_Interface`
+  ADD CONSTRAINT `RS_Position_Interface_ibfk_1` FOREIGN KEY (`Position`) REFERENCES `Position` (`Position_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `RS_Position_Interface_ibfk_2` FOREIGN KEY (`Interface`) REFERENCES `Interface` (`Interface_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints der Tabelle `RS_Residue_Interface`
+--
+ALTER TABLE `RS_Residue_Interface`
+  ADD CONSTRAINT `RS_Residue_Interface_ibfk_1` FOREIGN KEY (`Residue`) REFERENCES `Residue` (`Residue_Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `RS_Residue_Interface_ibfk_2` FOREIGN KEY (`Structure`) REFERENCES `Structure` (`Structure_Id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints der Tabelle `RS_SNV_Session`

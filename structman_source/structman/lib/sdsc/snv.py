@@ -1,3 +1,5 @@
+from structman.lib.sdsc.sdsc_utils import doomsday_protocol
+
 class SNV:
     __slots__ = ['new_aa', 'database_id', 'stored', 'tags']
 
@@ -9,3 +11,12 @@ class SNV:
 
     def fuse(self, other_snv):
         self.tags = self.tags | other_snv.tags
+        other_snv.deconstruct()
+        del other_snv
+
+    def copy(self):
+        copy_snv = SNV(self.new_aa, database_id = self.database_id, tags = self.tags)
+        return copy_snv
+
+    def deconstruct(self):
+        doomsday_protocol(self)

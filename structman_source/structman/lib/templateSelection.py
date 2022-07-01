@@ -5,11 +5,10 @@ from structman.lib.sdsc import structure as structure_package
 from structman.lib.sdsc import complex as complex_package
 
 
-# Called by what?
+# Called by serializedPipeline
 def selectTemplates(structures, pdb_path):
     if len(structures) == 0:
         return {}
-    # print entries
     filtered_structures = {}
     intermediate_results = {}
     for (pdb_id, chain) in structures:

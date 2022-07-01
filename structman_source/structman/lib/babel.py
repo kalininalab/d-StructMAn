@@ -9,7 +9,6 @@ from structman.lib.database import database
 
 # Needs either a ligand_db or it creates one, but then it needs contact to the database
 def findRelatives(infile, session_id, cutoff, ligand_db="", db=None, cursor=None):
-    # print infile,session_id,cutoff,ligand_db,db,cursor
     if ligand_db == "":
         if db is None:
             raise NameError("Illegal Input in findRelatives")
@@ -22,7 +21,6 @@ def findRelatives(infile, session_id, cutoff, ligand_db="", db=None, cursor=None
 
     p = subprocess.Popen(["babel", infile, ligand_db, "-ofpt"], stdout=subprocess.PIPE, universal_newlines=True)
     page = p.communicate()
-    # print "Babel output:\n%s" % str(page)
     lines = page[0].split("\n")
     lines = lines[1:]
 
@@ -33,7 +31,6 @@ def findRelatives(infile, session_id, cutoff, ligand_db="", db=None, cursor=None
             lig_id = line.split()[0].replace(">", "")
             tanimoto = float(line.rsplit("=", 1)[1].replace(" ", ""))
             if tanimoto >= cutoff:
-                # print line
                 chosen_ones[lig_id] = tanimoto
     return chosen_ones
 
@@ -58,7 +55,6 @@ def ligandAnalyzer(infile, session_id, db_name, host, user, pw, ligand_db="", cu
     if len(chosen_ones) == 0:
         print("No relatives found")
         return {}
-    # print chosen_ones
 
     t1 = time.time()
     anno_dict = database.getLigandAnnotation(chosen_ones, session_id, distance_threshold, db, cursor)

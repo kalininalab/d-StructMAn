@@ -30,7 +30,7 @@ def consecutive(last_residue, res_nr):
         return True
     return (b - a) == 1
 
-# called by serializedPipeline, sdsc
+# called by serializedPipeline, sdsc.structure
 
 
 def createTemplateFasta(template_page, template_name, chain, config, onlySeqResMap=False, seqAndMap=False, for_modeller=False, could_be_empty=False, rare_residues=None):
@@ -157,6 +157,7 @@ def getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, 
     template_aligned_sequence = template_aligned_sequence.replace("\n", "")
 
     sub_infos = {}
+    backmap = {}
 
     errors = []
     align_map = {}
@@ -177,6 +178,9 @@ def getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, 
                 if tem_n - 1 >= len(seq_res_map):
                     return ("Seq_res_map too short: %s, %s, %s" % (u_ac, tem_n, len(seq_res_map)))
                 align_map[tar_n] = ((seq_res_map[tem_n - 1], tem_char, tem_n), char)
+                backmap[seq_res_map[tem_n - 1]] = tar_n
+        else:
+            backmap[seq_res_map[tem_n - 1]] = None
 
     for aac_base in aaclist:
         target_pos = int(aac_base[1:])
@@ -199,7 +203,7 @@ def getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, 
             continue
         sub_infos[target_pos] = sub_info
 
-    return (sub_infos, aaclist)
+    return (sub_infos, aaclist, backmap)
 
 
 def getCovSI(full_length, target_seq, template_seq):
@@ -226,11 +230,14 @@ def call_biopython_alignment(target_seq, template_seq):
 
 def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore_gaps=False, lock=None):
     target_seq = target_seq.replace('U', 'C').replace('O', 'K').replace('J', 'I')
-    if config.verbosity >= 4:
+    if config.verbosity >= 5:
         print('Aligning:')
         print(target_seq)
         print(template_seq)
-    align_out = call_biopython_alignment(target_seq, template_seq)
+    try:
+        align_out = call_biopython_alignment(target_seq, template_seq)
+    except:
+        return 'Alignment failed, %s:\n%s\n%s\n' % (u_ac, target_seq, template_seq)
     if len(align_out) > 0:
         (target_aligned_sequence, template_aligned_sequence, a, b, c) = align_out[0]
 
@@ -242,9 +249,9 @@ def BPalign(config, u_ac, target_seq, template_seq, aaclist, seq_res_map, ignore
             print('Alignment failed')
         return 'Alignment produced no Output, %s:\n%s\n%s\n' % (u_ac, target_seq, template_seq)
 
-    sub_infos, aaclist = getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
+    sub_infos, aaclist, backmap = getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
 
-    return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist)
+    return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist, backmap)
 
 def find_unknown_portions(sequence):
 
@@ -360,9 +367,9 @@ def split_alignment(config, u_ac, target_seq, template_seq, aaclist, seq_res_map
 
     template_aligned_sequence = fused_template_sequence
 
-    sub_infos, aaclist = getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
+    sub_infos, aaclist, backmap = getSubPos(config, u_ac, target_aligned_sequence, template_aligned_sequence, aaclist, seq_res_map, ignore_gaps=ignore_gaps, lock=lock)
 
-    return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist)
+    return (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist, backmap)
 
 # truncates aseq by looking at terminal gaps of bseq
 # called by modelling
@@ -380,13 +387,7 @@ def truncateSequences(aseq, bseq):
 
 
 def createAlignmentPir(target_name, target_aligned_sequence, template_name, template_aligned_sequence, chain, startres, endres, outfile=''):
-    # print outfile
     page = ">P1;%s\nsequence:%s:::::::0.00: 0.00\n%s*\n>P1;%s\nstructureX:%s:%s:%s:%s:%s:::-1.00:-1.00\n%s*" % (target_name, target_name, target_aligned_sequence, template_name, template_name, startres, chain, endres, chain, template_aligned_sequence)
-    # print(page)
-    #f = open(outfile, "wb")
-    # f.write(page)
-    # f.close()
-    # return(outfile)
     return page
 
 
@@ -406,7 +407,7 @@ def alignBioPython(config, target_name, wildtype_sequence, template_name, templa
     if isinstance(align_out, str):
         return align_out
 
-    (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist) = align_out
+    (target_aligned_sequence, template_aligned_sequence, sub_infos, aaclist, backmap) = align_out
     t2 = time.time()
     # write the alignment into the pir format, which can be used by the modeller
     (truncated_target_sequence, truncated_template_sequence) = truncateSequences(target_aligned_sequence, template_aligned_sequence)
@@ -417,4 +418,4 @@ def alignBioPython(config, target_name, wildtype_sequence, template_name, templa
     t5 = time.time()
 
     times = [t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4]
-    return (aln_length, seq_id, sub_infos, alignment_pir, times, aaclist, last_residue, first_residue)
+    return (aln_length, seq_id, sub_infos, backmap, alignment_pir, times, aaclist, last_residue, first_residue)

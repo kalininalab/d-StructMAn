@@ -110,13 +110,11 @@ class NCI:
                 continue
             atom_desc1 = line_lst[3]
             atom_desc2 = line_lst[4]
-            # print 'atom desc: ' + atom_desc1 + "\t" + atom_desc2
             atom_label1 = self.atom_desc_to_atom_label(atom_desc1, stsel_obj)
             atom_label2 = self.atom_desc_to_atom_label(atom_desc2, stsel_obj)
 
             if (atom_label1 is None) or (atom_label2 is None):
                 continue
-            # print "atom labels: " + atom_label1 + "\t" + atom_label2
             # raw score
             raw_score = float(line_lst[11])
             # get keys for atom_int_dic

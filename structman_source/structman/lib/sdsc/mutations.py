@@ -1,5 +1,6 @@
 from structman.lib.sdsc import position as position_package
 from structman.lib.sdsc.indel import Indel
+from structman.lib.sdsc.sdsc_utils import doomsday_protocol
 
 
 class MultiMutation:
@@ -19,6 +20,16 @@ class MultiMutation:
                 self.snvs[mut[0].pos] = (mut[0].mut_aas[mut[1]])
         self.database_id = None
         self.stored = False
+
+    def deconstruct(self):
+       for snv in self.snvs:
+           self.snvs[snv].deconstruct()
+       del self.snvs
+       for indel in self.indels:
+           self.indels[indel].deconstruct()
+       del self.indels
+       del self.tags
+       doomsday_protocol(self)
 
     def get_snv_db_ids(self):
         db_ids = []

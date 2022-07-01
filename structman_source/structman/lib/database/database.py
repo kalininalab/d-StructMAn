@@ -19,6 +19,7 @@ from structman.lib.sdsc import protein as protein_package
 from structman.lib.sdsc import position as position_package
 from structman.lib.sdsc import mutations as mutation_package
 from structman.lib.sdsc import snv as snv_package
+from structman.lib.sdsc import interface as interface_package
 from structman.lib.sdsc.consts import residues as residue_consts
 
 
@@ -67,6 +68,8 @@ def binningSelect(keys, rows, table, config, binning_function='median_focus', de
         results = select(config, rows, table, between_rows=between_rows)
 
         t4 += time.time()
+        if isinstance(ids, list):
+            ids = set(ids)
         for row in results:
             if not row[0] in ids:
                 continue
@@ -750,10 +753,13 @@ def positionCheck(proteins, database_session, config):
     for prot_id in prot_ids:
         positions = proteins.get_position_ids(prot_id)
         for pos in positions:
+            if proteins[prot_id].positions[pos].session_less:
+                continue
             pos_id = proteins.get_position_database_id(prot_id, pos)
             pos_tags = proteins.get_pos_tags(prot_id, pos)
             values.append((database_session, pos_id, ','.join(pos_tags)))
 
+    """
     if len(values) > 10000:
         process = multiprocessing.Process(target=backgroundInsertMS, args=(values, config))
         try:
@@ -763,8 +769,9 @@ def positionCheck(proteins, database_session, config):
             raise NameError("Error in PositionCheck: %s" % (f))
         return process
     else:
-        insert('RS_Position_Session', ['Session', 'Position', 'Tag'], values, config)
-        return None
+    """
+    insert('RS_Position_Session', ['Session', 'Position', 'Tag'], values, config)
+    return None
 
 
 def backgroundInsertMS(values, config):
@@ -806,16 +813,27 @@ def addIupred(proteins, config):
             iupred_score = scores[pos]
             values.append((pos_id, iupred_score, pos_region_type))
 
-    process = multiprocessing.Process(target=backgroundIU, args=(values, config))
+    if config.verbosity >= 2:
+        print(f'Before background add disorder process: {len(values)}')
+
+    process = multiprocessing.Process(target=backgroundIU, args=(pack(values), config))
     process.start()
+    #insert_IU(values, config)
+    #process = None
+    #process = None
+    #if not len(values) == 0:
+    #    update(config, 'Position', ['Position_Id', 'IUPRED', 'IUPRED_Glob'], values)
     return process
 
 
 def backgroundIU(values, config):
+    values = unpack(values)
+    insert_IU(values, config)
+
+def insert_IU(values, config): 
     if not len(values) == 0:
         update(config, 'Position', ['Position_Id', 'IUPRED', 'IUPRED_Glob'], values)
     return
-
 
 # called by babel
 def getPDB(template_id, db, cursor):
@@ -1043,6 +1061,10 @@ def addProtInfos(proteins, config):
 
 # called by serializedPipeline
 def insertComplexes(proteins, config):
+    complex_list = proteins.get_complex_list()
+
+    if len(complex_list) == 0:
+        return
 
     smiles_path = config.smiles_path
     inchi_path = config.inchi_path
@@ -1061,7 +1083,6 @@ def insertComplexes(proteins, config):
     lig_values = []
     update_ligands = []
     new_ligands = set()
-    complex_list = proteins.get_complex_list()
 
     for pdb_id in complex_list:
         if proteins.is_complex_stored(pdb_id):
@@ -1153,10 +1174,18 @@ def insertComplexes(proteins, config):
 
 
 def getComplexMap(config, pdb_ids=None):
+    if pdb_ids is not None:
+        if len(pdb_ids) == 0:
+            return {}
     table = 'Complex'
     rows = ['Complex_Id', 'PDB', 'Resolution', 'Chains', 'Homooligomers', 'Ligand_Profile', 'Metal_Profile', 'Ion_Profile', 'Chain_Chain_Profile']
 
-    results = select(config, rows, table)
+    if pdb_ids is None:
+        results = select(config, rows, table)
+    elif len(pdb_ids) > 50:
+        results = select(config, rows, table)
+    else:
+        results = select(config, rows, table, in_rows = {'PDB': pdb_ids})
 
     complex_map = {}
     for row in results:
@@ -1220,8 +1249,16 @@ def getComplexMap(config, pdb_ids=None):
 # called by serializedPipeline
 def structureCheck(proteins, config):
     table = 'Structure'
-    rows = ['Structure_Id', 'PDB', 'Chain', 'Homooligomer']
-    results = select(config, rows, table)
+    rows = ['Structure_Id', 'PDB', 'Chain']
+    if len(proteins.structures) > 50:
+        results = select(config, rows, table)
+    elif len(proteins.structures) > 0:
+        structure_ids = []
+        for structure_id, chain in proteins.structures:
+            structure_ids.append(structure_id)
+        results = select(config, rows, table, in_rows={'PDB': structure_ids})
+    else:
+        return
 
     stored_complexes = set()
 
@@ -1229,7 +1266,6 @@ def structureCheck(proteins, config):
         s_id = row[0]
         pdb_id = row[1]
         chain = row[2]
-        oligos = row[3]
         if not proteins.contains_structure(pdb_id, chain):
             continue
         proteins.set_structure_db_id(pdb_id, chain, s_id)
@@ -1251,6 +1287,9 @@ def draw_complexes(config, proteins, stored_complexes=[], draw_all=False):
 
 # called by serializedPipeline
 def insertStructures(structurelist, proteins, config, results=None, return_results=False):
+
+    if len(structurelist) == 0:
+        return []
 
     table = 'Structure'
     rows = ['Structure_Id', 'PDB', 'Chain']
@@ -1364,6 +1403,8 @@ def insertInteractingChains(interaction_structures, proteins, config):
 
             interacting_structure_ids[(pdb_id, chain)] = s_id
 
+            proteins.structures[(pdb_id, chain)] = structure_package.Structure(pdb_id, chain, database_id=s_id, new_interacting_chain = True)
+
     return interacting_structure_ids
 
 
@@ -1376,6 +1417,8 @@ def insertAlignments(alignment_list, proteins, config):
         s_id = proteins.get_structure_db_id(pdb_id, chain)
         seq_id = proteins.get_sequence_id(u_ac, pdb_id, chain)
         coverage = proteins.get_coverage(u_ac, pdb_id, chain)
+        if config.verbosity >= 5:
+            print(f'Adding alignment to the database: {u_ac} {prot_id} {pdb_id} {chain} {s_id}')
         values.append((prot_id, s_id, seq_id, coverage, pack(alignment_pir)))
     if config.verbosity >= 2:
         t1 = time.time()
@@ -1399,7 +1442,7 @@ def background_insert_residues(values, config):
                'Interacting_Chains', 'Interacting_Ligands'
                ]
     """
-    columns = ['Structure', 'Residue_Data']
+    columns = ['Structure', 'Number', 'Residue_Data']
     insert('Residue', columns, values, config)
 
 
@@ -1412,6 +1455,8 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
     values = []
 
     if len(structural_analysis) == 0:
+        if config.verbosity >= 4:
+            print('insertResidues was called with an empty structural_analysis dict')
         return
 
     structure_ids = {}
@@ -1432,9 +1477,19 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
     t_13 = 0.
 
     for (pdb_id, chain) in structural_analysis:
-        if not (proteins.contains_structure(pdb_id, chain) or (pdb_id, chain) in interacting_structure_ids):
+        if (pdb_id, chain) in interacting_structure_ids:
+            proteins.structures[(pdb_id, chain)].residues = structural_analysis[(pdb_id, chain)]
+        if not proteins.contains_structure(pdb_id, chain):
+            if config.verbosity >= 5:
+                if not (pdb_id, chain) in interacting_structure_ids:
+                    print(f'{pdb_id} {chain} from structural_analysis not going into the database. It is not in interacting_structure_ids.')
+                else:
+
+                    print(f'{pdb_id} {chain} from structural_analysis not going into the database. contains_structure was False.')
             continue
-        if proteins.contains_structure(pdb_id, chain) and proteins.is_structure_stored(pdb_id, chain):  # all residues belonging to stored structures must not inserted twice
+        if proteins.contains_structure(pdb_id, chain) and proteins.is_structure_stored(pdb_id, chain) and not proteins.structures[(pdb_id, chain)].new_interacting_chain:  # all residues belonging to stored structures must not inserted twice
+            if config.verbosity >= 5:
+                print(f'{pdb_id} {chain} from structural_analysis not going into the database. Is already stored.')
             continue
 
         analysis_map = structural_analysis[(pdb_id, chain)]
@@ -1443,8 +1498,15 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
         else:
             s_id = proteins.get_structure_db_id(pdb_id, chain)
             if s_id is None:
+                if config.verbosity >= 5:
+                    print(f'{pdb_id} {chain} from structural_analysis not going into the database. s_id was None.')
                 continue
+
             structure_ids[s_id] = (pdb_id, chain)
+
+        if config.verbosity >= 5:
+            print(f'{pdb_id} {chain} from structural_analysis going into the database: {len(analysis_map)}')
+
         for res_id in analysis_map:
             t_0 += time.time()
             residue = analysis_map[res_id]
@@ -1509,7 +1571,7 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
 
             t_11 += time.time()
 
-            packed_res_info = pack((res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+            packed_res_info = pack((one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
                            ssa, homo_str, profile_str,
                            centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
                            cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
@@ -1519,7 +1581,7 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
                            intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
                            interacting_chains_str, interacting_ligands_str))
             
-            values.append([s_id, packed_res_info])
+            values.append([s_id, res_id, packed_res_info])
             t_12 += time.time()
 
             if not (pdb_id, chain) in interacting_structure_ids:
@@ -1535,9 +1597,111 @@ def insertResidues(structural_analysis, interacting_structure_ids, proteins, con
 
     process = multiprocessing.Process(target=background_insert_residues, args=(values, config))
     process.start()
-
+    #process = None
+    #background_insert_residues(values, config)
     return process
 
+def get_interfaces(protein_db_ids, config, proteins):
+    if config.verbosity >= 3:    
+        print('Call of get_interfaces:', len(protein_db_ids))
+        t0 = time.time()
+
+    rows = ['Protein', 'Interface_Id', 'Structure_Recommendation']
+    table = 'Interface'
+    results = binningSelect(protein_db_ids, rows, table, config)
+
+    #print('In get_interfaces', results)
+    if config.verbosity >= 3:
+        t1 = time.time()
+        print(f'Part 1 of get_interfaces: {t1-t0}')
+
+    max_position_interface_select = 50000
+    interface_map = {}
+    interface_packages = []
+    interface_key_package = []
+    for row in results:
+        protein_db_id = row[0]
+        interface_id = row[1]
+        interface_map[interface_id] = (protein_db_id, row[2])
+        interface_key_package.append(interface_id)
+        if len(interface_key_package) >= max_position_interface_select:
+            interface_packages.append(interface_key_package)
+            interface_key_package = []
+
+    if config.verbosity >= 3:
+        t2 = time.time()
+        print(f'Part 2 of get_interfaces: {t2-t1}')
+    if len(interface_key_package) > 0: 
+        interface_packages.append(interface_key_package)
+
+    results = []
+    for interface_key_package in interface_packages:
+        results += binningSelect(interface_key_package, ['Interface', ' Position', 'Recommended_Residue'], 'RS_Position_Interface', config)
+
+    if config.verbosity >= 3:
+        t3 = time.time()
+        print(f'Part 3 of get_interfaces: {t3-t2}')
+    interfaces = {}
+    max_size = 500000
+    position_packages = []
+    positions = []
+    for row in results:
+        interface_db_id = row[0]
+        pos_db_id = row[1]
+        if not interface_db_id in interfaces:
+            interfaces[interface_db_id] = {}
+        interfaces[interface_db_id][pos_db_id] = row[2]
+        positions.append(pos_db_id)
+        if len(positions) >= max_size:
+            position_packages.append(positions)
+            positions = []
+
+    if len(positions) > 0:
+        position_packages.append(positions)
+
+    if config.verbosity >= 3:
+        t4 = time.time()
+        print(f'Part 4 of get_interfaces: {t4-t3}')
+    pos_id_map = {}
+    for positions in position_packages:
+        if config.verbosity >= 3:
+            print(f'get_interfaces Position select: {len(positions)}')
+        results = binningSelect(positions, ['Position_Id', 'Position_Number'], 'Position', config)
+
+        for row in results:
+            pos_id_map[row[0]] = row[1]
+
+    if config.verbosity >= 3:
+        t5 = time.time()
+        print(f'Part 5 of get_interfaces: {t5-t4}')
+    protein_interface_map = {}
+    for interface_db_id in interfaces:
+        protein_db_id, structure_recommendation = interface_map[interface_db_id]
+        recommended_complex, chain, interacting_chain = structure_recommendation.split(',')
+        protein_id = proteins.getByDbId(protein_db_id).primary_protein_id
+        positions = {}
+        for pos_db_id in interfaces[interface_db_id]:
+            structure_tuple, res = interfaces[interface_db_id][pos_db_id].split()
+            structure_id, chain = structure_tuple.split(':')
+            positions[(pos_id_map[pos_db_id])] = structure_id, chain, res
+        interface_obj = interface_package.Aggregated_interface(protein_id, recommended_complex = recommended_complex, chain = chain, interacting_chain = interacting_chain, positions = positions, database_id = interface_db_id)
+        if not protein_id in protein_interface_map:
+            protein_interface_map[protein_id] = []
+        protein_interface_map[protein_id].append(interface_obj)
+
+    #print('In get_interfaces', protein_interface_map)
+
+    if config.verbosity >= 3:
+        t6 = time.time()
+        print(f'Part 6 of get_interfaces: {t6-t5}')
+    for protein_id in protein_interface_map:
+        proteins.set_aggregated_interface_map(protein_id, protein_interface_map[protein_id])
+
+    del protein_interface_map
+
+    if config.verbosity >= 3:
+        t7 = time.time()
+        print(f'Part 7 of get_interfaces: {t7-t6}')
 
 # called by serializedPipeline
 def getAlignments(proteins, config, get_all_alignments=False):
@@ -1583,12 +1747,100 @@ def getAlignments(proteins, config, get_all_alignments=False):
         t2 = time.time()
         print("Time for part 2 in getAlignments: %s" % (str(t2 - t1)))
 
+    structureCheck(proteins, config)
+
+    if config.verbosity >= 2:
+        t3 = time.time()
+        print("Time for part 3 in getAlignments: %s" % (str(t3 - t2)))
+
+    stored_structure_ids = proteins.getStoredStructureIds()
+
+    if config.verbosity >= 2:
+        t4 = time.time()
+        print("Time for part 4 in getAlignments: %s" % (str(t4 - t3)))
+
+    structure_target_chain_map = {}
+    for structure_db_id in stored_structure_ids:
+        (structure_id, chain) = stored_structure_ids[structure_db_id]
+        structure_target_chain_map[structure_id] = chain
+
+    if config.compute_ppi:
+        rows = ['PDB', 'Structure_Id', 'Chain']
+        table = 'Structure'
+        results = select(config, rows, table, in_rows={'PDB':structure_target_chain_map.keys()})
+
+        interacting_structures = {}
+        for row in results:
+            structure_id = row[0]
+            structure_db_id = row[1]
+            chain = row[2]
+            if chain != structure_target_chain_map[structure_id]:
+                interacting_structures[structure_db_id] = (structure_id, chain)
+
+    if config.verbosity >= 2:
+        t5 = time.time()
+        print("Time for part 5 in getAlignments: %s" % (str(t5 - t4)))
+
+    interacting_protein_db_ids = []
+
+    if config.compute_ppi:
+        rows = ['Structure', 'Protein', 'Sequence_Identity', 'Coverage', 'Alignment']
+        table = 'Alignment'
+        results = binningSelect(interacting_structures.keys(), rows, table, config)
+
+        for row in results:
+
+            prot_db_id = row[1]
+
+            structure_id = row[0]
+            seq_id = row[2]
+            coverage = row[3]
+            alignment = unpack(row[4])
+
+            structure_ids.add(structure_id)
+
+            target_seq, template_seq = sdsc_utils.process_alignment_data(alignment)
+
+            if prot_db_id not in prot_structure_alignment_map:
+                prot_structure_alignment_map[prot_db_id] = {}
+                interacting_protein_db_ids.append(prot_db_id)
+
+            prot_structure_alignment_map[prot_db_id][structure_id] = (target_seq, template_seq, coverage, seq_id)
+            #print('Adding interacting protein', prot_db_id, structure_id, seq_id)
+
+    if config.verbosity >= 2:
+        t6 = time.time()
+        print("Time for part 6 in getAlignments: %s" % (str(t6 - t5)))
+
+    if config.compute_ppi:
+        pos_db_map = retrieve_stored_proteins(interacting_protein_db_ids, config, proteins, protein_ids_unknown = True)
+
+    if config.verbosity >= 2:
+        t7 = time.time()
+        print(f'Time for part 7 in getAlignments: {str(t7 - t6)}, {len(interacting_protein_db_ids)}')
+
+    if config.compute_ppi:
+        get_interfaces(interacting_protein_db_ids, config, proteins)
+
+    if config.verbosity >= 2:
+        t8 = time.time()
+        print("Time for part 8 in getAlignments: %s" % (str(t8 - t7)))
+
     structure_map, id_structure_map = getStructure_map(structure_ids, config)
+
+    if config.verbosity >= 2:
+        t9 = time.time()
+        print("Time for part 9 in getAlignments: %s" % (str(t9 - t8)))
+
     pdb_ids = set()
     for (pdb_id, chain) in structure_map:
         pdb_ids.add(pdb_id)
 
     complex_map = getComplexMap(config, pdb_ids=pdb_ids)
+
+    if config.verbosity >= 2:
+        t10 = time.time()
+        print("Time for part 10 in getAlignments: %s" % (str(t10 - t9)))
 
     for prot_db_id in prot_structure_alignment_map:
         prot_id = proteins.getByDbId(prot_db_id).primary_protein_id
@@ -1600,9 +1852,13 @@ def getAlignments(proteins, config, get_all_alignments=False):
             struct_anno = structure_package.StructureAnnotation(prot_id, pdb_id, chain, alignment=(target_seq, template_seq), stored=True)
             proteins.add_annotation(prot_id, pdb_id, chain, struct_anno)
 
+            #print('Add annotation', prot_id, pdb_id, chain)
+
             if not proteins.contains_structure(pdb_id, chain):
                 oligo = structure_map[(pdb_id, chain)][1]
                 struct = structure_package.Structure(pdb_id, chain, oligo=oligo, mapped_proteins=[prot_id], database_id=structure_id)
+                if structure_id in interacting_structures:
+                    struct.interacting_structure = True
                 proteins.add_structure(pdb_id, chain, struct)
             else:
                 proteins.add_mapping_to_structure(pdb_id, chain, prot_id)
@@ -1621,8 +1877,8 @@ def getAlignments(proteins, config, get_all_alignments=False):
             proteins.set_annotation_db_id_by_db_id(prot_db_id, pdb_id, chain, True)
 
     if config.verbosity >= 2:
-        t3 = time.time()
-        print("Time for part 3 in getAlignments: %s" % (str(t3 - t2)))
+        t11 = time.time()
+        print("Time for part 11 in getAlignments: %s" % (str(t11 - t10)))
 
 
 def getStructure_map(structure_ids, config):
@@ -1723,6 +1979,167 @@ def createClassValues(proteins, config):
 
     return values
 
+# called by serializedPipeline
+def insert_interfaces(proteins, config):
+    interface_values = []
+    prot_prot_values = []
+    prot_prot_map = {}
+    pos_pos_values = []
+    prot_db_ids = []
+    structure_ids_for_residue_retrieval = {}
+    pos_pos_pre_values = []
+    for protein_id in proteins.protein_map:
+        #print('In insert_interfaces:', protein_id)
+        prot_a_db_id = proteins.protein_map[protein_id].database_id
+        for aggregated_interface in proteins.protein_map[protein_id].aggregated_interface_map:
+            prot_db_ids.append(prot_a_db_id)
+            structure_recommendation = f'{aggregated_interface.recommended_complex},{aggregated_interface.chain},{aggregated_interface.interacting_chain}'
+
+            #print('In insert_interfaces:', protein_id, structure_recommendation, aggregated_interface.pos_pos_interactions)
+
+            #structure_ids_for_residue_retrieval[proteins.structures[(aggregated_interface.recommended_complex, aggregated_interface.chain)].database_id] = (aggregated_interface.recommended_complex, aggregated_interface.chain)
+
+            if aggregated_interface.database_id is None:
+                interface_values.append((prot_a_db_id, structure_recommendation))
+            for pos_a in aggregated_interface.pos_pos_interactions:
+                pos_pos_interaction = aggregated_interface.pos_pos_interactions[pos_a]
+
+                try:
+                    pos_a_db_id = proteins.protein_map[protein_id].positions[pos_a].database_id
+                except:
+                    config.errorlog.add_warning(f'Position database id not found: {protein_id} {pos_a}')
+                    continue
+                if pos_pos_interaction.protein_b is None or pos_pos_interaction.position_b is None:
+                    continue
+                pos_b_db_id = proteins.protein_map[pos_pos_interaction.protein_b].positions[pos_pos_interaction.position_b].database_id
+                (chain_a, res_a, chain_b, res_b) = pos_pos_interaction.recommended_interaction
+
+
+                #structure_ids_for_residue_retrieval[proteins.structures[(pos_pos_interaction.recommended_complex, chain_a)].database_id] = (pos_pos_interaction.recommended_complex, chain_a)
+                #structure_ids_for_residue_retrieval[proteins.structures[(pos_pos_interaction.recommended_complex, chain_b)].database_id] = (pos_pos_interaction.recommended_complex, chain_b)
+
+                pos_pos_pre_values.append((pos_a_db_id, pos_b_db_id, pos_pos_interaction.recommended_complex, chain_a, chain_b, res_a, res_b))
+
+                if not pos_pos_interaction.protein_b in prot_prot_map:
+                    pos_pos_pre_values.append((pos_b_db_id, pos_a_db_id, pos_pos_interaction.recommended_complex, chain_b, chain_a, res_b, res_a))
+
+                if not prot_a_db_id in prot_prot_map:
+                    prot_prot_map[prot_a_db_id] = {proteins.protein_map[pos_pos_interaction.protein_b].database_id: (aggregated_interface.recommended_complex, aggregated_interface.chain, aggregated_interface.interacting_chain)}
+
+    for structure_id in proteins.complexes:
+        for chain in proteins.complexes[structure_id].chains:
+            if proteins.complexes[structure_id].chains[chain] == 'Protein' and (structure_id, chain) in proteins.structures:
+                if len(proteins.structures[(structure_id, chain)].residues) > 0: #If there are residues inside the structure datastructure ...
+                    break_it = False
+                    for res in proteins.structures[(structure_id, chain)].residues:
+                        if proteins.structures[(structure_id, chain)].residues[res].database_id != None: #look if the first residue has a database id ...
+                            break_it = True
+                        break
+                    if break_it: #If yes, don't queue it for retrieval
+                        continue
+                structure_ids_for_residue_retrieval[proteins.structures[(structure_id, chain)].database_id] = (structure_id, chain)
+
+    getStoredResidues(proteins, config, custom_ids = structure_ids_for_residue_retrieval, retrieve_only_db_ids = True)
+
+    for (pos_a_db_id, pos_b_db_id, recommended_complex, chain_a, chain_b, res_a, res_b) in pos_pos_pre_values:
+        if res_a not in proteins.structures[(recommended_complex, chain_a)].residues:
+            continue
+        res_a_db_id = proteins.structures[(recommended_complex, chain_a)].residues[res_a].database_id
+        if not (recommended_complex, chain_b) in proteins.structures:
+            continue
+        if not res_b in proteins.structures[(recommended_complex, chain_b)].residues:
+            continue
+        res_b_db_id = proteins.structures[(recommended_complex, chain_b)].residues[res_b].database_id
+        pos_pos_values.append((pos_a_db_id, pos_b_db_id, res_a_db_id, res_b_db_id))
+
+    insert('Interface', ['Protein', 'Structure_Recommendation'], interface_values, config)
+
+    results = binningSelect(prot_db_ids, ['Protein', 'Interface_Id', 'Structure_Recommendation'], 'Interface', config)
+
+    blank_interfaces = {}
+    for row in results:
+        prot_db_id = row[0]
+        interface_db_id = row[1]
+        structure_recommendation = row[2]
+        if not prot_db_id in blank_interfaces:
+            blank_interfaces[prot_db_id] = {}
+
+        blank_interfaces[prot_db_id][structure_recommendation] = interface_db_id
+
+    for prot_a_db_id in prot_prot_map:
+        for prot_b_db_id in prot_prot_map[prot_a_db_id]:
+            recommended_complex, chain_a, chain_b = prot_prot_map[prot_a_db_id][prot_b_db_id]
+            if not f'{recommended_complex},{chain_a},{chain_b}' in blank_interfaces[prot_a_db_id]:
+                continue
+            interface_a_db_id = blank_interfaces[prot_a_db_id][f'{recommended_complex},{chain_a},{chain_b}']
+            if not prot_b_db_id in blank_interfaces:
+                continue
+            if not f'{recommended_complex},{chain_b},{chain_a}' in blank_interfaces[prot_b_db_id]:
+                interface_b_db_id = interface_a_db_id
+            else:
+                interface_b_db_id = blank_interfaces[prot_b_db_id][f'{recommended_complex},{chain_b},{chain_a}']
+
+            prot_prot_values.append((interface_a_db_id, interface_b_db_id, proteins.complexes[recommended_complex].database_id, chain_a, chain_b))
+
+            if prot_b_db_id not in prot_prot_map:
+                prot_prot_values.append((interface_b_db_id, interface_a_db_id, proteins.complexes[recommended_complex].database_id, chain_b, chain_a))
+
+    position_interface_values = []
+
+    for protein_id in proteins.protein_map:
+        prot_a_db_id = proteins.protein_map[protein_id].database_id
+        if prot_a_db_id not in blank_interfaces:
+            continue
+        for aggregated_interface in proteins.protein_map[protein_id].aggregated_interface_map:
+            if aggregated_interface.database_id is not None:
+                continue
+            structure_recommendation = f'{aggregated_interface.recommended_complex},{aggregated_interface.chain},{aggregated_interface.interacting_chain}'
+            if structure_recommendation not in blank_interfaces[prot_a_db_id]:
+                continue
+            interface_db_id = blank_interfaces[prot_a_db_id][structure_recommendation]
+
+            for position in aggregated_interface.positions:
+                position_db_id = proteins.protein_map[protein_id].positions[position].database_id
+                structure_id, chain, res = aggregated_interface.positions[position]
+                position_interface_values.append((interface_db_id, position_db_id, f'{structure_id}:{chain} {res}'))
+
+    insert('RS_Position_Interface', ['Interface', 'Position', 'Recommended_Residue'], position_interface_values, config)
+
+    insert('Position_Position_Interaction', ['Position_A', 'Position_B', 'Residue_A', 'Residue_B'], pos_pos_values, config)
+
+    insert('Protein_Protein_Interaction', ['Interface_A', 'Interface_B', 'Complex', 'Chain_A', 'Chain_B'], prot_prot_values, config)
+
+    residue_interface_values = []
+ 
+    for structure_id in proteins.complexes:
+        #print(structure_id, proteins.complexes[structure_id].interfaces)
+        for (chain, i_chain) in proteins.complexes[structure_id].interfaces:
+            if proteins.complexes[structure_id].interfaces[(chain, i_chain)].stored:
+                continue
+            try:
+                structure_db_id = proteins.structures[(structure_id, chain)].database_id
+            except:
+                config.errorlog.add_warning(f'Structure missing: {structure_id} {chain} {i_chain}')
+                continue
+            for res in proteins.complexes[structure_id].interfaces[(chain, i_chain)].residues:
+
+                if not res in proteins.structures[(structure_id, chain)].residues:
+                    if config.verbosity >= 4:
+                        print(f'Residue {res} filtered from {structure_id} {chain} {i_chain} in insert_interfaces: not in structures object')
+                    continue #Happens for ligands declared as part of the chain
+                res_db_id = proteins.structures[(structure_id, chain)].residues[res].database_id
+                if res_db_id is None: 
+                    if config.verbosity >= 4:
+                        print(f'Residue {res} filtered from {structure_id} {chain} {i_chain} in insert_interfaces: db_id is None')
+                    continue
+                if res in proteins.complexes[structure_id].interfaces[(chain, i_chain)].interactions:
+                    i_res_string = f'{i_chain},{proteins.complexes[structure_id].interfaces[(chain, i_chain)].interactions[res]}'
+                else:
+                    i_res_string = f'{i_chain},'
+                residue_interface_values.append((structure_db_id, res_db_id, i_res_string))
+
+    insert('RS_Residue_Interface', ['Structure', 'Residue', 'Interacting_Residue'], residue_interface_values, config)
+
 
 def para_residue_init(rows):
     t0 = time.time()
@@ -1745,16 +2162,36 @@ def para_residue_init(rows):
 # called by serializedPipeline
 
 
-def getStoredResidues(proteins, config):
+def getStoredResidues(proteins, config, custom_ids = None, retrieve_only_db_ids = False, exclude_interacting_chains = False):
     t0 = time.time()
 
-    stored_ids = proteins.getStoredStructureIds()
+    if custom_ids is None:
+        stored_ids = proteins.getStoredStructureIds(exclude_interacting_chains = exclude_interacting_chains)
+    else:
+        stored_ids = custom_ids
+        if config.verbosity >= 4:
+            print(f'Call of getStoredResidues with custom_ids: {custom_ids}')
 
     if config.verbosity >= 2:
         t1 = time.time()
         print("Time for getstoredresidues 1: %s" % str(t1 - t0))
 
+    max_number_of_structures = 30000
+
     if len(stored_ids) > 0:
+        if len(stored_ids) >= max_number_of_structures:
+            number_of_packages = (len(stored_ids)//max_number_of_structures) + 1
+            package_size = len(stored_ids) // number_of_packages
+            if len(stored_ids) % number_of_packages != 0:
+                package_size += 1
+            id_packages = []
+            complete_id_list = list(stored_ids.keys())
+            for package_number in range(number_of_packages):
+                left = package_number * package_size
+                right = (package_number+1) * package_size
+                id_packages.append(complete_id_list[left:right])
+        else:
+            id_packages = [list(stored_ids.keys())]
 
         """
         rows = ['Structure', 'Residue_Id', 'Number', 'Amino_Acid', 'Sub_Lig_Dist', 'Sub_Chain_Distances',
@@ -1770,51 +2207,86 @@ def getStoredResidues(proteins, config):
                 'Interacting_Chains', 'Interacting_Ligands'
                 ]
         """
-        rows = ['Structure', 'Residue_Id', 'Residue_Data']
-        table = 'Residue'
-        results = binningSelect(stored_ids.keys(), rows, table, config)
+        for id_package in id_packages:
+            if not retrieve_only_db_ids:
+                rows = ['Structure', 'Residue_Id', 'Number', 'Residue_Data']
+            else:
+                rows = ['Structure', 'Residue_Id', 'Number']
+            table = 'Residue'
+            results = binningSelect(id_package, rows, table, config)
 
-        if config.verbosity >= 2:
-            t10 = time.time()
-            print("Time for getstoredresidues 2.1: %s" % str(t10 - t1))
+            if config.verbosity >= 2:
+                t10 = time.time()
+                print("Time for getstoredresidues 2.1: %s" % str(t10 - t1))
 
-        for row in results:
-            try:
-                (res_id, one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
-                           ssa, homo_str, profile_str,
-                           centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
-                           cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
-                           inter_chain_median_rsa, inter_chain_dist_weighted_rsa, intra_chain_median_kd,
-                           intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
-                           inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
-                           intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
-                           interacting_chains_str, interacting_ligands_str) = unpack(row[2])
-            except:
-                config.errorlog.add_warning('Defective database entry in Residue table: %s %s' % (str(row[0]), str(row[1])))
-                continue
+            stored_res_db_ids = {}
 
-            # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
-            residue = residue_package.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
-                                   relative_main_chain_acc=relative_main_chain_acc, relative_side_chain_acc=relative_side_chain_acc,
-                                   SSA=ssa, homo_dist_str=homo_str, interaction_profile_str=profile_str, centrality_score_str=centrality_score_str,
-                                   modres=modres, b_factor=b_factor, database_id=row[1], stored=True, phi=phi, psi=psi,
-                                   intra_ssbond=intra_ssbond, ssbond_length=ssbond_length, intra_link=intra_link, link_length=link_length,
-                                   cis_conformation=cis_conformation, cis_follower=cis_follower, inter_chain_median_kd=inter_chain_median_kd,
-                                   inter_chain_dist_weighted_kd=inter_chain_dist_weighted_kd, inter_chain_median_rsa=inter_chain_median_rsa,
-                                   inter_chain_dist_weighted_rsa=inter_chain_dist_weighted_rsa, intra_chain_median_kd=intra_chain_median_kd,
-                                   intra_chain_dist_weighted_kd=intra_chain_dist_weighted_kd, intra_chain_median_rsa=intra_chain_median_rsa,
-                                   intra_chain_dist_weighted_rsa=intra_chain_dist_weighted_rsa,
-                                   inter_chain_interactions_median=inter_chain_interactions_median, inter_chain_interactions_dist_weighted=inter_chain_interactions_dist_weighted,
-                                   intra_chain_interactions_median=intra_chain_interactions_median, intra_chain_interactions_dist_weighted=intra_chain_interactions_dist_weighted,
-                                   interacting_chains_str=interacting_chains_str, interacting_ligands_str=interacting_ligands_str)
-            s_id = row[0]
-            pdb_id, chain = stored_ids[s_id]
-            proteins.add_residue(pdb_id, chain, res_id, residue)
+            for row in results:
+                try:
+                    res_id = row[2]
+                    if not retrieve_only_db_ids:
+                        (one_letter, lig_dist_str, chain_dist_str, rsa, relative_main_chain_acc, relative_side_chain_acc,
+                               ssa, homo_str, profile_str,
+                               centrality_score_str, b_factor, modres, phi, psi, intra_ssbond, ssbond_length, intra_link, link_length,
+                               cis_conformation, cis_follower, inter_chain_median_kd, inter_chain_dist_weighted_kd,
+                               inter_chain_median_rsa, inter_chain_dist_weighted_rsa, intra_chain_median_kd,
+                               intra_chain_dist_weighted_kd, intra_chain_median_rsa, intra_chain_dist_weighted_rsa,
+                               inter_chain_interactions_median, inter_chain_interactions_dist_weighted,
+                               intra_chain_interactions_median, intra_chain_interactions_dist_weighted,
+                               interacting_chains_str, interacting_ligands_str) = unpack(row[3])
+                except:
+                    config.errorlog.add_warning('Defective database entry in Residue table: %s %s' % (str(row[0]), str(row[1])))
+                    continue
+
+                s_id = row[0]
+                pdb_id, chain = stored_ids[s_id]
+                
+                # Those residue inits include decoding of interaction profile and centrality score strings and thus takes some resources. For that a para function
+                if not retrieve_only_db_ids:
+                    residue = residue_package.Residue(res_id, aa=one_letter, lig_dist_str=lig_dist_str, chain_dist_str=chain_dist_str, RSA=rsa,
+                                       relative_main_chain_acc=relative_main_chain_acc, relative_side_chain_acc=relative_side_chain_acc,
+                                       SSA=ssa, homo_dist_str=homo_str, interaction_profile_str=profile_str, centrality_score_str=centrality_score_str,
+                                       modres=modres, b_factor=b_factor, database_id=row[1], stored=True, phi=phi, psi=psi,
+                                       intra_ssbond=intra_ssbond, ssbond_length=ssbond_length, intra_link=intra_link, link_length=link_length,
+                                       cis_conformation=cis_conformation, cis_follower=cis_follower, inter_chain_median_kd=inter_chain_median_kd,
+                                       inter_chain_dist_weighted_kd=inter_chain_dist_weighted_kd, inter_chain_median_rsa=inter_chain_median_rsa,
+                                       inter_chain_dist_weighted_rsa=inter_chain_dist_weighted_rsa, intra_chain_median_kd=intra_chain_median_kd,
+                                       intra_chain_dist_weighted_kd=intra_chain_dist_weighted_kd, intra_chain_median_rsa=intra_chain_median_rsa,
+                                       intra_chain_dist_weighted_rsa=intra_chain_dist_weighted_rsa,
+                                       inter_chain_interactions_median=inter_chain_interactions_median, inter_chain_interactions_dist_weighted=inter_chain_interactions_dist_weighted,
+                                       intra_chain_interactions_median=intra_chain_interactions_median, intra_chain_interactions_dist_weighted=intra_chain_interactions_dist_weighted,
+                                       interacting_chains_str=interacting_chains_str, interacting_ligands_str=interacting_ligands_str)
+                    proteins.add_residue(pdb_id, chain, res_id, residue)
+                else:
+                    if res_id not in proteins.structures[(pdb_id, chain)].residues:
+                        residue = residue_package.Residue(res_id, database_id=row[1], stored=True)
+                        proteins.add_residue(pdb_id, chain, res_id, residue)
+                    else:
+                        proteins.structures[(pdb_id, chain)].residues[res_id].database_id =  row[1]
+                        proteins.structures[(pdb_id, chain)].residues[res_id].stored = True
+
+                stored_res_db_ids[row[1]] = pdb_id, chain, res_id
+
+            rows = ['Residue', 'Interacting_Residue']
+            table = 'RS_Residue_Interface'
+            results = binningSelect(stored_res_db_ids, rows, table, config)
+
+
+            for row in results:
+                residue_db_id = row[0]
+                pdb_id, chain, res = stored_res_db_ids[residue_db_id]
+                interacting_chain, i_res = row[1].split(',')
+
+                if not (chain, interacting_chain) in proteins.complexes[pdb_id].interfaces:
+                    proteins.complexes[pdb_id].interfaces[(chain, interacting_chain)] = interface_package.Interface(chain, interacting_chain, stored = True)
+                if i_res != '':
+                    proteins.complexes[pdb_id].interfaces[(chain, interacting_chain)].add_interaction(res, i_res)
+                else:
+                    proteins.complexes[pdb_id].interfaces[(chain, interacting_chain)].add_support(res)
 
     if config.verbosity >= 2:
         t2 = time.time()
         print("Time for getstoredresidues 2: %s" % str(t2 - t1))
-
 
 def checkLigand(name, db, cursor):
     sql = "SELECT Ligand_Id FROM Ligand WHERE Name = '%s'" % name
@@ -2479,18 +2951,12 @@ def getProtIdsFromSession(session_id, config, filter_mutant_proteins=False):
         prot_ids[row[0]] = row[1]
     return prot_ids
 
-# called by output
-
-
-def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=False,
-                   with_snvs=False, mutate_snvs=False, with_alignments=False,
-                   with_complexes=False, keep_ray_alive=False):
-    proteins = protein_package.Proteins({}, {}, {})  # create empty Proteins object
-
-    prot_db_ids = getProtIdsFromSession(session, config, filter_mutant_proteins=filter_mutant_proteins)
-
+def retrieve_stored_proteins(prot_db_ids, config, proteins, protein_ids_unknown = False):
     cols = ['Protein_Id', 'Primary_Protein_Id', 'Sequence']
-    results = binningSelect(prot_db_ids.keys(), cols, 'Protein', config)
+    if protein_ids_unknown:
+        results = binningSelect(prot_db_ids, cols, 'Protein', config)
+    else:
+        results = binningSelect(prot_db_ids.keys(), cols, 'Protein', config)
     id_prot_id_map = {}
 
     prot_id_list = set()
@@ -2499,18 +2965,25 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
     for row in results:
 
         id_prot_id_map[row[0]] = row[1]
-        prot_obj = protein_package.Protein(config.errorlog, primary_protein_id=row[1], database_id=row[0], input_id=prot_db_ids[row[0]], sequence=row[2])
+        if protein_ids_unknown:
+            input_id = row[1]
+        else:
+            input_id = prot_db_ids[row[0]]
+        prot_obj = protein_package.Protein(config.errorlog, primary_protein_id=row[1], database_id=row[0], input_id=input_id, sequence=row[2], wildtype_protein = row[1])
         proteins[row[1]] = prot_obj
         prot_id_list.add(row[0])
-        if prot_db_ids[row[0]] is not None:
+        if input_id is not None:
             prot_ids_mutants_excluded.add(row[0])
 
     proteins.set_stored_ids(prot_id_list, prot_ids_mutants_excluded)
 
-    cols = ['Protein', 'Position_Number', 'Position_Id', 'Recommended_Structure_Data']
+    cols = ['Protein', 'Position_Number', 'Position_Id', 'Recommended_Structure_Data', 'Wildtype_Residue']
     table = 'Position'
 
-    results = binningSelect(prot_db_ids.keys(), cols, table, config)
+    if protein_ids_unknown:
+        results = binningSelect(prot_db_ids, cols, table, config)
+    else:
+        results = binningSelect(prot_db_ids.keys(), cols, table, config)
 
     pos_db_map = {}
 
@@ -2519,12 +2992,32 @@ def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=
 
         m_id = row[2]
         pos = row[1]
-
-        recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(unpack(row[3])[0])
-        pos_obj = position_package.Position(pos=pos, checked=True, recommended_structure=recommended_structure, database_id=m_id)
+        if row[3] is not None:
+            unpacked_rec_str = unpack(row[3])[0]
+        else:
+            unpacked_rec_str = row[3]
+        wt_aa = row[4]
+        recommended_structure, seq_id, cov, resolution = sdsc_utils.process_recommend_structure_str(unpacked_rec_str)
+        pos_obj = position_package.Position(pos=pos, checked=True, recommended_structure=recommended_structure, database_id=m_id, wt_aa = wt_aa)
         prot_id = id_prot_id_map[p_id]
         proteins[prot_id].add_positions([pos_obj])
         pos_db_map[m_id] = (prot_id, pos)
+    return pos_db_map
+
+# called by output
+
+def proteinsFromDb(session, config, with_residues=False, filter_mutant_proteins=False,
+                   with_snvs=False, mutate_snvs=False, with_alignments=False,
+                   with_complexes=False, keep_ray_alive=False):
+
+    if with_alignments:
+        with_complexes = True
+
+    proteins = protein_package.Proteins({}, {}, {})  # create empty Proteins object
+
+    prot_db_ids = getProtIdsFromSession(session, config, filter_mutant_proteins=filter_mutant_proteins)
+
+    pos_db_map = retrieve_stored_proteins(prot_db_ids, config, proteins)
 
     if with_complexes:
         draw_complexes(config, proteins, draw_all=True)
@@ -3225,13 +3718,6 @@ def calculateAnnotationRate(db, cursor, session_id):
                 muts_without_template.add(m)
             elif error_map[gene_map[m]] == '4':
                 muts_with_unknown_gene_error.add(m)
-
-        # print "Total Mutations: ",len(mut_id_list)
-        # print "Mutations with Annotation: ",len(muts_with_anno)
-        # print "Mutations without template: ",len(muts_without_template)
-        # print "Mutations with unknown gene error: ",len(muts_with_unknown_gene_error)
-        # print "Mutations, which are mapped to gaps in all templates: ",len(all_error_muts)
-        # print "Annotation-Rate: ",float(len(muts_with_anno))/float(len(mut_id_list))
 
         return (len(mut_id_list), len(muts_with_anno), len(muts_without_template), len(muts_with_unknown_gene_error), len(all_error_muts), float(len(muts_with_anno)) / float(len(mut_id_list)), number_of_templates, len(greater90), len(greater95), len(greater98), len(greater99), muts_with_temp_98)
     else:

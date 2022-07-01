@@ -1,0 +1,31 @@
+--- d-StructMAn benchmark instruction manual ---
+
+1.) Datasets:
+We provide six benchmark datasets that contain a different amount of query proteins for which a different number of structures (hits) should be available. Note that the number of hits is dependent on the version of the PDB used for sequence similarity search and thus the results may slightly change over time, due to regular updates of the PDB.
+
+2.) General instructions:
+To receive the runtime one needs to set the verbosity flag to at least 2.
+One needs to reset the database for every call or the pipeline will reuse the results from a previous benchmark run.
+We provide several special flags that are not documented in the standard disclaimer of StructMAn to simulate different system environments and configurations. All flags useful for the benchmark are described in more detail below.
+
+General command:
+#structman database reset
+#structman -i [dataset] --verbosity 2 [optional flags]
+
+3.) Optional flags
+#-n [number of cores]
+Determines the number of logical cores the program is allowed to use.
+
+#-l
+Activates lite mode. (Deactivates usage of the database and safes some computations.)
+
+#--ignore_local_pdb --ignore_local_rindb --ignore_local_mapping_db
+Deactivates the usage of provided local resources (local instance of the PDB, local instance of the RINdb, local instance of UniProt ID mapping and protein sequence database). Could also used individually for a more detailed benchmark.
+
+4.) Example commands:
+#structman database reset
+#structman -i 10_proteins_few_hits.smlf --verbosity 2 -n 11 -l --ignore_local_pdb --ignore_local_rindb --ignore_local_mapping_db
+#structman database reset
+#structman -i 100_proteins_many_hits.smlf --verbosity 2 -n 250
+#structman database reset
+#structman -i 50_proteins_few_hits.smlf --verbosity 2 -n 11 --ignore_local_pdb --ignore_local_rindb --ignore_local_mapping_db

@@ -752,6 +752,67 @@ def getIAmap(interaction_score_file):
     return IAmap
 
 
+# Takes a dict of structure_id, chain : IAmap and calculates an aggregated RIN for the given chains.
+# The chains must assign the same protein in different structures, therefor residue-position backmaps for all of the are needed.
+# Called by serializedPipeline
+
+def aggregate_IAmaps(IAmaps, backmaps):
+    aggregated_IAmap_precursor = {}
+    max_edge_count = {}
+    for structure_id, chain in IAmaps:
+        IAmap = IAmaps[(structure_id, chain)]
+        backmap = backmaps[structure_id]
+        if chain not in IAmap:
+            continue
+        for res_nr in IAmap[chain]:
+            if not res_nr in backmap:
+                continue
+            position = backmap[res_nr]
+            if position is None:
+                continue
+            for res_nr_2 in IAmap[chain]:
+                if res_nr_2 not in backmap:
+                    continue
+                i_position = backmap[res_nr_2]
+                if i_position is None:
+                    continue
+                if (position, i_position) not in max_edge_count:
+                    max_edge_count[(position, i_position)] = 1
+                else:
+                    max_edge_count[(position, i_position)] += 1
+            for interaction_base_type in IAmap[chain][res_nr]:
+                for interaction_type in IAmap[chain][res_nr][interaction_base_type]:
+                    for (i_chain, i_res_nr) in IAmap[chain][res_nr][interaction_base_type][interaction_type]:
+                        if i_chain != chain: #ignore non-intrachain interactions
+                            continue
+                        if not i_res_nr in backmap:
+                            continue
+                        i_position = backmap[i_res_nr]
+                        if i_position is None:
+                            continue
+                        if not (position, i_position) in aggregated_IAmap_precursor:
+                            aggregated_IAmap_precursor[(position, i_position)] = {}
+                        if not interaction_base_type in aggregated_IAmap_precursor[(position, i_position)]:
+                            aggregated_IAmap_precursor[(position, i_position)][interaction_base_type] = {}
+                        if not interaction_type in aggregated_IAmap_precursor[(position, i_position)][interaction_base_type]:
+                            aggregated_IAmap_precursor[(position, i_position)][interaction_base_type][interaction_type] = []
+                        aggregated_IAmap_precursor[(position, i_position)][interaction_base_type][interaction_type].append(IAmap[chain][res_nr][interaction_base_type][interaction_type][(i_chain, i_res_nr)])
+
+    aggregate_IAmap = {}
+    for (position, i_position) in aggregated_IAmap_precursor:
+        max_edge = max_edge_count[(position, i_position)]
+        if not (position, i_position) in aggregate_IAmap:
+            aggregate_IAmap[(position, i_position)] = {}
+        for interaction_base_type in aggregated_IAmap_precursor[(position, i_position)]:
+            if not interaction_base_type in aggregate_IAmap[(position, i_position)]:
+                aggregate_IAmap[(position, i_position)][interaction_base_type] = {}
+            for interaction_type in aggregated_IAmap_precursor[(position, i_position)][interaction_base_type]:
+                if not interaction_type in aggregate_IAmap[(position, i_position)][interaction_base_type]:
+                    aggregate_IAmap[(position, i_position)][interaction_base_type][interaction_type] = {}
+                aggregate_IAmap[(position, i_position)][interaction_base_type][interaction_type] = sum(aggregated_IAmap_precursor[(position, i_position)][interaction_base_type][interaction_type])/max_edge
+
+    return aggregate_IAmap
+
 def float_or_none(string):
     if string == 'None':
         return None
@@ -818,7 +879,7 @@ def getProfile(interaction_map, residue, ligands, metals, ions, res_contig_map, 
     profile = Interaction_profile()
     (chain, res) = residue
 
-    if chain not in interaction_map:
+    if chain not in     interaction_map:
         return profile
     if res not in interaction_map[chain]:
         return profile
@@ -927,13 +988,6 @@ def calculateIAPProfiles(interaction_map, chains, ligands, metals, ions):
 
     return ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles
 
-# called by templateFiltering
-
-
-def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, res_contig_map, base_path, chain_type_map, encoded=True):
-    pdb_id = pdb_id.replace('_AU', '').lower()[:4]
-    folder_path = "%s/%s/%s" % (base_path, pdb_id[1:-1], pdb_id)
-    interaction_score_file = "%s/%s_intsc.ea.gz" % (folder_path, pdb_id)
 
 # called by templateFiltering
 
@@ -945,26 +999,37 @@ def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, re
         path_stem = "%s/%s" % (folder_path, pdb_id)
     else:
         folder_path = config.temp_folder
-        path_stem = model_path[:-4]  # remove .pdb from the end of the model path
+        if model_path[:-4] == '.pdb':
+            path_stem = model_path[:-4] # remove .pdb from the end of the model path
+        else:
+            path_stem = model_path[:-7] # .pdb.gz
         pdb_id = path_stem.split('/')[-1].split('.')[0]
 
     interaction_score_file = "%s_intsc.ea.gz" % (path_stem)
     if not os.path.isfile(interaction_score_file):
         if config.verbosity >= 3:
-            print("Did not find RIN: %s" % interaction_score_file)
+            print(f'Did not find RIN: {interaction_score_file}, folder path: {folder_path}' )
         rinerator_path = config.rinerator_path
 
         if os.path.exists(folder_path):
             rin_target_path = folder_path
         else:
-            rin_target_path = config.tmp_folder
+            if model_path is None:
+                if os.path.exists(base_path):
+                    if not os.path.exists(f'{base_path}/{pdb_id[1:-1]}'):
+                        os.mkdir(f'{base_path}/{pdb_id[1:-1]}')
+                    os.mkdir(f'{base_path}/{pdb_id[1:-1]}/{pdb_id}')
+            if os.path.exists(folder_path):
+                rin_target_path = folder_path
+            else:
+                rin_target_path = config.tmp_folder
 
         createRINdb.calcRIN(page.encode(), rin_target_path, pdb_id, rinerator_path, True, config.verbosity, structure_path=model_path)
         path_stem = "%s/%s" % (rin_target_path, pdb_id)
         interaction_score_file = "%s_intsc.ea.gz" % (path_stem)
         
         if not os.path.isfile(interaction_score_file):
-            return 'RIN not found and calculation of RIN failed for: %s' % pdb_id
+            return f'RIN not found and calculation of RIN failed for: {pdb_id}, {model_path} {interaction_score_file}'
 
     network_file = "%s.sif.gz" % (path_stem)
     interaction_count_file = "%s_nrint.ea.gz" % (path_stem)
@@ -1019,4 +1084,4 @@ def lookup(pdb_id, page, config, inp_residues, chains, ligands, metals, ions, re
         os.remove(residue_file)
         os.remove(centrality_file)
 
-    return profiles_map, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles
+    return profiles_map, ligand_profiles, metal_profiles, ion_profiles, chain_chain_profiles, interaction_map

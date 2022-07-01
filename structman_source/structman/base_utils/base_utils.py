@@ -4,16 +4,65 @@ import psutil
 from zlib import adler32
 
 from structman import settings
-from structman.lib.sdsc.residue import Residue
-from structman.lib.sdsc.structure import StructureAnnotation, Structure
-from structman.lib.sdsc.complex import Complex
-from structman.lib.sdsc.protein import Protein
-from structman.lib.sdsc.position import Position
+
+import structman.lib.sdsc as sdsc
 
 import zstd
 import msgpack
 import pickle
 import pickletools
+import sys
+
+structure_id_types = [
+    'PDB',
+    'Asymmetric unit PDB',
+    'Alphafold model'
+]
+
+def identify_structure_id_type(structure_id):
+    structe_id_type_key = identify_structure_id_type_key(structure_id)
+    if structe_id_type_key is None:
+        return 'Unknown structure identifier'
+    return structure_id_types[structe_id_type_key]
+
+def identify_structure_id_type_key(structure_id):
+    l = len(structure_id)
+    if l == 7:
+        if structure_id[-3:] == '_AU':
+            return 1
+
+    if len(structure_id) == 4:
+        return 0
+
+    if structure_id[:3] == 'AF-':
+        return 2
+
+    return None
+
+def is_alphafold_model(structure_id):
+    structe_id_type_key = identify_structure_id_type_key(structure_id)
+    return (structe_id_type_key == 2)
+
+def alphafold_model_id_to_file_path(model_id, config):
+    uniprot_ac = model_id.split('-')[1]
+    topfolder_id = uniprot_ac[-2:]
+    subfolder_id = uniprot_ac[-4:]
+
+    folder_path = f'{config.path_to_model_db}/{topfolder_id}/{subfolder_id}'
+
+    for fn in os.listdir(folder_path):
+        if fn.count(model_id) == 1 and fn.count('.pdb.gz') == 1:
+            return f'{config.path_to_model_db}/{topfolder_id}/{subfolder_id}/{fn}'
+
+    config.errorlog.add_warning(f'Did not find file {model_id} in alphafold model db: {config.path_to_model_db}')
+    return None
+
+def is_alphafold_db_valid(config):
+    if not os.path.exists(config.path_to_model_db):
+        return False
+    if not os.path.exists(f'{config.path_to_model_db}/00'):
+        return False
+    return True
 
 
 def resolve_path(path):
@@ -92,7 +141,8 @@ def custom_encoder(obj):
     if 'Complex' in str(type(obj)): #isinstance just won't work, don't know why
         serialized_complex = []
         for attribute_name in obj.__slots__:
-            if attribute_name == 'chains' or attribute_name == 'resolution':
+            #Complex objects get slimmed down, when packed !!!!!!!!!
+            if attribute_name == 'chains' or attribute_name == 'resolution' or attribute_name == 'interfaces':
                 serialized_complex.append(obj.__getattribute__(attribute_name))
             else:
                 serialized_complex.append(None)
@@ -107,6 +157,12 @@ def custom_encoder(obj):
                 serialized_protein.append(obj.__getattribute__(attribute_name))
         return {'__protein__': True, 'as_list': serialized_protein}
 
+    if 'Position_Position_Interaction' in str(type(obj)): #isinstance just won't work, don't know why
+        serialized_pos_pos_i = []
+        for attribute_name in obj.__slots__:
+            serialized_pos_pos_i.append(obj.__getattribute__(attribute_name))
+        return {'__pos_pos_i__': True, 'as_list': serialized_pos_pos_i}
+
     if 'Position' in str(type(obj)): #isinstance just won't work, don't know why
         serialized_position = []
         for attribute_name in obj.__slots__:
@@ -118,15 +174,29 @@ def custom_encoder(obj):
                 serialized_position.append(obj.__getattribute__(attribute_name))
         return {'__position__': True, 'as_list': serialized_position}
 
+    if 'Aggregated_interface' in str(type(obj)): #isinstance just won't work, don't know why
+        serialized_agg_interface = []
+        for attribute_name in obj.__slots__:
+            serialized_agg_interface.append(obj.__getattribute__(attribute_name))
+        return {'__aggregated_interface__': True, 'as_list': serialized_agg_interface}
+
+    if 'Interface' in str(type(obj)): #isinstance just won't work, don't know why
+        serialized_interface = []
+        for attribute_name in obj.__slots__:
+            serialized_interface.append(obj.__getattribute__(attribute_name))
+        return {'__interface__': True, 'as_list': serialized_interface}
+
+
     return obj
 
 def custom_decoder(obj):
+
     if '__set__' in obj:
         return set(obj['as_list'])
 
     if '__residue__' in obj:
         serialized_residue = obj['as_list']
-        res = Residue(0)
+        res = sdsc.residue.Residue(0)
         for i, attribute_name in enumerate(res.__slots__):
             res.__setattr__(attribute_name, serialized_residue[i])
         return res
@@ -136,7 +206,7 @@ def custom_decoder(obj):
         u_ac = serialized_annotation[0]
         pdb_id = serialized_annotation[1]
         chain = serialized_annotation[2]
-        anno = StructureAnnotation(u_ac, pdb_id, chain)
+        anno = sdsc.structure.StructureAnnotation(u_ac, pdb_id, chain)
         for i, attribute_name in enumerate(anno.__slots__[3:]):
             anno.__setattr__(attribute_name, serialized_annotation[i+3])
         return anno
@@ -145,7 +215,7 @@ def custom_decoder(obj):
         serialized_structure = obj['as_list']
         pdb_id = serialized_structure[0]
         chain = serialized_structure[1]
-        struct = Structure(pdb_id, chain)
+        struct = sdsc.structure.Structure(pdb_id, chain)
         for i, attribute_name in enumerate(struct.__slots__[2:]):
             struct.__setattr__(attribute_name, serialized_structure[i+2])
         return struct
@@ -153,24 +223,50 @@ def custom_decoder(obj):
     if '__complex__' in obj:
         serialized_complex = obj['as_list']
         pdb_id = serialized_complex[0]
-        compl = Complex(pdb_id)
+        compl = sdsc.complex.Complex(pdb_id)
         for i, attribute_name in enumerate(compl.__slots__[1:]):
             compl.__setattr__(attribute_name, serialized_complex[i+1])
         return compl
 
     if '__protein__' in obj:
         serialized_protein = obj['as_list']
-        prot = Protein(None)
+        prot = sdsc.protein.Protein(None)
         for i, attribute_name in enumerate(prot.__slots__):
             prot.__setattr__(attribute_name, serialized_protein[i])
         return prot
 
+    if '__pos_pos_i__' in obj:
+        serialized_pos_pos_i = obj['as_list']
+        pos_pos_i = sdsc.interface.Position_Position_Interaction(None, None, None, None)
+        for i, attribute_name in enumerate(pos_pos_i.__slots__):
+            pos_pos_i.__setattr__(attribute_name, serialized_pos_pos_i[i])
+        return pos_pos_i
+
     if '__position__' in obj:
         serialized_position = obj['as_list']
-        posi = Position()
+        posi = sdsc.position.Position()
         for i, attribute_name in enumerate(posi.__slots__):
-            posi.__setattr__(attribute_name, serialized_position[i])
+            try:
+                posi.__setattr__(attribute_name, serialized_position[i])
+            except:
+                print('Warning: undefined slot in position object in custom_decoder: ', attribute_name, i, serialized_position)
+                posi.__setattr__(attribute_name, None)
         return posi
+
+    if '__aggregated_interface__' in obj:
+        serialized_agg_interface = obj['as_list']
+        agg_inter = sdsc.interface.Aggregated_interface(None)
+        for i, attribute_name in enumerate(agg_inter.__slots__):
+            agg_inter.__setattr__(attribute_name, serialized_agg_interface[i])
+        return agg_inter
+
+    if '__interface__' in obj:
+        serialized_interface = obj['as_list']
+        inter = sdsc.interface.Interface(None, None)
+        for i, attribute_name in enumerate(inter.__slots__):
+            inter.__setattr__(attribute_name, serialized_interface[i])
+        return inter
+
 
     return obj
 

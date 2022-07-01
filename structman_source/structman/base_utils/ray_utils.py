@@ -2,8 +2,11 @@ import ray
 import os
 from structman import settings
 import subprocess
+import time
+import sys
+import traceback
 
-def ray_init(config):
+def ray_init(config, n_try = 0, redis_mem_default = False):
     if ray.is_initialized():
         return
     #"""
@@ -18,7 +21,58 @@ def ray_init(config):
     logging_level = 20
     if config.verbosity <= 1:
         logging_level = 0
-    ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level, log_to_driver = False)
+    if config.verbosity <= 3:
+        log_to_driver = False
+    else:
+        log_to_driver = True
+        print(f'Setting log_to_driver in ray.init to True, local mode: {config.ray_local_mode}')
+
+    redis_mem = 0.4 * config.gigs_of_ram * 1024 * 1024 * 1024
+ 
+    mem = 0.2 * config.gigs_of_ram * 1024 * 1024 * 1024
+
+    if config.verbosity >= 2:
+        print(f'Call of ray.init: num_cpus = {config.proc_n}, object_store_memory = {redis_mem}')
+
+    errs = '1'
+    loops = 0
+    while len(errs) > 0:
+        p = subprocess.Popen(['ray','stop','--force'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        outs, errs = p.communicate()
+        loops += 1
+
+        if config.verbosity >= 3:
+            print(f'Returns of ray stop:\n{outs}\n{errs}')
+        if loops > 1:
+            time.sleep(10**loops)
+        if loops >= 4:
+            break
+    try:
+        if not redis_mem_default:
+            ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level,
+                log_to_driver = log_to_driver, local_mode = config.ray_local_mode, object_store_memory = redis_mem, _memory = mem)
+        else:
+            ray.init(num_cpus=config.proc_n, include_dashboard=False, ignore_reinit_error=True, logging_level = logging_level,
+                log_to_driver = log_to_driver, local_mode = config.ray_local_mode)
+    except:
+        [e, f, g] = sys.exc_info()
+        g = traceback.format_exc()
+        if n_try == 3:
+            config.errorlog.add_error(f'Ray init failed:\n{e}\n{f}\n{g}')
+            return
+
+        config.errorlog.add_warning('Ray init failed, retry...\n{e}\n{f|\n{g}')
+        
+        p = subprocess.Popen(['ray','stop','--force'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        outs, errs = p.communicate()
+
+        if config.verbosity >= 3:
+            print(f'Returns of ray stop:\n{outs}\n{errs}')
+        time.sleep(10**n_try)
+        if n_try <= 1:
+           ray_init(config, n_try = (n_try + 1))
+        else:
+           ray_init(config, n_try = (n_try + 1), redis_mem_default = True)
 
 def ray_hack():
     # hack proposed by the devs of ray to prevent too many processes being spawned

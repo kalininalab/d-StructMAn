@@ -48,7 +48,6 @@ def ToSmlf(vcf_file, fasta):
         line = line.replace('\n', '')
         if line[0] == '>':
             g_id = line.split()[0][1:]
-            # print g_id
             gene_name = line.split()[1]
             gene_seq_map[g_id] = ''
         else:
@@ -69,7 +68,7 @@ def ToSmlf(vcf_file, fasta):
 
     for g in gene_seq_map:
         seq = gene_seq_map[g]
-        # print seq
+
         if seq[0:3] in rev_stop_codons and seq[-3:] not in stop_codons:
             seq = seq[::-1]
             inv_seq = ''
@@ -78,9 +77,6 @@ def ToSmlf(vcf_file, fasta):
                 inv_seq = '%s%s' % (inv_seq, inverse[nuc])
             gene_seq_map[g] = inv_seq
             inverse_strands.add(g)
-            # print g
-
-    # sys.exit()
 
     f = open(vcf_file, 'r')
     lines = f.readlines()
@@ -88,9 +84,7 @@ def ToSmlf(vcf_file, fasta):
 
     smlf_lines = []
 
-    #n = 0
     for line in lines:
-        #n += 1
         if line[0] == '#':
             continue
         words = line.replace('\n', '').split()
@@ -113,7 +107,6 @@ def ToSmlf(vcf_file, fasta):
                 ref = inverse[ref]
                 alt = inverse[alt]
             if ref != seq[pos - 1]:
-                print('line: ', n)  # BUG: undefined variable
                 print(pos)
                 print(seq)
                 print(g_id)
@@ -122,7 +115,6 @@ def ToSmlf(vcf_file, fasta):
             if pos % 3 == 0:
                 aa_pos = pos / 3
                 triple = seq[pos - 3:pos]
-                # print triple
                 new_triple = "%s%s%s" % (triple[0], triple[1], alt)
             elif pos % 3 == 1:
                 aa_pos = pos / 3 + 1
@@ -341,7 +333,6 @@ def vcfToSmlf(vcf_file, ref_path, ucsc_id, annovar_path):
 
     outlines = []
     for line in lines:
-        # print line
         words = line.split("\t")
         if len(words) < 2:
             print(line)

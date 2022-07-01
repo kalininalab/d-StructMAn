@@ -75,6 +75,7 @@ def parseHits(temp_outfile, option_seq_thresh, small_genes):
     for line in lines:
         if line == '':
             continue
+
         words = line.split()
         gene = words[0]
         hitlist = words[1].split(',')
@@ -95,7 +96,7 @@ def parseHits(temp_outfile, option_seq_thresh, small_genes):
         hits = {}
 
         for hit in hitlist:
-            pdb, chain = hit.split('-')
+            pdb, chain = hit.rsplit('-',1)
             if pdb not in hits:
                 hits[pdb] = [chain, set([chain])]
             else:
@@ -124,7 +125,14 @@ def search(proteins, config):
         os.mkdir(mmseqs_tmp_folder)
 
     mmseqs2_path = config.mmseqs2_path
-    search_db = config.mmseqs2_db_path
+    if config.model_db_active:
+        search_dbs = [config.mmseqs2_db_path, config.mmseqs2_model_db_path]
+        numbers_of_returned_hits = [None, '1']
+        is_model_dbs = [False, True]
+    else:
+        search_dbs = [config.mmseqs2_db_path]
+        numbers_of_returned_hits = [None]
+        is_model_dbs = [False]
     option_seq_thresh = config.option_seq_thresh
 
     small_proteins = set()
@@ -144,74 +152,101 @@ def search(proteins, config):
 
     if isinstance(to_fasta_out, str):
         config.errorlog.add_warning('%s , mmseqs2 skipped, %s' % (to_fasta_out, str(list(u_acs)[:10])))
-        return {}, set()
+        return None
     if not to_fasta_out:
         # All proteins are stored, no need for mmseqs
         if config.verbosity >= 3:
             print('No need for sequence similarity search, all proteins are stored already.')
-        return {}, set()
+        return None
 
-    temp_outfile = '%s/tmp_outfile_%s.fasta' % (mmseqs_tmp_folder, randomString())
+    default_number_of_returned_hits = '999999'
+
+    search_results = []
 
     t1 = time.time()
 
-    if config.verbosity >= 2:
-        print(mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder)
+    for pos, search_db in enumerate(search_dbs):
 
-    out_format_str = 'query,target,fident,alnlen,tlen,qcov'
-
-    if config.verbosity >= 3:
-        if len(small_proteins) == 0:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
-                    '--max-seqs', '999999', '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
-            p = subprocess.Popen(cmds)
+        if numbers_of_returned_hits[pos] is None:
+            number_of_returned_hits = default_number_of_returned_hits
         else:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
-                    '--max-seqs', '999999', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
-            p = subprocess.Popen(cmds)
-        p.wait()
-    else:
-        FNULL = open(os.devnull, 'w')
-        if len(small_proteins) == 0:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
-                    '--max-seqs', '999999', '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
-            p = subprocess.Popen(cmds, stdout=FNULL)
-        else:
-            cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
-                    '--max-seqs', '999999', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
-            p = subprocess.Popen(cmds, stdout=FNULL)
-        p.wait()
+            number_of_returned_hits = numbers_of_returned_hits[pos]
 
-    os.remove(temp_fasta)
+        is_model_db = is_model_dbs[pos]
+
+        temp_outfile = '%s/tmp_outfile_%s.fasta' % (mmseqs_tmp_folder, randomString())
+
+
+        if config.verbosity >= 2:
+            print(mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder)
+
+        out_format_str = 'query,target,fident,alnlen,tlen,qcov'
+
+        debug_store = False
+
+        if config.verbosity >= 4:
+            if len(small_proteins) == 0:
+                cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
+                        '--max-seqs', number_of_returned_hits, '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
+                p = subprocess.Popen(cmds)
+            else:
+                cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
+                        '--max-seqs', number_of_returned_hits, '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
+                p = subprocess.Popen(cmds)
+            p.wait()
+        else:
+            FNULL = open(os.devnull, 'w')
+            if len(small_proteins) == 0:
+                cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
+                        '--max-seqs', number_of_returned_hits, '--min-aln-len', '50', '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
+                p = subprocess.Popen(cmds, stdout=FNULL)
+            else:
+                cmds = [mmseqs2_path, 'easy-search', temp_fasta, search_db, temp_outfile, mmseqs_tmp_folder, '--format-output', out_format_str,
+                        '--max-seqs', number_of_returned_hits, '-s', '7.5', '--split-memory-limit', '%1.0fG' % (0.5 * config.gigs_of_ram)]
+                p = subprocess.Popen(cmds, stdout=FNULL)
+            p.wait()
+
+            if not os.path.exists(temp_outfile):
+                #Something went wrong, run again in not silenced mode
+                config.errorlog.add_error(f'Error in MMSEQS2 call, see command line prints for possible bug log.\nCommand that called mmseqs:\n{cmds}\nDeletion of temp file: {temp_fasta} was suppressed')
+                debug_store = True
+                p = subprocess.Popen(cmds)
+
+
+        if config.verbosity >= 5:
+            f = open(temp_outfile, 'r')
+            print(f.read())
+            f.close()
+
+        hits, pdb_ids = parseHits(temp_outfile, option_seq_thresh, small_proteins)
+
+        for u_ac in small_proteins:
+            if u_ac.count(':') == 1:
+                if u_ac not in hits:
+                    pdb_id, chain = u_ac.split(':')
+                    hits[u_ac] = {(pdb_id, chain): [100.0, 1.0, [chain], len(proteins.get_sequence(u_ac)), len(proteins.get_sequence(u_ac))]}
+                    pdb_ids.add(pdb_id)
+
+        os.remove(temp_outfile)
+
+        for fn in os.listdir(mmseqs_tmp_folder):
+            subfolder_path = '%s/%s' % (mmseqs_tmp_folder, fn)
+            if os.path.exists(subfolder_path):
+                if os.path.getmtime(subfolder_path) > config.prog_start_time:
+                    try:
+                        shutil.rmtree(subfolder_path)
+                    except:
+                        if config.verbosity >= 4:
+                            config.errorlog.add_warning('Tmp folder wipe failed for: %s' % subfolder_path)
+
+        search_results.append((hits, pdb_ids, is_model_db))
+
+    if not debug_store:
+        os.remove(temp_fasta)
 
     t2 = time.time()
-
-    hits, pdb_ids = parseHits(temp_outfile, option_seq_thresh, small_proteins)
-
-    for u_ac in small_proteins:
-        if u_ac.count(':') == 1:
-            if u_ac not in hits:
-                pdb_id, chain = u_ac.split(':')
-                hits[u_ac] = {(pdb_id, chain): [100.0, 1.0, [chain], len(proteins.get_sequence(u_ac)), len(proteins.get_sequence(u_ac))]}
-                pdb_ids.add(pdb_id)
-
-    os.remove(temp_outfile)
-
-    for fn in os.listdir(mmseqs_tmp_folder):
-        subfolder_path = '%s/%s' % (mmseqs_tmp_folder, fn)
-        if os.path.exists(subfolder_path):
-            if os.path.getmtime(subfolder_path) > config.prog_start_time:
-                try:
-                    shutil.rmtree(subfolder_path)
-                except:
-                    if config.verbosity >= 3:
-                        config.errorlog.add_warning('Tmp folder wipe failed for: %s' % subfolder_path)
-
-    t3 = time.time()
 
     if config.verbosity >= 2:
         print("MMseqs2 Part 1: %s" % (str(t1 - t0)))
         print("MMseqs2 Part 2: %s" % (str(t2 - t1)))
-        print("MMseqs2 Part 3: %s" % (str(t3 - t2)))
-
-    return hits, pdb_ids
+    return search_results

@@ -38,18 +38,19 @@ setup(
     setup_requires=['setuptools_scm'],
     include_package_data=True,
     install_requires=[
-        "biopython>=1.78",
+        "biopython>=1.79",
         "python-igraph>=0.8.3",
         "matplotlib>=3.3.2",
-        "numpy>=1.19.2",
+        "numpy>=1.22.3",
         "psutil>=5.8.0",
         "pymysql>=1.0.2",
         "python-igraph>=0.8.3",
-        "ray==1.9.0",
-        "msgpack==1.0.2",
-        "zstd==1.5.0.2",
+        "ray==1.13.0",
+        "msgpack>=1.0.3",
+        "zstd>=1.5.2.5",
         "pandas>=1.3.3",
-        "autopep8>=1.5.7"
+        "autopep8>=1.5.7",
+        "scipy==1.8.0"
     ],
 
     package_data = {

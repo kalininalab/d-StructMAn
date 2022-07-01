@@ -266,6 +266,8 @@ def calcCentroidMap(coordinate_map, target_residues, c_alpha, double_unknown_mod
             for res in target_residues[chain]:
                 if res is None:
                     continue
+                if chain not in coordinate_map:
+                    continue
                 if res not in coordinate_map[chain]:
                     print('Warning: given residue %s not found' % res)
                     continue

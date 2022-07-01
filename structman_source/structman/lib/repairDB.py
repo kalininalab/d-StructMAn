@@ -8,7 +8,7 @@ import traceback
 
 import structman
 from structman.lib.database import database
-
+from structman import _version
 
 # Tries to reclassify all positions with no classification in the database
 # Usefull when,
@@ -72,6 +72,7 @@ def reset(cursor, keep_structures=False):
     sql_commands = ['SET FOREIGN_KEY_CHECKS=0;',
                     'TRUNCATE Protein;',
                     'TRUNCATE Position;',
+                    'TRUNCATE Interface;',
                     'TRUNCATE SNV;',
                     'TRUNCATE Multi_Mutation;',
                     'TRUNCATE Indel;',
@@ -79,9 +80,12 @@ def reset(cursor, keep_structures=False):
                     'TRUNCATE Pathway;',
                     'TRUNCATE Session;',
                     'TRUNCATE Alignment;',
+                    'TRUNCATE Position_Position_Interaction;',
+                    'TRUNCATE Protein_Protein_Interaction;',
                     'TRUNCATE RS_Protein_Session;',
                     'TRUNCATE RS_Protein_GO_Term;',
                     'TRUNCATE RS_Position_Session;',
+                    'TRUNCATE RS_Position_Interface;',
                     'TRUNCATE RS_SNV_Session;',
                     'TRUNCATE RS_Multi_Mutation_Session;',
                     'TRUNCATE RS_Indel_Session;',
@@ -95,7 +99,8 @@ def reset(cursor, keep_structures=False):
             'TRUNCATE Residue;',
             'TRUNCATE Complex;',
             'TRUNCATE RS_Ligand_Structure;',
-            'TRUNCATE RS_Residue_Residue;'
+            'TRUNCATE RS_Residue_Residue;',
+            'TRUNCATE RS_Residue_Interface;',
         ]
 
     sql_commands.append('SET FOREIGN_KEY_CHECKS=1;')
@@ -203,6 +208,18 @@ def destroy(config):
 
 
 def load(config):
+    try:
+        db, cursor = config.getDB(silent = True)
+        db.close()
+        print(f'Database with name {config.db_name} already exists. If you want to recreate it, please call [structman database destroy] first.')
+        return
+    except:
+        if config.verbosity >= 3:
+            [e, f, g] = sys.exc_info()
+            g = traceback.format_exc()
+            print('\n'.join([str(e), str(f), str(g)]))
+        pass
+
     db, cursor = config.getDB(server_connection=True)
 
     sql = 'CREATE DATABASE %s' % config.db_name
@@ -218,34 +235,85 @@ def load(config):
 
     try:
         cursor.execute(sql)
-        db.close()
+        #db.close()
     except:
         [e, f, g] = sys.exc_info()
         g = traceback.format_exc()
         print('\n'.join([str(e), str(f), str(g)]))
         db.close()
 
-    new_lines = []
+    sql_commands = []
+    new_command = ''
     for line in lines:
         if binary:
             line = line.decode('ascii')
+        line = line.strip()
         if line[:4] == 'USE ':
-            new_lines.append('USE `%s`;\n' % config.db_name)
+            sql_commands.append('USE `%s`;' % config.db_name)
         else:
-            new_lines.append(line)
+            if line == '':
+                continue
+            if line[0] == '-':
+                continue
+            if line[:1] == '/*':
+                continue
+            new_command += line
+            if line[-1] == ';':
+                sql_commands.append(new_command)
+                new_command = ''
 
-    db_file = 'tmp_database_file.sql'
-    f = open(db_file, 'w')
-    f.write(''.join(new_lines))
-    f.close()
+    #db_file = 'tmp_database_file.sql'
+    #f = open(db_file, 'w')
+    #f.write(''.join(new_lines))
+    #f.close()
 
-    cmds = ' '.join(['mysql', '-u', config.db_user_name, '-h', config.db_address, '--password=%s' % config.db_password, '<', db_file])
+    #cmds = ' '.join(['mysql', '-u', config.db_user_name, '-h', config.db_address, '--password=%s' % config.db_password, '<', db_file])
 
-    p = subprocess.Popen(cmds, shell=True)
-    p.wait()
+    #p = subprocess.Popen(cmds, shell=True)
+    #p.wait()
 
-    os.remove(db_file)
+    #os.remove(db_file)
 
+    for sql_command in sql_commands:
+
+        try:
+            cursor.execute(sql_command)
+        except:
+            [e, f, g] = sys.exc_info()
+            g = traceback.format_exc()
+            print('\n'.join([str(e), str(f), str(g), sql_command]))
+            db.close()
+
+    sql = f'Insert INTO Database_Metadata (StructMAn_Version, PPI_Feature) VALUES ("{_version.__version__}", "{config.compute_ppi}");'
+
+    try:
+        cursor.execute(sql)
+        db.commit()
+    except:
+        [e, f, g] = sys.exc_info()
+        g = traceback.format_exc()
+        print('\n'.join([str(e), str(f), str(g)]))
+        db.close()
+
+    db.close()
+
+def check_structman_version(config):
+
+    version_in_db, ppi_feature = database.select(config, ['StructMAn_Version', 'PPI_Feature'], 'Database_Metadata')[0]
+
+    if version_in_db != _version.__version__:
+        major_version_number, database_version_number, minor_version_number = _version.__version__.split('.')
+        major_version_number_in_db, database_version_number_in_db, minor_version_number_in_db = version_in_db.split('.')
+
+        if major_version_number != major_version_number_in_db:
+            print(f'\n\n!!!CRITICAL WARNING!!!\nMajor version number ({major_version_number}) does not match with the major version number stored in the database ({major_version_number_in_db}).\nDatabase will most likely not be compatible!\n\n')
+        elif database_version_number != database_version_number_in_db:
+            print(f'\nWARNING\nVersion number ({_version.__version__}) does not match with the version number stored in the database ({version_in_db}).\nDatabase might not be compatible!\n')
+
+    if not ppi_feature and config.compute_ppi:
+        print('\nWARNING\nThe given database does not support the PPI feature and will not be computed.\n')
+    elif ppi_feature and not config.compute_ppi:
+        config.compute_ppi = True
 
 # destroys and reinitializes the database
 def reinit(config):

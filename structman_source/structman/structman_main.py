@@ -19,9 +19,11 @@ if __name__ == "__main__":
 import structman
 from structman.lib import repairDB, serializedPipeline, searchLargeStructures
 from structman.lib.output import output
+from structman.lib.output import massmodel
+from structman.lib.output import annotation
 from structman.lib.database import database
 from structman.scripts import update
-from structman.base_utils.base_utils import resolve_path
+from structman.base_utils.base_utils import resolve_path, is_alphafold_db_valid
 
 # Check if autopep8 is installed for developers. Disable warning for end users by utilizing conda environment variable `STRUCTMAN_WARN`
 try:
@@ -43,7 +45,7 @@ except ImportError:
 class Config:
     def __init__(self, config_path, num_of_cores=1, output_path='', basic_util_mode=False,
                  util_mode=False, output_util=False, external_call=True, profiling=False, verbosity=None,
-                 print_all_errors=False, print_all_warns=False, restartlog=False):
+                 print_all_errors=False, print_all_warns=False, restartlog=False, lite_overwrite = None, compute_ppi = False):
         self.prog_start_time = time.time()
         # read config file, auto add section header so old config files work
         self.config_parser_obj = configparser.ConfigParser()
@@ -63,7 +65,7 @@ class Config:
         self.mapping_db = cfg.get('mapping_db', fallback=None)
 
         self.ignore_local_mapping_db = False
-
+        self.ray_local_mode = False
         self.user_mail = cfg.get('mail', fallback='')
 
         self.outfolder = resolve_path(output_path)
@@ -129,6 +131,7 @@ class Config:
         self.mmseqs2_path = cfg.get('mmseqs2_path', fallback='')
         self.output_path = cfg.get('output_path', fallback='')
         self.pdb_path = cfg.get('pdb_path', fallback='')
+        self.path_to_model_db = cfg.get('path_to_model_db', fallback='')
 
         self.annovar_path = cfg.get('annovar_path', fallback='')
         self.dssp_path = cfg.get('dssp_path', fallback = '')
@@ -173,6 +176,15 @@ class Config:
 
         self.fasta_input = cfg.getboolean('fasta_input', fallback=False)
         self.lite = cfg.getboolean('lite', fallback=False)
+
+        if lite_overwrite is not None:
+            self.lite = lite_overwrite
+
+        self.compute_ppi = compute_ppi
+
+        if self.lite and self.compute_ppi:
+            print('\nWarning\nPPI feature is not supported for lite mode\n')
+            self.compute_ppi = False
 
         if verbosity is not None:
             self.verbosity = verbosity
@@ -249,9 +261,14 @@ class Config:
             if self.verbosity >= 1:
                 print('Using structman_data from :', self.base_path)
             self.mmseqs2_db_path = '%s/base/blast_db/pdbba_search_db_mmseqs2' % self.base_path
+            self.mmseqs2_model_db_path = '%s/base/blast_db/model_db_search_db_mmseqs2' % self.base_path
+            self.model_db_active = os.path.exists(self.mmseqs2_model_db_path)
+            if not is_alphafold_db_valid(self):
+                self.model_db_active = False
             self.smiles_path = '%s/base/ligand_bases/Components-smiles-stereo-oe.smi' % self.base_path
             self.inchi_path = '%s/base/ligand_bases/inchi_base.tsv' % self.base_path
             self.human_id_mapping_path = '%s/base/id_mapping' % self.base_path
+
 
         if self.resources == 'auto' and self.num_of_cores is None:
             self.proc_n = multiprocessing.cpu_count() - 1
@@ -286,15 +303,15 @@ class Config:
         if self.test_low_mem_system:
             self.gigs_of_ram = 8
         if self.low_mem_system:
-            self.chunksize = int(max([((self.gigs_of_ram * 90) // self.proc_n) - 120, 60 // self.proc_n, 1]))
+            self.chunksize = int(min([500, max([((self.gigs_of_ram * 120) // self.proc_n) - 120, 60 // self.proc_n, 1])]))
         else:
-            self.chunksize = int(max([((self.gigs_of_ram * 150) // self.proc_n) - 60, 120 // self.proc_n, 1]))
+            self.chunksize = int(min([1500, max([((self.gigs_of_ram * 180) // self.proc_n) - 60, 120 // self.proc_n, 1])]))
 
         if not util_mode:
             if not external_call and not os.path.exists(self.outfolder):
                 os.makedirs(self.outfolder)
             if self.verbosity >= 1:
-                print('Using %s core(s)' % str(self.proc_n))
+                print(f'Using {self.proc_n} core(s), verbosity level: {self.verbosity}')
             if (not external_call) and (not print_all_warns):  # no need for errorlogs, when the config is generated not from the main script
                 self.errorlog_path = os.path.join(self.outfolder, 'errorlogs', 'errorlog.txt')
                 errorlog_dir = os.path.dirname(self.errorlog_path)
@@ -305,22 +322,51 @@ class Config:
 
         self.errorlog = Errorlog(path=self.errorlog_path, print_all_errors=print_all_errors, print_all_warns=print_all_warns)
 
-        # Determine maximal package size from database
-        try:
-            db, cursor = self.getDB(server_connection=True)
-        except:
-            if self.verbosity >= 2:
-                print('Database connection failed in config initialization')
-            db = None
+        if not self.lite:
+            # Determine maximal package size from database
+            try:
+                db, cursor = self.getDB(server_connection=True)
+            except:
+                if self.verbosity >= 2:
+                    print('Database connection failed in config initialization. Setting lite-mode to True.')
 
-        if db is not None:
-            cursor.execute("SHOW VARIABLES WHERE variable_name = 'max_allowed_packet'")
-            self.max_package_size = int(cursor.fetchone()[1]) * 100 // 99
-            db.close()
-            self.main_db_is_set = True
+                db = None
+                self.lite = True
+                self.main_db_is_set = False
+                self.max_package_size = None
+
+            if db is not None and not basic_util_mode:
+                try:
+                    cursor.execute("SHOW VARIABLES WHERE variable_name = 'max_allowed_packet'")
+                    self.max_package_size = int(cursor.fetchone()[1]) * 100 // 99
+                    db.close()
+                    db, cursor = self.getDB()
+                    self.main_db_is_set = True
+                    repairDB.check_structman_version(self)
+                except:
+                    if self.verbosity >= 2:
+                        print('Database instance not found in config initialization. Trying to create the instance ...')
+                    if self.verbosity >= 3:
+                        [e, f, g] = sys.exc_info()
+                        g = traceback.format_exc()
+                        print('\n'.join([str(e), str(f), str(g)]))
+                    repairDB.load(self)
+                    try:
+                        db, cursor = self.getDB()
+                        self.main_db_is_set = True
+                    except:
+                        if self.verbosity >= 2:
+                            print('... but failed. Setting lite-mode to True')
+                        self.lite = True
+                        self.main_db_is_set = False
+                        self.max_package_size = None
+                try:
+                    db.close()
+                except:
+                    pass
         else:
-            self.max_package_size = None
             self.main_db_is_set = False
+            self.max_package_size = None
 
         # Check for mapping DB instance
         self.check_mapping_db()
@@ -334,22 +380,34 @@ class Config:
         except:
             self.mapping_db_is_set = False
 
-    def getDB(self, server_connection=False, mapping_db=False):
-        if server_connection:
-            db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password)
-            cursor = db.cursor()
-        elif mapping_db:
-            if self.ignore_local_mapping_db:
-                return None, None
+    def getDB(self, server_connection=False, mapping_db=False, try_again = 0, silent = False):
+        try:
+            if server_connection:
+                db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password)
+                cursor = db.cursor()
+            elif mapping_db:
+                if self.ignore_local_mapping_db:
+                    return None, None
 
-            if self.mapping_db is None:
+                if self.mapping_db is None:
+                    return None, None
+                db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.mapping_db)
+                cursor = db.cursor()
+            else:
+                db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.db_name)
+                cursor = db.cursor()
+            return db, cursor
+        except:
+            if silent: #In database create we test the connection and expect it to fail
                 return None, None
-            db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.mapping_db)
-            cursor = db.cursor()
-        else:
-            db = MySQLdb.connect(host=self.db_address, user=self.db_user_name, password=self.db_password, database=self.db_name)
-            cursor = db.cursor()
-        return db, cursor
+            if try_again < 10:
+                time.sleep(0.1)
+                return self.getDB(server_connection=server_connection, mapping_db=mapping_db, try_again = (try_again + 1))
+            else:
+                [e, f, g] = sys.exc_info()
+                g = traceback.format_exc()
+                self.errorlog.add_error(f'Couldnt get database connection:\n{e}\n{f}\n{g}')
+                return None, None
 
 
 class Errorlog:
@@ -566,7 +624,9 @@ def structman_cli():
         '                          Requires a configured SQL database server connection.\n',
         '                          Requires around 100Gb of temporal disk space and 35Gb of space on the SQL server.\n\n',
 
-        'mapping_db_from_scratch   same as mapping_db but removes an existing instance of the mapping DB.\n'
+        'mapping_db_from_scratch   same as mapping_db but removes an existing instance of the mapping DB.\n\n'
+
+        'alphafold_db              downloads all available protein structures models created by alphafold stored at: https://alphafold.ebi.ac.uk/\n'
     ])
 
     update_util = False
@@ -576,6 +636,7 @@ def structman_cli():
     update_mapping_db = False
     update_mapping_db_from_scratch = False
     update_mapping_db_keep_raw_files = False
+    update_alphafold_db = False
 
     if len(argv) > 0:
         if argv[0] == 'update':
@@ -600,7 +661,9 @@ def structman_cli():
             if 'mapping_db_keep_raw_files' in argv:
                 update_mapping_db = True
                 update_mapping_db_keep_raw_files = True
-            if not (update_pdb or update_rindb or update_mapping_db):
+            if 'alphafold_db' in argv:
+                update_alphafold_db = True
+            if not (update_pdb or update_rindb or update_mapping_db or update_alphafold_db):
                 print(update_util_disclaimer)
                 sys.exit(1)
 
@@ -715,7 +778,7 @@ def structman_cli():
             'printerrors', 'printwarnings', 'chunksize=', 'norin',
             'dbname=', 'restartlog', 'only_snvs', 'skip_indel_analysis', 'only_wt', 'mem_limit=',
             'model_indel_structures', 'ignore_local_pdb', 'ignore_local_rindb', 'ignore_local_mapping_db',
-            'skip_main_output_generation'
+            'skip_main_output_generation', 'ray_local_mode', 'compute_ppi'
         ]
         opts, args = getopt.getopt(argv, "c:i:n:o:h:lvdp:", long_paras)
 
@@ -727,7 +790,7 @@ def structman_cli():
     config_path = ''
     num_of_cores = None
     outfolder = ''
-    lite = False
+    lite_overwrite = None
     verbose_flag = False
     verbosity = None
     profiling = False
@@ -745,6 +808,8 @@ def structman_cli():
     ignore_local_rindb = False
     ignore_local_mapping_db = False
     skip_main_output_generation = False
+    ray_local_mode = False
+    compute_ppi = False
     '''
     #mmcif mode flag is added
     mmcif_mode = False
@@ -759,9 +824,9 @@ def structman_cli():
         if opt == '-v':
             verbose_flag = True
         if opt == '-l':
-            lite = True
+            lite_overwrite = True
         if opt == '-d':
-            lite = False
+            lite_overwrite = False
         if opt == '-i':
             infile = arg
         if opt == '-n':
@@ -836,6 +901,12 @@ def structman_cli():
         if opt == '--skip_main_output_generation':
             skip_main_output_generation = True
 
+        if opt == '--ray_local_mode':
+            ray_local_mode = True
+
+        if opt == '--compute_ppi':
+            compute_ppi = True
+
     if not output_util and not util_mode:
         if infile == '' and len(single_line_inputs) == 0:
             input_folder = '/structman/input_data/'
@@ -898,11 +969,13 @@ def structman_cli():
     config = Config(config_path, num_of_cores=num_of_cores,
                     output_path=outfolder, util_mode=util_mode,
                     basic_util_mode=basic_util_mode, output_util=output_util, external_call=False, profiling=profiling, verbosity=verbosity,
-                    print_all_errors=print_all_errors, print_all_warns=print_all_warns, restartlog=restartlog)
+                    print_all_errors=print_all_errors, print_all_warns=print_all_warns, restartlog=restartlog, lite_overwrite = lite_overwrite, compute_ppi = compute_ppi)
 
     config.only_snvs = only_snvs
     config.skip_indel_analysis = skip_indel_analysis
     config.only_wt = only_wt
+    config.ray_local_mode = ray_local_mode
+
     if model_indel_structures is not None:
         config.model_indel_structures = model_indel_structures
 
@@ -1002,7 +1075,7 @@ def structman_cli():
             outfile = os.path.join(outfolder, f'{session_name}_template_suggestions.tsv')
             anno_table = os.path.join(outfolder, '%s_full_annotation_table.tsv' % session_name)
             if not os.path.exists(anno_table):
-                output.create_annotation_table(session_id, config, anno_table)
+                annotation.create_annotation_table(session_id, config, anno_table)
             output.suggest(session_id, config, anno_table, outfile, ranking='consensus')
         elif out_util_mode == 'PPI':
             outfile = os.path.join(outfolder, '%s_ppi_network.tsv' % session_name)
@@ -1011,10 +1084,10 @@ def structman_cli():
             searchLargeStructures.search(config, chunksize, infile=infile)
         elif out_util_mode == 'FAT':
             outfile = os.path.join(outfolder, '%s_full_annotation_table.tsv' % session_name)
-            output.create_annotation_table(session_id, config, outfile)
+            annotation.create_annotation_table(session_id, config, outfile)
         elif out_util_mode == 'MM':
-            outfolder = os.join(outfolder, session_name)
-            output.mass_model(session_id, config, outfolder)
+            outfolder = os.path.join(outfolder, session_name)
+            massmodel.mass_model(session_id, config, outfolder)
         elif out_util_mode == 'RAS':
             outfile = os.path.join(outfolder, '%s_all_annotated_structures.smlf' % session_name)
             output.retrieve_annotated_structures(session_id, config, outfile)
@@ -1032,6 +1105,12 @@ def structman_cli():
                     os.mkdir('/structman/resources/pdb')
                 config.pdb_path = '/structman/resources/pdb'
                 config.config_parser_obj.set('user', 'pdb_path', '/structman/resources/pdb')
+
+            if update_alphafold_db:
+                if not os.path.exists('/structman/resources/alphafold_db'):
+                    os.mkdir('/structman/resources/alphafold_db')
+                config.path_to_model_db = '/structman/resources/alphafold_db'
+                config.config_parser_obj.set('user', 'path_to_model_db', '/structman/resources/alphafold_db')
 
             if update_rindb:
                 if not os.path.exists('/structman/resources/rindb'):
@@ -1052,7 +1131,8 @@ def structman_cli():
                             rin_fromScratch=update_rindb_from_scratch,
                             update_mapping_db = update_mapping_db,
                             mapping_db_from_scratch = update_mapping_db_from_scratch,
-                            update_mapping_db_keep_raw_files = update_mapping_db_keep_raw_files
+                            update_mapping_db_keep_raw_files = update_mapping_db_keep_raw_files,
+                            update_alphafold_db = update_alphafold_db
                     )
 
     elif configure_mode:
@@ -1069,7 +1149,8 @@ def structman_cli():
         f.close()
 
     else:
-        config.lite = lite
+        if lite_overwrite is not None:
+            config.lite = lite_overwrite
 
         main(infiles, outfolder, config)
 

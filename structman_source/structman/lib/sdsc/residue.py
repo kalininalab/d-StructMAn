@@ -1,7 +1,7 @@
 # sdsc: structman datastructures and classes
 from structman.lib.rin import Interaction_profile, Centrality_scores
 from structman.lib.sdsc.consts.residues import METAL_ATOMS, ION_ATOMS
-from structman.lib.sdsc.sdsc_utils import rin_classify
+from structman.lib.sdsc.sdsc_utils import rin_classify, doomsday_protocol
 
 
 class Residue(object):
@@ -74,6 +74,10 @@ class Residue(object):
         self.intra_chain_interactions_dist_weighted = intra_chain_interactions_dist_weighted
         self.Class = None
         self.simpleClass = None
+
+    def deconstruct(self):
+        del self.res_num
+        doomsday_protocol(self)
 
     def set_database_id(self, value):
         self.database_id = value

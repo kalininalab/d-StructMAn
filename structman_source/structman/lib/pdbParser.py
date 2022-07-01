@@ -55,6 +55,17 @@ def test_for_AU(pdb_id, pdb_path):
     AU = os.path.isfile(au_path) and not os.path.isfile(path)
     return AU
 
+def getStructureBuffer(pdb_id, pdb_path, AU=False, obsolete_check=False, get_is_local=False, verbosity=0, model_path = None):
+    if model_path is None:
+        buf = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=obsolete_check, verbosity=verbosity)
+    elif model_path[-3:] == '.gz':
+        buf = gzip.open(model_path, 'rb')
+    else:
+        buf = open(model_path, 'rb')
+    if get_is_local:
+        return buf, model_path
+    return buf
+
 def getPDBBuffer(pdb_id, pdb_path, AU=False, obsolete_check=False, get_is_local=False, verbosity=0):
     if obsolete_check:
         pdb_id = getCurrentPDBID(pdb_id, pdb_path)
@@ -385,7 +396,6 @@ def getSequencesPlain(pdb_dict, pdb_path):
         [pdb, chain] = pdb_chain_tuple.split(':')
         seq, res_pos_map = getSequencePlain(pdb, chain, pdb_path)
         pdb_sequence_map[pdb_chain_tuple] = seq
-    # print "Plain",pdb_sequence_map
     return pdb_sequence_map
 
 
@@ -509,15 +519,10 @@ def standardParsePDB(pdb_id, pdb_path, obsolete_check=False, return_10k_bool=Fal
         pdb_id = pdb_id[0:4]
         AU = True
 
-    if model_path is None:
-        if get_is_local:
-            buf, path = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=obsolete_check, get_is_local=get_is_local, verbosity=verbosity)
-        else:
-            buf = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=obsolete_check, verbosity=verbosity)
-    else:
-        buf = open(model_path, 'rb')
-        if get_is_local:
-            path = model_path
+    buf = getStructureBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=obsolete_check, verbosity=verbosity, get_is_local=get_is_local, model_path = model_path)
+
+    if get_is_local:
+        buf, path = buf
 
     if buf is None:
         if return_10k_bool and get_is_local:
@@ -814,7 +819,7 @@ def standardParseMMCIF(pdb_id, pdb_path, obsolete_check=False):
 
 
 # called by serializedPipeline
-def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_path=None):
+def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_path=None, obsolete_check = False):
 
     AU = False
 
@@ -822,16 +827,13 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
         pdb_id = pdb_id[0:4]
         AU = True
 
-    if model_path is None:
-        buf = getPDBBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=False, verbosity=verbosity)
-    else:
-        buf = open(model_path, 'rb')
+    buf = getStructureBuffer(pdb_id, pdb_path, AU=AU, obsolete_check=obsolete_check, verbosity=verbosity, model_path = model_path)
 
     if buf is None:
         # Added automatization here, if pdb file not exist, automatically calls MMCIF version
         #print('PDB file does not found, trying MMCIF file')
         # return getStandardizedMMCIFFile(pdb_id=pdb_id,pdb_path=pdb_path)
-        return None
+        return 'Buffer was None'
 
     chain_type_map = {}
     chain_list = []
@@ -857,7 +859,10 @@ def getStandardizedPdbFile(pdb_id, pdb_path, oligo=set(), verbosity=0, model_pat
     current_serial = 1
     firstAltLoc = None
     for line in buf:
-        line = line.decode('ascii')
+        try:
+            line = line.decode('ascii')
+        except:
+            pass
         if len(line) >= 27:
             record_name = line[0:6].rstrip()
             line = line.rstrip('\n')
@@ -1357,7 +1362,6 @@ def getInfo(pdb_id, pdb_path):
         # if buf is None:
         #    return None,{}
         return None, {}
-    # print(pdb_id)
     abort = False
     resolution = None
 

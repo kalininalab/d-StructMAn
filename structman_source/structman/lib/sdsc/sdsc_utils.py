@@ -10,6 +10,12 @@ except ImportError:
 
 from structman.lib.sdsc.consts import codons, ligands, residues
 
+def doomsday_protocol(obj):
+    for attribute_name in obj.__slots__:
+        try:
+            delattr(obj, attribute_name)
+        except:
+            pass
 
 def boring(abr):
     if abr in residues.METAL_ATOMS or abr in residues.ION_ATOMS or abr in ligands.NON_BORING_SHORT_LIGANDS:

@@ -39,8 +39,6 @@ def blast(seq, name, blast_path, blast_db_path, nr=0, seq_thresh=0.35, cov_thres
     f = open(blast_out, "r")
     lines = f.read()
     f.close()
-    # print name,lines
-
     os.remove(blast_in)
     os.remove(blast_out)
 
@@ -100,15 +98,11 @@ def blast(seq, name, blast_path, blast_db_path, nr=0, seq_thresh=0.35, cov_thres
                     if coverage > entries[(pdb_id, chain)]["Coverage"]:
                         entries[pdb_id] = {"Seq_Id": seq_id, "Coverage": coverage, "Oligo": oligos, "Length": aln_length}
                     entries[(pdb_id, chain)]["Oligo"].update(oligos)
-    # print entries
     structures = {}
 
     for (pdb_id, chain) in entries:
-        # if pdb_id.count('_AU') == 1:
-        #    print pdb_id
         if not (float(entries[(pdb_id, chain)]["Seq_Id"]) < seq_thresh):
             if not ((entries[(pdb_id, chain)]["Length"] < 50) and (entries[(pdb_id, chain)]["Coverage"] < cov_thresh)):
                 structures[(pdb_id, chain)] = entries[(pdb_id, chain)]
-    # print structures
-    # print "Reduction: ",len(entries),len(entry_list)
+
     return structures

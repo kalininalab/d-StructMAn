@@ -1,11 +1,11 @@
 from structman.lib import globalAlignment, pdbParser
-from structman.lib.sdsc.sdsc_utils import process_alignment_data
+from structman.lib.sdsc.sdsc_utils import process_alignment_data, doomsday_protocol
 
 
 class Structure:
-    __slots__ = ['pdb_id', 'chain', 'oligo', 'database_id', 'stored', 'mapped_proteins', 'residues', 'last_residue', 'first_residue', 'sequence', 'seq_len']
+    __slots__ = ['pdb_id', 'chain', 'oligo', 'database_id', 'stored', 'mapped_proteins', 'residues', 'last_residue', 'first_residue', 'sequence', 'seq_len', 'new_interacting_chain', 'interacting_structure']
 
-    def __init__(self, pdb_id, chain, oligo=set(), mapped_proteins=[], database_id=None, last_residue=None, first_residue=None, sequence=None, seq_len = None):
+    def __init__(self, pdb_id, chain, oligo=set(), mapped_proteins=[], database_id=None, last_residue=None, first_residue=None, sequence=None, seq_len = None, new_interacting_chain = False):
         self.pdb_id = pdb_id
         self.chain = chain
         self.database_id = database_id
@@ -20,6 +20,16 @@ class Structure:
         self.first_residue = first_residue
         self.sequence = sequence
         self.seq_len = seq_len
+        self.new_interacting_chain = new_interacting_chain
+        self.interacting_structure = False
+
+    def deconstruct(self):
+        del self.mapped_proteins
+        for res in self.residues:
+            self.residues[res].deconstruct()
+        del self.residues
+        del self.sequence
+        doomsday_protocol(self)
 
     def parse_page(self, page, config):
         seq_res_map, seq, last_residue, first_residue = globalAlignment.createTemplateFasta(page, self.pdb_id, self.chain, config, seqAndMap=True, could_be_empty=True)
@@ -36,6 +46,14 @@ class Structure:
 
     def get_mapped_proteins(self):
         return self.mapped_proteins
+
+    def get_mapped_positions(self, res_nr, proteins):
+        mapped_positions = {}
+        for protein_id in self.mapped_proteins:
+            backmap = proteins.get_backmap(protein_id, self.pdb_id, self.chain)
+            if res_nr in backmap:
+                mapped_positions[protein_id] = backmap[res_nr]
+        return mapped_positions
 
     def set_database_id(self, value):
         self.database_id = value
@@ -156,9 +174,9 @@ class Structure:
 
 
 class StructureAnnotation:
-    __slots__ = ['u_ac', 'pdb_id', 'chain', 'alignment', 'coverage', 'sequence_identity', 'sub_infos', 'stored', 'database_id']
+    __slots__ = ['u_ac', 'pdb_id', 'chain', 'alignment', 'coverage', 'sequence_identity', 'sub_infos', 'stored', 'database_id', 'backmap']
 
-    def __init__(self, u_ac, pdb_id, chain, alignment=None, stored=False):
+    def __init__(self, u_ac, pdb_id, chain, alignment=None, stored=False, backmap = {}):
         self.u_ac = u_ac
         self.pdb_id = pdb_id
         self.chain = chain
@@ -168,6 +186,13 @@ class StructureAnnotation:
         self.sub_infos = {}  # {pos:(res_nr,res_aa,structure_sequence_number)}
         self.stored = stored
         self.database_id = None
+        self.backmap = backmap
+
+    def deconstruct(self):
+        del self.alignment
+        del self.sub_infos
+        del self.backmap
+        doomsday_protocol(self)
 
     def set_alignment(self, value):
         self.alignment = value
@@ -210,6 +235,12 @@ class StructureAnnotation:
 
     def get_sub_info(self, pos):
         return self.sub_infos[pos]
+
+    def set_backmap(self, backmap):
+        self.backmap = backmap
+
+    def get_backmap(self):
+        return self.backmap
 
     def is_covered(self, pos):
         if pos not in self.sub_infos:

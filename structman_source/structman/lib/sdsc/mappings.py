@@ -2,7 +2,8 @@
 import re
 import numpy as np
 from structman.lib import rin
-from structman.lib.sdsc.sdsc_utils import rin_classify, triple_locate
+from structman.lib.sdsc.sdsc_utils import rin_classify, triple_locate, doomsday_protocol
+
 
 MobiDB_map = {'D_PA': 'Polyampholite', 'D_WC': 'Weak polyampholie', 'D_NPE': 'D_NPE', 'D_PPE': 'D_PPE'}
 
@@ -162,6 +163,9 @@ class Mappings:
              self.weighted_homo_dist, self.rin_class, self.rin_simple_class, self.Class, self.simple_class, self.interaction_recommendations,
              self.lig_dist_conf, self.metal_dist_conf, self.ion_dist_conf, self.chain_dist_conf, self.rna_dist_conf, self.dna_dist_conf,
              self.homo_dist_conf, self.location_conf, self.classification_conf, self.amount_of_structures) = raw_results
+
+    def deconstruct(self):
+        doomsday_protocol(self)
 
     def add_mapping(self, mapping_id, mapping):
         (quality, seq_id, cov, rsa, mc_rsa, sc_rsa, ssa, lig_dist, metal_dist, ion_dist, chain_dist, rna_dist, dna_dist, homo_dist, profile, centralities,

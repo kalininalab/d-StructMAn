@@ -274,7 +274,6 @@ def godiffAna(fileA, fileB, papermode=False):
 
     lines = ["GO-Term\tGO-ID\tScore-Difference"]
     for result in result_list:
-        # print result
         if not papermode:
             lines.append("%s\t%s\t%s" % (result[1], result[0], str(result[2])))
         elif result[1][:2] == ' P':
@@ -400,6 +399,7 @@ def main(sess_id, output_path, config, intertable=False):
             t03 = time.time()
             if config.verbosity >= 2:
                 print("Time for producing Interaction files: ", t03 - t02)
+
     t1 = time.time()
     if config.verbosity >= 2:
         print("Time for producing classification file: ", t1 - t0)

@@ -40,7 +40,6 @@ def getUniprotId(query, querytype, verbosity=0):
         'format': 'tab',
         'query': '%s' % (query)
     }
-    # print params
     connection_sleep_cycle(verbosity)
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
@@ -51,7 +50,6 @@ def getUniprotId(query, querytype, verbosity=0):
     except:
         return None
     page = response.read(200000).decode('utf-8')
-    # print page
     try:
         lines = page.split("\n")
         line = lines[1].split()
@@ -420,7 +418,6 @@ def IdMapping(config, ac_map, id_map, np_map, pdb_map, hgnc_map, nm_map):
 
 
 def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60):
-    # print query_ids
     if query_ids is None:
         config.errorlog.add_error(f'Query_ids is None, {querytype} {target_type}')
         return {}
@@ -440,7 +437,6 @@ def getUniprotIds(config, query_ids, querytype, target_type = "ID", timeout = 60
         'format': 'tab',
         'query': '%s' % (query)
     }
-    # print params
     data = urllib.parse.urlencode(params).encode('utf-8')
     request = urllib.request.Request(url, data)
     contact = config.user_mail  # Please set your email address here to help us debug in case of problems.
@@ -671,7 +667,6 @@ def getSequencesPlain(u_acs, config, max_seq_len=None, filtering_db=None, save_e
 
         if u_ac not in gene_sequence_map:
             missing_set.add(u_ac)
-            # print u_ac
 
     if config.verbosity >= 2:
         t3 = time.time()
@@ -866,11 +861,10 @@ def getSequence(uniprot_ac, config, tries=0, return_id=False, obsolete_try = Fal
             return getSequence(uniprot_ac, config, tries=tries + 1, return_id=return_id)
 
         else:
-            # print uniprot_ac
             return None
 
     lines = page.split("\n")
-    # print(lines)
+
     refseqs = {}
     go_terms = {}
     pathways = {}

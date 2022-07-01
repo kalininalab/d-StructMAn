@@ -183,7 +183,10 @@ def model(config, compl_obj, structures, alignment_tuple, seq_id, cov, pdb_id, t
     model_id = model_id.replace('.', '_').replace('/', '_')
 
     if not os.path.exists('%s/model_base' % (config.tmp_folder)):
-        os.mkdir('%s/model_base' % (config.tmp_folder))
+        try:
+            os.mkdir('%s/model_base' % (config.tmp_folder))
+        except:
+            pass
 
     process_top_folder = '%s/model_base/%s' % (config.tmp_folder, model_id[:6])
     if not os.path.exists(process_top_folder):

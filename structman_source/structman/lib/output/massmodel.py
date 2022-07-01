@@ -9,8 +9,32 @@ try:
 except:
     pass
 
-from structman.lib.output.output import OutputGenerator
+from structman.lib.output import out_generator
 
+def get_optimal_templates(prot_id, proteins, config):
+
+    best_interface_structures = {}
+    for interface_number, (positions, interface_structure_map) in enumerate(proteins[prot_id].aggregated_interface_map):
+        best_score = 0.
+        best_interface_structure = None
+        for structure_id in interface_structure_map:
+            chain, i_chain, interface_size = interface_structure_map[structure_id]
+            seq_id = proteins[prot_id].structure_annotations[(structure_id, chain)].sequence_identity
+            cov = proteins[prot_id].structure_annotations[(structure_id, chain)].coverage
+            score = interface_size * seq_id * cov
+            if score > best_score:
+                best_score = score
+                best_interface_structure = (structure_id, chain)
+        if not best_interface_structure in best_interface_structures:
+            best_interface_structures[best_interface_structure] = [interface_number]
+        else:
+            best_interface_structures[best_interface_structure].append(interface_number)
+
+    for position in proteins[prot_id].positions:
+        for (structure_id, tchain) in proteins[prot_id].structure_annotations:
+            sub_info = protein_obj.structure_annotations[(pdb_id, chain)].get_sub_info(pos)
+            res_nr = sub_info[0]
+    #TODO
 
 # called by structman_main
 def mass_model(session_id, config, outfolder, include_snvs=True):
@@ -31,7 +55,8 @@ def mass_model(session_id, config, outfolder, include_snvs=True):
                 print('Error wt prot is None:', prot_id)
             rec_struct = proteins[wildtype_protein].get_major_recommend_structure()
             if rec_struct is None:
-                print('Error with rec struct:', prot_id, wildtype_protein)
+                print('No rec struct:', prot_id, wildtype_protein)
+                continue
         pdb_id, tchain = rec_struct.split(':')
         compl_obj = proteins.complexes[pdb_id]
         structures = proteins.get_complex_structures(pdb_id)
@@ -61,7 +86,7 @@ def mass_model(session_id, config, outfolder, include_snvs=True):
     if os.path.exists(summary_file):
         os.remove(summary_file)
 
-    model_output = OutputGenerator()
+    model_output = out_generator.OutputGenerator()
 
     headers = ['Input ID', 'Wildtype protein', 'Protein ID', 'Template PDB ID', 'Template chain',
                'Model chain', 'Template resolution', 'Sequence identity', 'Coverage', 'File location']
