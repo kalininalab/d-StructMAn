@@ -1052,7 +1052,11 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
                 chain_b = recommended_interface_residue_b.split()[0].split(':')[1]
 
             prot_a_db_id, structure_rec_prot_a = interface_dict[interface_db_id]
-            prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+            try:
+                prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+                interface_b_number = interface_numbers[prot_b_db_id][interface_b_db_id]
+            except:
+                continue
 
             (prot_a_id, u_ac_a, refseq_a, u_id_a, error_code_a, error_a, input_id_a) = protein_dict[prot_a_db_id]
             pos_pos_output.add_value('Input Protein ID A', input_id_a)
@@ -1075,7 +1079,7 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             pos_pos_output.add_value('WT Amino Acid B', wt_aa_b)
             pos_pos_output.add_value('Position B', position_number_b)
 
-            interface_b_number = interface_numbers[prot_b_db_id][interface_b_db_id]
+
             pos_pos_output.add_value('Interface Number B', interface_b_number)
 
 
