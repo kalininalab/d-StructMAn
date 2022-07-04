@@ -206,6 +206,19 @@ def destroy(config):
     cursor.execute(sql)
     db.close()
 
+def insert_meta_data(config):
+    db, cursor = config.getDB(server_connection=True)
+    sql = f'Insert INTO Database_Metadata (StructMAn_Version, PPI_Feature) VALUES ("{_version.__version__}", "{config.compute_ppi}");'
+
+    try:
+        cursor.execute(sql)
+        db.commit()
+    except:
+        [e, f, g] = sys.exc_info()
+        g = traceback.format_exc()
+        print('\n'.join([str(e), str(f), str(g)]))
+        db.close()
+    db.close()
 
 def load(config):
     try:
@@ -262,18 +275,6 @@ def load(config):
                 sql_commands.append(new_command)
                 new_command = ''
 
-    #db_file = 'tmp_database_file.sql'
-    #f = open(db_file, 'w')
-    #f.write(''.join(new_lines))
-    #f.close()
-
-    #cmds = ' '.join(['mysql', '-u', config.db_user_name, '-h', config.db_address, '--password=%s' % config.db_password, '<', db_file])
-
-    #p = subprocess.Popen(cmds, shell=True)
-    #p.wait()
-
-    #os.remove(db_file)
-
     for sql_command in sql_commands:
 
         try:
@@ -284,22 +285,20 @@ def load(config):
             print('\n'.join([str(e), str(f), str(g), sql_command]))
             db.close()
 
-    sql = f'Insert INTO Database_Metadata (StructMAn_Version, PPI_Feature) VALUES ("{_version.__version__}", "{config.compute_ppi}");'
-
-    try:
-        cursor.execute(sql)
-        db.commit()
-    except:
-        [e, f, g] = sys.exc_info()
-        g = traceback.format_exc()
-        print('\n'.join([str(e), str(f), str(g)]))
-        db.close()
-
     db.close()
+
+    insert_meta_data(config)
+
 
 def check_structman_version(config):
 
-    version_in_db, ppi_feature = database.select(config, ['StructMAn_Version', 'PPI_Feature'], 'Database_Metadata')[0]
+    meta = database.select(config, ['StructMAn_Version', 'PPI_Feature'], 'Database_Metadata')
+
+    if len(meta) == 0:
+        insert_meta_data(config)
+        meta = database.select(config, ['StructMAn_Version', 'PPI_Feature'], 'Database_Metadata')
+
+    version_in_db, ppi_feature = meta[0]
 
     if version_in_db != _version.__version__:
         major_version_number, database_version_number, minor_version_number = _version.__version__.split('.')

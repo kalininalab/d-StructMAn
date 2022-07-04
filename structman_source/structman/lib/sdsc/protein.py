@@ -564,8 +564,9 @@ class Proteins:
         for prot_id in self.protein_map:
             self.protein_map[prot_id].deconstruct()
         del self.protein_map
-        for indel in self.indels:
-            self.indels[indel].deconstruct()
+        for prot_id in self.indels:
+            for indel_id in self.indels[prot_id]:
+                self.indels[prot_id][indel_id].deconstruct()
         del self.indels
         for mm in self.multi_mutations:
             self.multi_mutations.deconstruct()

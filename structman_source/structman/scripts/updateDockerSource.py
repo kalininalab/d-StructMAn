@@ -67,7 +67,7 @@ if __name__ == "__main__":
     shutil.copy(f'{update_script_folder}/../../MANIFEST.in', target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/_version.py', structman_target_folder)
     shutil.copy(f'{settings.ROOT_DIR}/__init__.py', structman_target_folder)
-    shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
+    #shutil.copytree(settings.SCRIPTS_DIR, structman_target_folder, dirs_exist_ok = True)
 
     utils_lib_path = f'{settings.ROOT_DIR}/base_utils'
     utils_target_path = f'{target_folder}/structman/base_utils'

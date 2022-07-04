@@ -995,7 +995,12 @@ def classificationOutput(config, outfolder, session_name, session_id, ligand_fil
             interface_b_db_id, complex_db_id, chain_a, chain_b = ppi_map[interface_a_db_id]
 
             prot_a_db_id, structure_rec_prot_a = interface_dict[interface_a_db_id]
-            prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+            try:
+                prot_b_db_id, structure_rec_prot_b = interface_dict[interface_b_db_id]
+            except:
+                if config.verbosity >= 3:
+                    print(f'Partner inteface database id not in the dict: {interface_b_db_id}, prot_a_db_id: {prot_a_db_id}, interface_a_db_id: {interface_a_db_id}, complex_db_id: {complex_db_id}, chains: {chain_a}-{chain_b}')
+                continue
 
             (prot_a_id, u_ac_a, refseq_a, u_id_a, error_code_a, error_a, input_id_a) = protein_dict[prot_a_db_id]
             prot_prot_output.add_value('Input Protein ID A', input_id_a)
