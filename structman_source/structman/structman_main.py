@@ -131,7 +131,7 @@ class Config:
         self.mmseqs2_path = cfg.get('mmseqs2_path', fallback='')
         self.output_path = cfg.get('output_path', fallback='')
         self.pdb_path = cfg.get('pdb_path', fallback='')
-        self.path_to_model_db = cfg.get('path_to_model_db', fallback=None)
+        self.path_to_model_db = cfg.get('path_to_model_db', fallback='')
 
         self.annovar_path = cfg.get('annovar_path', fallback='')
         self.dssp_path = cfg.get('dssp_path', fallback = '')

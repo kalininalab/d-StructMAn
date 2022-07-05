@@ -477,7 +477,7 @@ def main(config):
     f.write(page)
     f.close()
 
-    if config.path_to_model_db is not None:
+    if (config.path_to_model_db is not None) and (config.path_to_model_db != ''):
         config.model_db_fasta_created = create_model_db_fasta(config)
     else:
         config.model_db_fasta_created = False
