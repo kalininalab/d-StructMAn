@@ -207,7 +207,7 @@ def destroy(config):
     db.close()
 
 def insert_meta_data(config):
-    db, cursor = config.getDB(server_connection=True)
+    db, cursor = config.getDB()
     sql = f'Insert INTO Database_Metadata (StructMAn_Version, PPI_Feature) VALUES ("{_version.__version__}", "{config.compute_ppi}");'
 
     try:
